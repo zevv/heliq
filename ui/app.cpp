@@ -247,6 +247,29 @@ void App::run()
 		if(ImGui::IsKeyPressed(ImGuiKey_Space))
 			m_experiment.running = !m_experiment.running;
 
+		// [ and ] adjust timescale by 10^(1/3) ~= 2.154x
+		// shift+[ and shift+] adjust dt
+		{
+			double factor = pow(10.0, 1.0/3.0);
+			bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
+			if(ImGui::IsKeyPressed(ImGuiKey_RightBracket)) {
+				if(shift) {
+					for(auto &sim : m_experiment.simulations)
+						sim->set_dt(sim->dt * factor);
+				} else {
+					m_experiment.timescale *= factor;
+				}
+			}
+			if(ImGui::IsKeyPressed(ImGuiKey_LeftBracket)) {
+				if(shift) {
+					for(auto &sim : m_experiment.simulations)
+						sim->set_dt(sim->dt / factor);
+				} else {
+					m_experiment.timescale /= factor;
+				}
+			}
+		}
+
 		// single step with right arrow
 		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !m_experiment.running) {
 			for(auto &sim : m_experiment.simulations)

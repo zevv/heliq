@@ -9,18 +9,20 @@
 #include "config.hpp"
 
 // color palettes: value [0..1] -> RGBA
-static uint32_t palette_flame(double v) {
-	int a = (int)(255 * fmin(1.0, v));
-	int r = (int)(255 * fmin(1.0, v * 3.0));
-	int g = (int)(255 * fmin(1.0, fmax(0.0, v * 3.0 - 1.0)));
-	int b = (int)(255 * fmin(1.0, fmax(0.0, v * 3.0 - 2.0)));
+// alpha carries intensity, color is always full brightness
+static uint32_t palette_flame(double v, double gamma) {
+	double t = fmin(1.0, v);
+	int a = (int)(255 * pow(t, gamma));
+	int r = 255;
+	int g = (int)(255 * fmin(1.0, t * 2.0));
+	int b = (int)(255 * fmin(1.0, fmax(0.0, t * 2.0 - 1.0)));
 	return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
-static uint32_t palette_gray(double v) {
-	int a = (int)(255 * fmin(1.0, v));
-	int c = (int)(255 * v);
-	return (a << 24) | (c << 16) | (c << 8) | c;
+static uint32_t palette_gray(double v, double gamma) {
+	double t = fmin(1.0, v);
+	int a = (int)(255 * pow(t, gamma));
+	return (a << 24) | (255 << 16) | (255 << 8) | 255;
 }
 
 enum class DataSource {
@@ -50,6 +52,7 @@ struct Overlay {
 	DataSource source{DataSource::PsiSq};
 	Palette palette{Palette::Flame};
 	float opacity{1.0f};
+	float gamma{0.5f};  // alpha exponent: 1.0=linear, 0.5=sqrt, 0.3=aggressive
 	SDL_Texture *tex{};
 	int tex_w{};
 	int tex_h{};
@@ -78,6 +81,7 @@ public:
 			cfg.write("source", (int)m_overlays[i].source);
 			cfg.write("palette", (int)m_overlays[i].palette);
 			cfg.write("opacity", m_overlays[i].opacity);
+			cfg.write("gamma", m_overlays[i].gamma);
 			cfg.pop();
 		}
 	}
@@ -92,6 +96,7 @@ public:
 			n->read("source", src);
 			n->read("palette", pal);
 			n->read("opacity", m_overlays[i].opacity);
+			n->read("gamma", m_overlays[i].gamma);
 			m_overlays[i].source = (DataSource)src;
 			m_overlays[i].palette = (Palette)pal;
 		}
@@ -177,8 +182,8 @@ private:
 				double norm = (v - vmin) / range;
 
 				switch(ov.palette) {
-					case Palette::Flame: row[x] = palette_flame(norm); break;
-					case Palette::Gray:  row[x] = palette_gray(norm); break;
+					case Palette::Flame: row[x] = palette_flame(norm, ov.gamma); break;
+					case Palette::Gray:  row[x] = palette_gray(norm, ov.gamma); break;
 					default: row[x] = 0; break;
 				}
 			}
@@ -214,8 +219,11 @@ private:
 			if(ImGui::Combo("##pal", &pal, palette_names, (int)Palette::COUNT))
 				ov.palette = (Palette)pal;
 			ImGui::SameLine();
-			ImGui::SetNextItemWidth(80);
-			ImGui::SliderFloat("##alpha", &ov.opacity, 0.0f, 1.0f, "%.1f");
+			ImGui::SetNextItemWidth(60);
+			ImGui::SliderFloat("##alpha", &ov.opacity, 0.0f, 1.0f, "a%.1f");
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(60);
+			ImGui::SliderFloat("##gamma", &ov.gamma, 0.1f, 2.0f, "g%.1f");
 			ImGui::PopID();
 		}
 	}
