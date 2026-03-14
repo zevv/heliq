@@ -1,6 +1,7 @@
 #include <imgui.h>
 #include <SDL3/SDL.h>
 #include <math.h>
+#include <complex>
 #include <vector>
 
 #include "widget.hpp"
@@ -8,6 +9,7 @@
 #include "experiment.hpp"
 #include "config.hpp"
 #include "math3d.hpp"
+#include "grid.hpp"
 
 enum class Envelope { Amplitude, ProbDensity, Real, Imaginary, COUNT };
 
@@ -50,10 +52,33 @@ public:
 		auto &sim = *exp.simulations[0];
 		if(sim.grid.rank < 1) return;
 
-		auto *psi = sim.psi_front();
-		int n = sim.grid.axes[0].points;
-		double xmin = sim.grid.axes[0].min;
-		double xmax = sim.grid.axes[0].max;
+		auto *psi_all = sim.psi_front();
+		if(m_slice_axis >= sim.grid.rank) m_slice_axis = 0;
+		int n = sim.grid.axes[m_slice_axis].points;
+
+		// default slice positions to center if not set
+		for(int d = 0; d < sim.grid.rank; d++) {
+			if(m_slice_pos[d] == 0 && d != m_slice_axis)
+				m_slice_pos[d] = sim.grid.axes[d].points / 2;
+		}
+
+		// extract a 1D slice from the grid
+		// for rank > 1, fix all other axes at m_slice_pos[d]
+		m_slice.resize(n);
+		if(sim.grid.rank == 1) {
+			for(int i = 0; i < n; i++)
+				m_slice[i] = psi_all[i];
+		} else {
+			for(int i = 0; i < n; i++) {
+				int coords[MAX_RANK]{};
+				for(int d = 0; d < sim.grid.rank; d++)
+					coords[d] = m_slice_pos[d];
+				coords[m_slice_axis] = i;
+				size_t idx = sim.grid.linear_index(coords);
+				m_slice[i] = psi_all[idx];
+			}
+		}
+		auto *psi = m_slice.data();
 
 		// find max amplitude for scaling
 		double max_amp = 1e-30;
@@ -170,6 +195,20 @@ public:
 		ImGui::SameLine();
 		ImGui::Text("%s  yaw=%.0f  pitch=%.0f", m_ortho ? "ortho" : "persp",
 			m_yaw * 180/M_PI, m_pitch * 180/M_PI);
+
+		// slice controls for rank > 1
+		if(sim.grid.rank > 1) {
+			ImGui::SetNextItemWidth(80);
+			ImGui::SliderInt("##axis", &m_slice_axis, 0, sim.grid.rank - 1, "axis %d");
+			for(int d = 0; d < sim.grid.rank; d++) {
+				if(d == m_slice_axis) continue;
+				ImGui::SameLine();
+				ImGui::PushID(d);
+				ImGui::SetNextItemWidth(80);
+				ImGui::SliderInt("##sl", &m_slice_pos[d], 0, sim.grid.axes[d].points - 1);
+				ImGui::PopID();
+			}
+		}
 	}
 
 private:
@@ -179,6 +218,9 @@ private:
 	double m_pan_x{0}, m_pan_y{0};
 	bool m_ortho{true};
 	int m_envelope{0};  // Envelope enum
+	int m_slice_axis{0};
+	int m_slice_pos[MAX_RANK]{};  // fixed position on non-display axes
+	std::vector<std::complex<double>> m_slice;
 	bool m_orbiting{false};
 	bool m_panning{false};
 	float m_drag_x{}, m_drag_y{};

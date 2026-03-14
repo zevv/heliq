@@ -24,6 +24,12 @@ public:
 		// target is always relative to current sim_time, never accumulates debt
 		double target = sim_time + timescale * wall_dt;
 
+		// ensure at least one step per frame so changing dt doesn't stall
+		for(auto &sim : simulations) {
+			if(sim->time() >= target)
+				target = sim->time() + sim->dt;
+		}
+
 		// per-sim budget, split evenly
 		double per_sim_ms = budget_ms / simulations.size();
 		double slowest = target;

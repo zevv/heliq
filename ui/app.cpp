@@ -47,6 +47,17 @@ void App::load()
 	cr.open(fname);
 	if(auto n = cr.find("panel")) m_root_panel->load(n);
 	if(auto n = cr.find("style")) Style::load(n);
+	if(auto n = cr.find("experiment")) {
+		double ts = m_experiment.timescale;
+		n->read("timescale", ts);
+		m_experiment.timescale = ts;
+		if(!m_experiment.simulations.empty()) {
+			double dt = m_experiment.simulations[0]->dt;
+			n->read("dt", dt);
+			for(auto &sim : m_experiment.simulations)
+				sim->set_dt(dt);
+		}
+	}
 }
 
 
@@ -62,6 +73,11 @@ void App::save()
 	cw.pop();
 	cw.push("style");
 	Style::save(cw);
+	cw.pop();
+	cw.push("experiment");
+	cw.write("timescale", m_experiment.timescale);
+	if(!m_experiment.simulations.empty())
+		cw.write("dt", m_experiment.simulations[0]->dt);
 	cw.pop();
 	cw.close();
 }

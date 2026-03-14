@@ -84,6 +84,9 @@ public:
 			cfg.write("gamma", m_overlays[i].gamma);
 			cfg.pop();
 		}
+		cfg.write("zoom", m_zoom);
+		cfg.write("pan_x", m_pan_x);
+		cfg.write("pan_y", m_pan_y);
 	}
 
 	void do_load(ConfigReader::Node *node) override {
@@ -100,6 +103,9 @@ public:
 			m_overlays[i].source = (DataSource)src;
 			m_overlays[i].palette = (Palette)pal;
 		}
+		node->read("zoom", m_zoom);
+		node->read("pan_x", m_pan_x);
+		node->read("pan_y", m_pan_y);
 	}
 
 	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override {
@@ -122,12 +128,41 @@ public:
 		int tw = (grid.rank >= 1) ? grid.axes[0].points : 1;
 		int th = (grid.rank >= 2) ? grid.axes[1].points : 1;
 
-		// render textures below controls
+		// available area below controls
+		float avail_x = (float)r.x;
+		float avail_y = (float)r.y + ctrl_h;
+		float avail_w = (float)r.w;
+		float avail_h = (float)r.h - ctrl_h;
+
+		// handle pan/zoom
+		handle_mouse(r, ctrl_h);
+
+		// compute destination rect with zoom and pan
+		// 1D: stretch to fill height. 2D+: maintain 1:1 aspect
+		float disp_w, disp_h;
+		if(th == 1) {
+			// 1D: fill available area, zoom only affects x
+			disp_w = avail_w * m_zoom;
+			disp_h = avail_h;
+		} else {
+			float tex_aspect = (float)tw / (float)th;
+			float base_scale;
+			if(avail_w / avail_h > tex_aspect)
+				base_scale = avail_h / th;
+			else
+				base_scale = avail_w / tw;
+			float scale = base_scale * m_zoom;
+			disp_w = tw * scale;
+			disp_h = th * scale;
+		}
+		float cx = avail_x + avail_w * 0.5f + m_pan_x;
+		float cy = avail_y + avail_h * 0.5f + m_pan_y;
+
 		SDL_FRect dst = {
-			(float)r.x,
-			(float)r.y + ctrl_h,
-			(float)r.w,
-			(float)r.h - ctrl_h
+			cx - disp_w * 0.5f,
+			cy - disp_h * 0.5f,
+			disp_w,
+			disp_h,
 		};
 
 		for(int oi = 0; oi < N_OVERLAYS; oi++) {
@@ -144,6 +179,48 @@ public:
 private:
 	static constexpr int N_OVERLAYS = 2;
 	Overlay m_overlays[N_OVERLAYS]{};
+	float m_zoom{1.0f};
+	float m_pan_x{0}, m_pan_y{0};
+	bool m_dragging{false};
+	float m_drag_x{}, m_drag_y{};
+
+	void handle_mouse(SDL_Rect &r, float ctrl_h) {
+		ImVec2 mp = ImGui::GetMousePos();
+		bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
+		               mp.y >= r.y + ctrl_h && mp.y < r.y + r.h;
+
+		// MMB drag to pan
+		if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
+			m_dragging = true;
+			m_drag_x = mp.x;
+			m_drag_y = mp.y;
+		}
+		if(m_dragging && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+			m_pan_x += mp.x - m_drag_x;
+			m_pan_y += mp.y - m_drag_y;
+			m_drag_x = mp.x;
+			m_drag_y = mp.y;
+		}
+		if(ImGui::IsMouseReleased(ImGuiMouseButton_Middle))
+			m_dragging = false;
+
+		// scroll wheel to zoom
+		if(in_rect) {
+			float wheel = ImGui::GetIO().MouseWheel;
+			if(wheel != 0) {
+				float old_zoom = m_zoom;
+				m_zoom *= (1.0f + wheel * 0.1f);
+				if(m_zoom < 0.1f) m_zoom = 0.1f;
+				if(m_zoom > 50.0f) m_zoom = 50.0f;
+				// zoom toward mouse position
+				float zf = m_zoom / old_zoom;
+				float avail_cx = r.x + r.w * 0.5f;
+				float avail_cy = r.y + ctrl_h + (r.h - ctrl_h) * 0.5f;
+				m_pan_x = (m_pan_x + avail_cx - mp.x) * zf + mp.x - avail_cx;
+				m_pan_y = (m_pan_y + avail_cy - mp.y) * zf + mp.y - avail_cy;
+			}
+		}
+	}
 
 	void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h) {
 		if(ov.tex && ov.tex_w == w && ov.tex_h == h) return;
