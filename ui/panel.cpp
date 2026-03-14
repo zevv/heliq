@@ -214,14 +214,14 @@ void Panel::update_kid(Panel *pk, int dx1, int dy1, int dx2, int dy2)
 }
 
 
-void Panel::draw(View &view, Simulation &sim, SDL_Renderer *rend, int x, int y, int w, int h)
+void Panel::draw(View &view, Experiment &exp, SDL_Renderer *rend, int x, int y, int w, int h)
 {
 	m_last_w = w;
 	m_last_h = h;
 
 	if(m_type == Type::Root) {
 		if(m_kids.size() == 1) {
-			m_kids[0]->draw(view, sim, rend, x, y, w, h);
+			m_kids[0]->draw(view, exp, rend, x, y, w, h);
 		}
 	}
 
@@ -229,7 +229,7 @@ void Panel::draw(View &view, Simulation &sim, SDL_Renderer *rend, int x, int y, 
 		int kx = x;
 		for(auto &pk : m_kids) {
 			int kw = pk->m_weight * (w-1);
-			pk->draw(view, sim, rend, kx, y, kw, h);
+			pk->draw(view, exp, rend, kx, y, kw, h);
 			kx += kw + 1;
 		}
 
@@ -239,7 +239,7 @@ void Panel::draw(View &view, Simulation &sim, SDL_Renderer *rend, int x, int y, 
 		int ky = y;
 		for(auto &pk : m_kids) {
 			int kh = pk->m_weight * (h-1);
-			pk->draw(view, sim, rend, x, ky, w, kh);
+			pk->draw(view, exp, rend, x, ky, w, kh);
 			ky += kh + 1;
 		}
 	}
@@ -336,7 +336,7 @@ void Panel::draw(View &view, Simulation &sim, SDL_Renderer *rend, int x, int y, 
 		ImVec2 avail = ImGui::GetContentRegionAvail();
 		SDL_Rect r = { (int)cursor.x, (int)cursor.y, (int)avail.x, (int)avail.y };
 		SDL_SetRenderClipRect(rend, &r);
-		m_widget->draw(view, sim, rend, r);
+		m_widget->draw(view, exp, rend, r);
 		SDL_SetRenderClipRect(rend, nullptr);
 
 		ImGui::End();

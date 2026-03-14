@@ -4,15 +4,15 @@ BIN = quantum
 IMGUI_DIR = /home/ico/external/imgui
 
 SRC += main.cpp
-SRC += app.cpp
-SRC += view.cpp
-SRC += panel.cpp
-SRC += widget.cpp
-SRC += widgetregistry.cpp
-SRC += widget-dummy.cpp
-SRC += misc.cpp
-SRC += config.cpp
-SRC += style.cpp
+SRC += ui/app.cpp
+SRC += ui/view.cpp
+SRC += ui/panel.cpp
+SRC += ui/widget.cpp
+SRC += ui/widgetregistry.cpp
+SRC += ui/misc.cpp
+SRC += ui/config.cpp
+SRC += ui/style.cpp
+SRC += widget/widget-dummy.cpp
 SRC += $(IMGUI_DIR)/imgui.cpp 
 SRC += $(IMGUI_DIR)/imgui_demo.cpp
 SRC += $(IMGUI_DIR)/imgui_draw.cpp 
@@ -37,14 +37,11 @@ CXXFLAGS += -Wno-unused-but-set-variable -Wno-unused-variable -Wno-format-trunca
 CXXFLAGS += -O3 -ffast-math
 CXXFLAGS += -march=native
 CXXFLAGS += -MMD
+CXXFLAGS += -Iui -Imodel -Iwidget
 CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 CXXFLAGS += $(PKG_CFLAGS)
 
 LIBS += -ldl -latomic $(PKG_LIBS)
-
-ifdef bitline
-CXXFLAGS += -DBITLINE
-endif
 
 ifdef clang
 CXX=clang++

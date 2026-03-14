@@ -171,7 +171,7 @@ void App::draw()
 
 	int bar_h = draw_topbar();
 	draw_bottombar();
-	m_root_panel->draw(m_view, m_sim, m_rend, 0, bar_h + 1, m_w, m_h - bar_h - bar_h + 1);
+	m_root_panel->draw(m_view, m_experiment, m_rend, 0, bar_h + 1, m_w, m_h - bar_h - bar_h + 1);
 
 	if(m_font) ImGui::PopFont();
 

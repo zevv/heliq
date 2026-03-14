@@ -8,7 +8,7 @@
 #include "view.hpp"
 #include "config.hpp"
 
-class Simulation;
+class Experiment;
 
 class Panel {
 
@@ -30,7 +30,7 @@ public:
 	void replace(Panel *kid_old, Panel *kid_new);
 	void remove(Panel *kid);
 	void update_kid(Panel *pk, int dx, int dy, int dw, int dh);
-	void draw(View &view, Simulation &sim, SDL_Renderer *rend, int x, int y, int w, int h);
+	void draw(View &view, Experiment &exp, SDL_Renderer *rend, int x, int y, int w, int h);
 	void dump(int depth = 0);
 	int nkids() { return (int)m_kids.size(); }
 
