@@ -80,10 +80,11 @@ public:
 		}
 		auto *psi = m_slice.data();
 
-		// find max amplitude for scaling
+		// find max amplitude across the full grid for consistent scaling
 		double max_amp = 1e-30;
-		for(int i = 0; i < n; i++) {
-			double a = std::abs(psi[i]);
+		size_t total = sim.grid.total_points();
+		for(size_t i = 0; i < total; i++) {
+			double a = std::abs(psi_all[i]);
 			if(a > max_amp) max_amp = a;
 		}
 
@@ -131,6 +132,43 @@ public:
 			};
 			SDL_SetRenderDrawColor(rend, 60, 60, 60, 255);
 			SDL_RenderLines(rend, axis, 2);
+		}
+
+		// draw potential along the slice
+		{
+			auto *pot = sim.potential;
+			SDL_SetRenderDrawColor(rend, 180, 100, 40, 160);
+			bool in_barrier = false;
+			SDL_FPoint barrier_start{};
+			for(int i = 0; i <= n; i++) {
+				double v = 0;
+				if(i < n) {
+					int coords[MAX_RANK]{};
+					for(int d = 0; d < sim.grid.rank; d++)
+						coords[d] = m_slice_pos[d];
+					coords[m_slice_axis] = i;
+					size_t idx = sim.grid.linear_index(coords);
+					v = pot[idx].real();
+				}
+				double t = (double)i / (n - 1);
+				double x = -1.0 + 2.0 * t;
+				vec3 ndc = vp.transform({x, 0, 0});
+				SDL_FPoint sp = project_to_screen(ndc, r.x, r.y, r.w, r.h);
+				if(v > 0 && !in_barrier) {
+					barrier_start = sp;
+					in_barrier = true;
+				} else if((v <= 0 || i == n) && in_barrier) {
+					// draw a thick-ish bar for the barrier
+					SDL_FRect br = {
+						barrier_start.x,
+						barrier_start.y - 3,
+						sp.x - barrier_start.x,
+						6
+					};
+					SDL_RenderFillRect(rend, &br);
+					in_barrier = false;
+				}
+			}
 		}
 
 		// draw stems every N points
