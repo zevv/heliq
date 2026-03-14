@@ -27,6 +27,11 @@ public:
 		cfg.write("pan_y", m_pan_y);
 		cfg.write("ortho", m_ortho);
 		cfg.write("envelope", m_envelope);
+		cfg.write("slice_axis", m_slice_axis);
+		for(int d = 0; d < MAX_RANK; d++) {
+			char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
+			cfg.write(key, m_slice_pos[d]);
+		}
 	}
 
 	void do_load(ConfigReader::Node *node) override {
@@ -38,6 +43,11 @@ public:
 		node->read("pan_y", m_pan_y);
 		node->read("ortho", m_ortho);
 		node->read("envelope", m_envelope);
+		node->read("slice_axis", m_slice_axis);
+		for(int d = 0; d < MAX_RANK; d++) {
+			char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
+			node->read(key, m_slice_pos[d]);
+		}
 	}
 
 	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override {
@@ -134,40 +144,26 @@ public:
 			SDL_RenderLines(rend, axis, 2);
 		}
 
-		// draw potential along the slice
+		// draw potential along the slice as thick lines on the x-axis
 		{
 			auto *pot = sim.potential;
-			SDL_SetRenderDrawColor(rend, 180, 100, 40, 160);
-			bool in_barrier = false;
-			SDL_FPoint barrier_start{};
-			for(int i = 0; i <= n; i++) {
-				double v = 0;
-				if(i < n) {
-					int coords[MAX_RANK]{};
-					for(int d = 0; d < sim.grid.rank; d++)
-						coords[d] = m_slice_pos[d];
-					coords[m_slice_axis] = i;
-					size_t idx = sim.grid.linear_index(coords);
-					v = pot[idx].real();
-				}
+			SDL_SetRenderDrawColor(rend, 180, 100, 40, 200);
+			for(int i = 0; i < n; i++) {
+				int coords[MAX_RANK]{};
+				for(int d = 0; d < sim.grid.rank; d++)
+					coords[d] = m_slice_pos[d];
+				coords[m_slice_axis] = i;
+				size_t idx = sim.grid.linear_index(coords);
+				if(pot[idx].real() <= 0) continue;
+
 				double t = (double)i / (n - 1);
 				double x = -1.0 + 2.0 * t;
-				vec3 ndc = vp.transform({x, 0, 0});
-				SDL_FPoint sp = project_to_screen(ndc, r.x, r.y, r.w, r.h);
-				if(v > 0 && !in_barrier) {
-					barrier_start = sp;
-					in_barrier = true;
-				} else if((v <= 0 || i == n) && in_barrier) {
-					// draw a thick-ish bar for the barrier
-					SDL_FRect br = {
-						barrier_start.x,
-						barrier_start.y - 3,
-						sp.x - barrier_start.x,
-						6
-					};
-					SDL_RenderFillRect(rend, &br);
-					in_barrier = false;
-				}
+				// draw a vertical line segment through the axis
+				vec3 p0 = vp.transform({x, -0.15, 0});
+				vec3 p1 = vp.transform({x,  0.15, 0});
+				SDL_FPoint s0 = project_to_screen(p0, r.x, r.y, r.w, r.h);
+				SDL_FPoint s1 = project_to_screen(p1, r.x, r.y, r.w, r.h);
+				SDL_RenderLine(rend, s0.x, s0.y, s1.x, s1.y);
 			}
 		}
 
@@ -236,12 +232,17 @@ public:
 
 		// slice controls for rank > 1
 		if(sim.grid.rank > 1) {
-			ImGui::SetNextItemWidth(80);
-			ImGui::SliderInt("##axis", &m_slice_axis, 0, sim.grid.rank - 1, "axis %d");
+			for(int d = 0; d < sim.grid.rank; d++) {
+				ImGui::SameLine();
+				ImGui::PushID(d);
+				char label[8]; snprintf(label, sizeof(label), "%d", d);
+				ImGui::RadioButton(label, &m_slice_axis, d);
+				ImGui::PopID();
+			}
 			for(int d = 0; d < sim.grid.rank; d++) {
 				if(d == m_slice_axis) continue;
 				ImGui::SameLine();
-				ImGui::PushID(d);
+				ImGui::PushID(d + 100);
 				ImGui::SetNextItemWidth(80);
 				ImGui::SliderInt("##sl", &m_slice_pos[d], 0, sim.grid.axes[d].points - 1);
 				ImGui::PopID();
