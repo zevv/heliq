@@ -8,6 +8,27 @@
 #include "experiment.hpp"
 #include "config.hpp"
 
+static void hsv_to_rgb(double h, double s, double v, uint8_t &r, uint8_t &g, uint8_t &b) {
+	int hi = (int)(h * 6.0) % 6;
+	if(hi < 0) hi += 6;
+	double f = h * 6.0 - (int)(h * 6.0);
+	double p = v * (1 - s);
+	double q = v * (1 - f * s);
+	double t = v * (1 - (1 - f) * s);
+	double rr, gg, bb;
+	switch(hi) {
+		case 0: rr=v; gg=t; bb=p; break;
+		case 1: rr=q; gg=v; bb=p; break;
+		case 2: rr=p; gg=v; bb=t; break;
+		case 3: rr=p; gg=q; bb=v; break;
+		case 4: rr=t; gg=p; bb=v; break;
+		default: rr=v; gg=p; bb=q; break;
+	}
+	r = (uint8_t)(rr * 255);
+	g = (uint8_t)(gg * 255);
+	b = (uint8_t)(bb * 255);
+}
+
 // color palettes: value [0..1] -> RGBA
 // alpha carries intensity, color is always full brightness
 static uint32_t palette_flame(double v, double gamma) {
@@ -39,13 +60,16 @@ static const char *datasource_names[] = {
 };
 
 enum class Palette {
+	Off,
 	Flame,
 	Gray,
+	Rainbow,
+	Zebra,
 	COUNT
 };
 
 static const char *palette_names[] = {
-	"flame", "gray"
+	"off", "flame", "gray", "rainbow", "zebra"
 };
 
 struct Overlay {
@@ -68,6 +92,7 @@ public:
 		m_overlays[1].source = DataSource::PsiSq;
 		m_overlays[1].palette = Palette::Flame;
 		m_overlays[1].opacity = 1.0f;
+		m_overlays[2].palette = Palette::Off;
 	}
 
 	~WidgetGrid() {
@@ -168,6 +193,7 @@ public:
 
 		for(int oi = 0; oi < N_OVERLAYS; oi++) {
 			auto &ov = m_overlays[oi];
+			if(ov.palette == Palette::Off) continue;
 			ensure_texture(rend, ov, tw, th);
 			fill_texture(ov, sim, tw, th);
 
@@ -209,7 +235,7 @@ public:
 	}
 
 private:
-	static constexpr int N_OVERLAYS = 2;
+	static constexpr int N_OVERLAYS = 3;
 	Overlay m_overlays[N_OVERLAYS]{};
 	float m_zoom{1.0f};
 	float m_pan_x{0}, m_pan_y{0};
@@ -273,11 +299,13 @@ private:
 		size_t total = sim.grid.total_points();
 
 		// find data range for normalization
-		double vmin = 0, vmax = 1e-30;
+		double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
 		for(size_t i = 0; i < total; i++) {
 			double v = sample_value(ov.source, psi[i], pot[i]);
 			if(v < vmin) vmin = v;
 			if(v > vmax) vmax = v;
+			double a = std::abs(psi[i]);
+			if(a > amp_max) amp_max = a;
 		}
 		double range = vmax - vmin;
 		if(range < 1e-30) range = 1.0;
@@ -293,9 +321,21 @@ private:
 				double v = sample_value(ov.source, psi[idx], pot[idx]);
 				double norm = (v - vmin) / range;
 
+				double amp = std::abs(psi[idx]) / amp_max;
+				int alpha = (int)(255 * pow(fmin(1.0, amp), ov.gamma));
+
 				switch(ov.palette) {
 					case Palette::Flame: row[x] = palette_flame(norm, ov.gamma); break;
 					case Palette::Gray:  row[x] = palette_gray(norm, ov.gamma); break;
+					case Palette::Rainbow: {
+						uint8_t cr, cg, cb;
+						hsv_to_rgb(fmod(norm, 1.0), 1.0, 1.0, cr, cg, cb);
+						row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
+					} break;
+					case Palette::Zebra: {
+						uint8_t c = (uint8_t)(140 + 115 * sin(norm * 2 * M_PI));
+						row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
+					} break;
 					default: row[x] = 0; break;
 				}
 			}
