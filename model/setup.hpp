@@ -28,6 +28,14 @@ struct Potential {
 	double k{};                      // N/m (harmonic spring constant)
 };
 
+struct Interaction {
+	enum Type { Coulomb };
+	Type type{};
+	int particle_a{};                // 0-indexed particle indices
+	int particle_b{};
+	double softening{};              // meters, regularization for 1/r
+};
+
 enum class SimMode { Joint, Factored };
 
 struct SimConfig {
@@ -42,6 +50,7 @@ struct Setup {
 	Axis domain[MAX_RANK]{};
 	std::vector<Particle> particles{};
 	std::vector<Potential> potentials{};
+	std::vector<Interaction> interactions{};
 	std::vector<SimConfig> simulations{};
 	double timescale{1e-15};
 };

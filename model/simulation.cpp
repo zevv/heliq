@@ -11,7 +11,21 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	name = config.name;
 	mode = config.mode;
 	dt = config.dt;
-	mass = setup.particles.empty() ? 1.0 : setup.particles[0].mass;
+
+	// assign per-axis mass: in joint mode, each config-space axis
+	// corresponds to one particle's spatial dimension
+	for(int i = 0; i < MAX_RANK; i++)
+		mass[i] = 1.0;
+	if(setup.particles.size() == 1) {
+		// single particle: all axes have same mass
+		for(int i = 0; i < setup.spatial_dims; i++)
+			mass[i] = setup.particles[0].mass;
+	} else {
+		// multi-particle joint: each axis maps to a particle
+		// for N 1D particles, axis i = particle i
+		for(int i = 0; i < (int)setup.particles.size() && i < MAX_RANK; i++)
+			mass[i] = setup.particles[i].mass;
+	}
 
 	// build grid from setup domain
 	grid.rank = setup.spatial_dims;
@@ -74,20 +88,19 @@ void Simulation::precompute_phases()
 		if(fabs(phase) > max_potential_phase) max_potential_phase = fabs(phase);
 	}
 
-	// kinetic phase: exp(-i hbar k^2 dt / (2m))
+	// kinetic phase: exp(-i dt Σ_d hbar k_d² / (2 m_d))
 	max_kinetic_phase = 0;
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
-		double k2 = 0;
+		double phase = 0;
 		for(int d = 0; d < grid.rank; d++) {
 			int ni = grid.axes[d].points;
 			double L = grid.axes[d].max - grid.axes[d].min;
 			double dk = 2.0 * M_PI / L;
 			double ki = (coords[d] < ni/2) ? coords[d] * dk : (coords[d] - ni) * dk;
-			k2 += ki * ki;
+			phase += hbar * ki * ki * dt / (2.0 * mass[d]);
 		}
-		double phase = hbar * k2 * dt / (2.0 * mass);
 		m_kinetic_phase[idx] = std::complex<double>(cos(-phase), sin(-phase));
-		if(phase > max_kinetic_phase) max_kinetic_phase = phase;
+		if(fabs(phase) > max_kinetic_phase) max_kinetic_phase = fabs(phase);
 	});
 }
 
@@ -160,6 +173,8 @@ static bool inside_bounds(const double *pos, const double *from, const double *t
 }
 
 
+static const double k_coulomb = 8.9875517873681764e9;  // N·m²/C²
+
 void Simulation::sample_potential(const Setup &setup)
 {
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
@@ -189,6 +204,25 @@ void Simulation::sample_potential(const Setup &setup)
 					break;
 			}
 		}
+
+		// two-body interactions in configuration space
+		for(auto &inter : setup.interactions) {
+			int a = inter.particle_a;
+			int b = inter.particle_b;
+			if(a >= grid.rank || b >= grid.rank) continue;
+
+			switch(inter.type) {
+				case Interaction::Coulomb: {
+					double q_a = setup.particles[a].charge;
+					double q_b = setup.particles[b].charge;
+					double dx = pos[a] - pos[b];
+					double r = sqrt(dx * dx + inter.softening * inter.softening);
+					v += k_coulomb * q_a * q_b / r;
+					break;
+				}
+			}
+		}
+
 		potential[idx] = v;
 	});
 }
@@ -198,20 +232,40 @@ void Simulation::sample_wavefunction(const Setup &setup)
 {
 	if(setup.particles.empty()) return;
 
-	auto &p = setup.particles[0];
+	size_t n_particles = setup.particles.size();
 	double norm = 0;
 
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
-		double envelope = 0;
-		double phase = 0;
-		for(int d = 0; d < grid.rank; d++) {
-			double dx = pos[d] - p.position[d];
-			envelope += dx * dx / (4.0 * p.width * p.width);
-			phase += p.momentum[d] * pos[d] / hbar;
+		// product state: ψ(x₁,x₂,...) = ψ₁(x₁) · ψ₂(x₂) · ...
+		// for single particle: all grid dims map to that particle
+		// for multi-particle joint: each dim maps to one particle
+		std::complex<double> val(1.0, 0.0);
+
+		if(n_particles == 1) {
+			auto &p = setup.particles[0];
+			double envelope = 0;
+			double phase = 0;
+			for(int d = 0; d < grid.rank; d++) {
+				double dx = pos[d] - p.position[d];
+				envelope += dx * dx / (4.0 * p.width * p.width);
+				phase += p.momentum[d] * pos[d] / hbar;
+			}
+			double amp = exp(-envelope);
+			val = amp * std::complex<double>(cos(phase), sin(phase));
+		} else {
+			// each axis d corresponds to particle d (1D per particle)
+			for(int d = 0; d < grid.rank && d < (int)n_particles; d++) {
+				auto &p = setup.particles[d];
+				double dx = pos[d] - p.position[0];
+				double envelope = dx * dx / (4.0 * p.width * p.width);
+				double phase = p.momentum[0] * pos[d] / hbar;
+				double amp = exp(-envelope);
+				val *= amp * std::complex<double>(cos(phase), sin(phase));
+			}
 		}
-		double amp = exp(-envelope);
-		psi[0][idx] = amp * std::complex<double>(cos(phase), sin(phase));
-		norm += amp * amp;
+
+		psi[0][idx] = val;
+		norm += std::norm(val);
 	});
 
 	double dv = 1.0;

@@ -47,6 +47,7 @@ CXXFLAGS += -march=native
 CXXFLAGS += -MMD
 CXXFLAGS += -Iui -Imodel -Iwidget
 CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
+CXXFLAGS += -DVKFFT_BACKEND=3
 CXXFLAGS += $(PKG_CFLAGS)
 
 LIBS += -ldl -latomic -lfftw3_threads -lpthread -lOpenCL $(PKG_LIBS)
@@ -78,8 +79,7 @@ endif
 
 CFLAGS = $(CXXFLAGS)
 
-model/solver_gpu.o: model/solver_gpu.cpp
-	$(CXX) $(CXXFLAGS) -DVKFFT_BACKEND=3 -c -o $@ $<
+all: $(BIN)
 
 %.o:%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -106,7 +106,6 @@ TEST_BIN = test_quantum
 TEST_PKG = lua5.4 fftw3
 TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs) -lfftw3_threads -lpthread -lOpenCL
 
-all: $(BIN)
 
 $(BIN): $(OBJS)
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBS)

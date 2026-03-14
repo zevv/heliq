@@ -8,6 +8,7 @@ local world = {
     domain = {},
     particles = {},
     potentials = {},
+    interactions = {},
     simulations = {},
 }
 
@@ -46,11 +47,14 @@ local eV         = 1.602176634e-19      -- J per eV
 local m_electron = 9.1093837015e-31     -- kg
 local m_proton   = 1.67262192369e-27    -- kg
 
+local k_coulomb  = 8.9875517873681764e9   -- N·m²/C²
+
 env.hbar       = hbar
 env.e_charge   = e_charge
 env.eV         = eV
 env.m_electron = m_electron
 env.m_proton   = m_proton
+env.k_coulomb  = k_coulomb
 
 -- API functions
 
@@ -102,6 +106,14 @@ function env.harmonic(spec)
         type   = "harmonic",
         center = spec.center or error("harmonic: center required"),
         k      = spec.k or error("harmonic: k (spring constant) required"),
+    }
+end
+
+function env.interaction(spec)
+    world.interactions[#world.interactions + 1] = {
+        type       = spec.type or "coulomb",
+        particles  = spec.particles or error("interaction: particles required"),
+        softening  = spec.softening or 0,
     }
 end
 
@@ -192,6 +204,14 @@ local function dump()
             else
                 print(string.format("  %d: %s", i, pot.type))
             end
+        end
+    end
+    if #world.interactions > 0 then
+        print("interactions:")
+        for i, inter in ipairs(world.interactions) do
+            print(string.format("  %d: %s  particles={%d,%d}  softening=%sm",
+                i, inter.type, inter.particles[1], inter.particles[2],
+                humanize(inter.softening)))
         end
     end
     if #world.simulations > 0 then

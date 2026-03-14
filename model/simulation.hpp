@@ -28,7 +28,7 @@ public:
 	std::string name{};
 	SimMode mode{SimMode::Joint};
 	double dt{};
-	double mass{};          // kg, first particle for now
+	double mass[MAX_RANK]{};  // kg, per axis (particle mass for that config-space axis)
 	size_t step_count{};
 	double sim_time{};      // accumulated simulation time (supports negative dt)
 

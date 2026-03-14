@@ -145,6 +145,50 @@ static bool load_potentials(lua_State *L, Setup &setup)
 }
 
 
+static bool load_interactions(lua_State *L, Setup &setup)
+{
+	lua_getfield(L, -1, "interactions");
+	if(!lua_istable(L, -1)) {
+		lua_pop(L, 1);
+		return true;
+	}
+
+	int n = (int)lua_rawlen(L, -1);
+	for(int i = 0; i < n; i++) {
+		lua_rawgeti(L, -1, i + 1);
+		if(lua_istable(L, -1)) {
+			Interaction inter{};
+
+			const char *type = getfield_string(L, -1, "type");
+			if(type) {
+				if(strcmp(type, "coulomb") == 0) inter.type = Interaction::Coulomb;
+				else fprintf(stderr, "loader: unknown interaction type '%s'\n", type);
+			}
+
+			// particle indices (1-based in Lua, 0-based in C++)
+			lua_getfield(L, -1, "particles");
+			if(lua_istable(L, -1)) {
+				lua_rawgeti(L, -1, 1);
+				inter.particle_a = (int)lua_tointeger(L, -1) - 1;
+				lua_pop(L, 1);
+				lua_rawgeti(L, -1, 2);
+				inter.particle_b = (int)lua_tointeger(L, -1) - 1;
+				lua_pop(L, 1);
+			}
+			lua_pop(L, 1);
+
+			inter.softening = getfield_number(L, -1, "softening");
+
+			setup.interactions.push_back(inter);
+		}
+		lua_pop(L, 1);
+	}
+
+	lua_pop(L, 1);
+	return true;
+}
+
+
 static bool load_simulations(lua_State *L, Setup &setup)
 {
 	lua_getfield(L, -1, "simulations");
@@ -210,6 +254,7 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 	bool ok = load_domain(L, setup)
 	       && load_particles(L, setup)
 	       && load_potentials(L, setup)
+	       && load_interactions(L, setup)
 	       && load_simulations(L, setup);
 
 	lua_close(L);
