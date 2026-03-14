@@ -131,7 +131,11 @@ int App::draw_topbar()
 	ImGui::SetNextWindowBgAlpha(1.0f);
 	ImGui::Begin("topbar", nullptr, flags);
 
-	ImGui::Text("FPS: %.0f", ImGui::GetIO().Framerate);
+	float fps = ImGui::GetIO().Framerate;
+	ImGui::Text("FPS: %.0f", fps);
+
+	ImGui::SameLine();
+	ImGui::Text("t=%.3e s", m_experiment.sim_time);
 
 	ImGui::End();
 	return 20;
@@ -231,6 +235,23 @@ void App::run()
 			if(event.type == SDL_EVENT_WINDOW_RESIZED && 
 			   event.window.windowID == SDL_GetWindowID(m_win))
 				resize_window(event.window.data1, event.window.data2);
+		}
+
+		// advance simulation
+		double wall_dt = 1.0 / ImGui::GetIO().Framerate;
+		if(wall_dt > 0.1) wall_dt = 1.0 / 60.0;  // clamp on first frame
+		m_experiment.advance(wall_dt);
+
+		// spacebar to toggle
+		if(ImGui::IsKeyPressed(ImGuiKey_Space))
+			m_experiment.running = !m_experiment.running;
+
+		// single step with right arrow
+		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !m_experiment.running) {
+			for(auto &sim : m_experiment.simulations)
+				sim->step();
+			m_experiment.sim_time = m_experiment.simulations.empty() ? 0 :
+				m_experiment.simulations[0]->time();
 		}
 
 		draw();

@@ -56,6 +56,45 @@ TEST_CASE("simulation allocation from setup") {
 	}
 }
 
+TEST_CASE("simulation step changes wavefunction") {
+	Setup setup{};
+	REQUIRE(load_setup("experiments/barrier-1d.lua", setup));
+
+	Simulation sim(setup.simulations[0], setup);
+
+	// record initial state at the peak
+	int peak = 0;
+	double peak_val = 0;
+	for(size_t i = 0; i < sim.grid.total_points(); i++) {
+		double v = std::norm(sim.psi_front()[i]);
+		if(v > peak_val) { peak_val = v; peak = i; }
+	}
+	fprintf(stderr, "peak before: idx=%d val=%.6e\n", peak, peak_val);
+
+	// step 1000 times
+	for(int i = 0; i < 1000; i++)
+		sim.step();
+
+	// find new peak
+	int peak2 = 0;
+	double peak_val2 = 0;
+	for(size_t i = 0; i < sim.grid.total_points(); i++) {
+		double v = std::norm(sim.psi_front()[i]);
+		if(v > peak_val2) { peak_val2 = v; peak2 = i; }
+	}
+	fprintf(stderr, "peak after 1000 steps: idx=%d val=%.6e\n", peak2, peak_val2);
+
+	// check probability conservation
+	double prob = 0;
+	double dv = sim.grid.axes[0].dx();
+	for(size_t i = 0; i < sim.grid.total_points(); i++)
+		prob += std::norm(sim.psi_front()[i]) * dv;
+	fprintf(stderr, "total probability: %.6f\n", prob);
+
+	CHECK(peak2 != peak);  // peak should have moved
+	CHECK(prob == doctest::Approx(1.0).epsilon(0.01));  // probability conserved
+}
+
 TEST_CASE("simulation with custom resolution") {
 	Setup setup{};
 	REQUIRE(load_setup("experiments/barrier-1d.lua", setup));

@@ -11,17 +11,17 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 3 * eV
+local energy = 0.001 * eV   -- 1 meV, wavelength ~39nm, ~4 pts per wavelength
 local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
     position = { -2 * um },
     momentum = { momentum },
-    width = 0.5 * um,
+    width = 0.2 * um,
 })
 
 barrier {
     from = { -50 * nm },
     to   = {  50 * nm },
-    height = 5 * eV,
+    height = 0.005 * eV,    -- 5 meV, higher than kinetic energy
 }

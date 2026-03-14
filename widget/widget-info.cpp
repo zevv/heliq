@@ -65,11 +65,32 @@ public:
 			}
 		}
 
-		// runtime
+		// transport controls
 		ImGui::Spacing();
 		ImGui::Separator();
-		ImGui::Text("t = %.4e s  step = %s",
-			exp.sim_time, exp.running ? "running" : "paused");
+		ImGui::Spacing();
+
+		if(ImGui::Button(exp.running ? "Pause" : "Play"))
+			exp.running = !exp.running;
+		ImGui::SameLine();
+		ImGui::Text("t = %.4e s", exp.sim_time);
+
+		ImGui::Text("Speed:");
+		ImGui::SetNextItemWidth(-1);
+		float log_ts = log10f(exp.timescale);
+		if(ImGui::SliderFloat("##speed", &log_ts, -18.0f, -9.0f, "1e%.0f s/s"))
+			exp.timescale = pow(10.0, log_ts);
+
+		if(!exp.simulations.empty()) {
+			ImGui::Text("dt:");
+			ImGui::SetNextItemWidth(-1);
+			float log_dt = log10f(exp.simulations[0]->dt);
+			if(ImGui::SliderFloat("##dt", &log_dt, -18.0f, -13.0f, "1e%.0f s")) {
+				double new_dt = pow(10.0, log_dt);
+				for(auto &sim : exp.simulations)
+					sim->set_dt(new_dt);
+			}
+		}
 	}
 };
 

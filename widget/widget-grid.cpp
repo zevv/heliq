@@ -101,6 +101,10 @@ public:
 		SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
 		SDL_RenderFillRect(rend, nullptr);
 
+		// controls at the top
+		draw_controls();
+		float ctrl_h = ImGui::GetCursorPosY();
+
 		if(exp.simulations.empty()) {
 			ImGui::Text("No simulation");
 			return;
@@ -113,6 +117,14 @@ public:
 		int tw = (grid.rank >= 1) ? grid.axes[0].points : 1;
 		int th = (grid.rank >= 2) ? grid.axes[1].points : 1;
 
+		// render textures below controls
+		SDL_FRect dst = {
+			(float)r.x,
+			(float)r.y + ctrl_h,
+			(float)r.w,
+			(float)r.h - ctrl_h
+		};
+
 		for(int oi = 0; oi < N_OVERLAYS; oi++) {
 			auto &ov = m_overlays[oi];
 			ensure_texture(rend, ov, tw, th);
@@ -120,13 +132,8 @@ public:
 
 			SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
 			SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
-
-			SDL_FRect dst = { (float)r.x, (float)r.y, (float)r.w, (float)r.h };
 			SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
 		}
-
-		// controls
-		draw_controls();
 	}
 
 private:
@@ -192,7 +199,6 @@ private:
 	}
 
 	void draw_controls() {
-		ImGui::SetCursorPos(ImVec2(8, 8));
 		for(int i = 0; i < N_OVERLAYS; i++) {
 			auto &ov = m_overlays[i];
 			ImGui::PushID(i);
