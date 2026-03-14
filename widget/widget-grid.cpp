@@ -47,6 +47,7 @@ static uint32_t palette_gray(double v, double gamma) {
 }
 
 enum class DataSource {
+	Off,
 	PsiSq,     // |ψ|²
 	PsiRe,     // Re(ψ)
 	PsiIm,     // Im(ψ)
@@ -56,11 +57,10 @@ enum class DataSource {
 };
 
 static const char *datasource_names[] = {
-	"|psi|^2", "Re(psi)", "Im(psi)", "phase(psi)", "potential"
+	"off", "|psi|^2", "Re(psi)", "Im(psi)", "phase(psi)", "potential"
 };
 
 enum class Palette {
-	Off,
 	Flame,
 	Gray,
 	Rainbow,
@@ -69,7 +69,7 @@ enum class Palette {
 };
 
 static const char *palette_names[] = {
-	"off", "flame", "gray", "rainbow", "zebra"
+	"flame", "gray", "rainbow", "zebra"
 };
 
 struct Overlay {
@@ -92,7 +92,7 @@ public:
 		m_overlays[1].source = DataSource::PsiSq;
 		m_overlays[1].palette = Palette::Flame;
 		m_overlays[1].opacity = 1.0f;
-		m_overlays[2].palette = Palette::Off;
+		m_overlays[2].source = DataSource::Off;
 	}
 
 	~WidgetGrid() {
@@ -193,7 +193,7 @@ public:
 
 		for(int oi = 0; oi < N_OVERLAYS; oi++) {
 			auto &ov = m_overlays[oi];
-			if(ov.palette == Palette::Off) continue;
+			if(ov.source == DataSource::Off) continue;
 			ensure_texture(rend, ov, tw, th);
 			fill_texture(ov, sim, tw, th);
 
@@ -246,7 +246,6 @@ private:
 		ImVec2 mp = ImGui::GetMousePos();
 		bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
 		               mp.y >= r.y + ctrl_h && mp.y < r.y + r.h;
-
 		// MMB drag to pan
 		if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
 			m_dragging = true;

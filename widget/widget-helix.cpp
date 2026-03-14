@@ -11,9 +11,9 @@
 #include "math3d.hpp"
 #include "grid.hpp"
 
-enum class Envelope { Amplitude, ProbDensity, Real, Imaginary, COUNT };
+enum class Envelope { Off, Amplitude, ProbDensity, Real, Imaginary, COUNT };
 
-static const char *envelope_names[] = { "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
+static const char *envelope_names[] = { "off", "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
 
 class WidgetHelix : public Widget {
 public:
@@ -27,6 +27,9 @@ public:
 		cfg.write("pan_y", m_pan_y);
 		cfg.write("ortho", m_ortho);
 		cfg.write("envelope", m_envelope);
+		cfg.write("helix_color", m_helix_color);
+		cfg.write("amplitude", m_amplitude);
+		cfg.write("stem_density", m_stem_density);
 		cfg.write("slice_axis", m_slice_axis);
 		for(int d = 0; d < MAX_RANK; d++) {
 			char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
@@ -43,6 +46,9 @@ public:
 		node->read("pan_y", m_pan_y);
 		node->read("ortho", m_ortho);
 		node->read("envelope", m_envelope);
+		node->read("helix_color", m_helix_color);
+		node->read("amplitude", m_amplitude);
+		node->read("stem_density", m_stem_density);
 		node->read("slice_axis", m_slice_axis);
 		for(int d = 0; d < MAX_RANK; d++) {
 			char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
@@ -125,8 +131,8 @@ public:
 		for(int i = 0; i < n; i++) {
 			double t = (double)i / (n - 1);
 			double x = -1.0 + 2.0 * t;
-			double y = psi[i].real() / max_amp;
-			double z = psi[i].imag() / max_amp;
+			double y = psi[i].real() / max_amp * m_amplitude;
+			double z = psi[i].imag() / max_amp * m_amplitude;
 			pts3d[i] = {x, y, z};
 			vec3 ndc = vp.transform(pts3d[i]);
 			helix_pts[i] = project_to_screen(ndc, r.x, r.y, r.w, r.h);
@@ -192,7 +198,7 @@ public:
 		}
 
 		// draw stems every N points
-		int stem_step = n / 64;
+		int stem_step = (m_stem_density > 0) ? n / m_stem_density : n;
 		if(stem_step < 1) stem_step = 1;
 		SDL_SetRenderDrawColor(rend, 80, 80, 120, 255);
 		for(int i = 0; i < n; i += stem_step) {
@@ -206,34 +212,41 @@ public:
 		}
 
 		// draw helix line
-		// color by phase: map arg(ψ) to hue
 		for(int i = 0; i < n - 1; i++) {
-			double phase = atan2(psi[i].imag(), psi[i].real());
-			double hue = (phase + M_PI) / (2 * M_PI);  // 0..1
-			uint8_t cr, cg, cb;
-			hsv_to_rgb(hue, 1.0, 1.0, cr, cg, cb);
-
-			// fade by amplitude
 			double amp = std::abs(psi[i]) / max_amp;
-			cr = (uint8_t)(cr * amp + 40 * (1 - amp));
-			cg = (uint8_t)(cg * amp + 40 * (1 - amp));
-			cb = (uint8_t)(cb * amp + 40 * (1 - amp));
-
+			uint8_t cr, cg, cb;
+			if(m_helix_color == 0) {
+				// gray: white fading by amplitude
+				cr = cg = cb = (uint8_t)(200 * amp + 40 * (1 - amp));
+			} else if(m_helix_color == 1) {
+				// phase: hue from phase angle
+				double phase = atan2(psi[i].imag(), psi[i].real());
+				double hue = (phase + M_PI) / (2 * M_PI);
+				hsv_to_rgb(hue, 1.0, 1.0, cr, cg, cb);
+				cr = (uint8_t)(cr * amp + 40 * (1 - amp));
+				cg = (uint8_t)(cg * amp + 40 * (1 - amp));
+				cb = (uint8_t)(cb * amp + 40 * (1 - amp));
+			} else {
+				// flame: red -> yellow -> white by amplitude
+				cr = (uint8_t)(255 * amp + 40 * (1 - amp));
+				cg = (uint8_t)(255 * fmin(1.0, amp * 2.0) * amp + 40 * (1 - amp));
+				cb = (uint8_t)(255 * fmin(1.0, fmax(0.0, amp * 2.0 - 1.0)) * amp + 20 * (1 - amp));
+			}
 			SDL_SetRenderDrawColor(rend, cr, cg, cb, 255);
 			SDL_RenderLine(rend, helix_pts[i].x, helix_pts[i].y,
 			                     helix_pts[i+1].x, helix_pts[i+1].y);
 		}
 
 		// draw envelope curve on the x-axis plane
-		{
+		if((Envelope)m_envelope != Envelope::Off) {
 			SDL_SetRenderDrawColor(rend, 100, 200, 100, 180);
 			for(int i = 0; i < n - 1; i++) {
 				double t0 = (double)i / (n - 1);
 				double t1 = (double)(i+1) / (n - 1);
 				double x0 = -1.0 + 2.0 * t0;
 				double x1 = -1.0 + 2.0 * t1;
-				double a0 = envelope_value(psi[i], max_amp);
-				double a1 = envelope_value(psi[i+1], max_amp);
+				double a0 = envelope_value(psi[i], max_amp) * m_amplitude;
+				double a1 = envelope_value(psi[i+1], max_amp) * m_amplitude;
 				vec3 p0 = vp.transform({x0, a0, 0});
 				vec3 p1 = vp.transform({x1, a1, 0});
 				SDL_FPoint sp[2] = {
@@ -248,11 +261,20 @@ public:
 		if(ImGui::IsWindowFocused()) handle_keys();
 
 		// controls
-		ImGui::SetNextItemWidth(120);
+		static const char *helix_color_names[] = { "gray", "rainbow", "flame" };
+		ImGui::SetNextItemWidth(80);
 		ImGui::Combo("##envelope", &m_envelope, envelope_names, (int)Envelope::COUNT);
 		ImGui::SameLine();
-		ImGui::Text("%s  yaw=%.0f  pitch=%.0f", m_ortho ? "ortho" : "persp",
-			m_yaw * 180/M_PI, m_pitch * 180/M_PI);
+		ImGui::SetNextItemWidth(70);
+		ImGui::Combo("##helixcol", &m_helix_color, helix_color_names, 3);
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(60);
+		ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 1.0f, "%.2f");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(60);
+		ImGui::SliderInt("##stems", &m_stem_density, 0, 256, "%d");
+		ImGui::SameLine();
+		ImGui::Text("%s", m_ortho ? "O" : "P");
 
 		// slice controls for rank > 1
 		if(sim.grid.rank > 1) {
@@ -283,7 +305,10 @@ private:
 	double m_dist{2.5};
 	double m_pan_x{0}, m_pan_y{0};
 	bool m_ortho{true};
-	int m_envelope{0};  // Envelope enum
+	int m_envelope{1};  // Envelope::Amplitude
+	int m_helix_color{1};  // 0=mono, 1=phase
+	float m_amplitude{1.0f};  // helix amplitude scale
+	int m_stem_density{64};   // stems across the full axis
 	int m_slice_axis{0};
 	int m_slice_pos[MAX_RANK]{};  // fixed position on non-display axes
 	std::vector<std::complex<double>> m_slice;
@@ -295,8 +320,8 @@ private:
 		switch((Envelope)m_envelope) {
 			case Envelope::Amplitude:   return std::abs(psi) / max_amp;
 			case Envelope::ProbDensity: return std::norm(psi) / (max_amp * max_amp);
-			case Envelope::Real:        return psi.real() / max_amp * 0.5 + 0.5;
-			case Envelope::Imaginary:   return psi.imag() / max_amp * 0.5 + 0.5;
+			case Envelope::Real:        return psi.real() / max_amp;
+			case Envelope::Imaginary:   return psi.imag() / max_amp;
 			default: return 0;
 		}
 	}

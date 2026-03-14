@@ -95,7 +95,7 @@ TEST_OBJS = $(TEST_SRC:.cpp=.o)
 TEST_DEPS = $(TEST_OBJS:.o=.d)
 TEST_BIN = test_quantum
 TEST_PKG = lua5.4 fftw3
-TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs)
+TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs) -lfftw3_threads -lpthread
 
 all: $(BIN)
 
