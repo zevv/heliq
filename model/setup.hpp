@@ -29,11 +29,13 @@ struct Potential {
 };
 
 struct Interaction {
-	enum Type { Coulomb };
+	enum Type { Coulomb, Contact };
 	Type type{};
 	int particle_a{};                // 0-indexed particle indices
 	int particle_b{};
-	double softening{};              // meters, regularization for 1/r
+	double softening{};              // meters, regularization for 1/r (Coulomb)
+	double strength{};               // Joules (Contact)
+	double width{};                  // meters, barrier width (Contact)
 };
 
 enum class SimMode { Joint, Factored };

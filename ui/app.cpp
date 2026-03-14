@@ -56,6 +56,16 @@ void App::load()
 			n->read("dt", dt);
 			for(auto &sim : m_experiment.simulations)
 				sim->set_dt(dt);
+			int ab = 0;
+			n->read("absorb", ab);
+			if(ab) {
+				for(auto &sim : m_experiment.simulations)
+					sim->set_absorbing_boundary(true);
+			}
+		}
+		for(int d = 0; d < MAX_RANK; d++) {
+			char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
+			n->read(key, m_view.cursor[d]);
 		}
 	}
 }
@@ -76,8 +86,14 @@ void App::save()
 	cw.pop();
 	cw.push("experiment");
 	cw.write("timescale", m_experiment.timescale);
-	if(!m_experiment.simulations.empty())
+	if(!m_experiment.simulations.empty()) {
 		cw.write("dt", m_experiment.simulations[0]->dt);
+		cw.write("absorb", m_experiment.simulations[0]->absorbing_boundary ? 1 : 0);
+	}
+	for(int d = 0; d < MAX_RANK; d++) {
+		char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
+		cw.write(key, m_view.cursor[d]);
+	}
 	cw.pop();
 	cw.close();
 }
@@ -267,6 +283,12 @@ void App::run()
 		// / to reverse time direction
 		if(ImGui::IsKeyPressed(ImGuiKey_Slash))
 			m_experiment.timescale = -m_experiment.timescale;
+
+		// B to toggle absorbing boundary
+		if(ImGui::IsKeyPressed(ImGuiKey_B)) {
+			for(auto &sim : m_experiment.simulations)
+				sim->set_absorbing_boundary(!sim->absorbing_boundary);
+		}
 
 		// [ and ] adjust timescale by 10^(1/3) ~= 2.154x
 		// shift+[ and shift+] adjust dt

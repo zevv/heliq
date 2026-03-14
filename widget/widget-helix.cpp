@@ -31,6 +31,7 @@ public:
 		cfg.write("amplitude", m_amplitude);
 		cfg.write("stem_density", m_stem_density);
 		cfg.write("slice_axis", m_slice_axis);
+		cfg.write("marginal", m_marginal ? 1 : 0);
 		for(int d = 0; d < MAX_RANK; d++) {
 			char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
 			cfg.write(key, m_slice_pos[d]);
@@ -50,6 +51,8 @@ public:
 		node->read("amplitude", m_amplitude);
 		node->read("stem_density", m_stem_density);
 		node->read("slice_axis", m_slice_axis);
+		int marginal = 0;
+		node->read("marginal", marginal); m_marginal = marginal;
 		for(int d = 0; d < MAX_RANK; d++) {
 			char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
 			node->read(key, m_slice_pos[d]);
@@ -80,13 +83,42 @@ public:
 				m_slice_pos[d] = sim.grid.axes[d].points - 1;
 		}
 
-		// extract a 1D slice from the grid
-		// for rank > 1, fix all other axes at m_slice_pos[d]
+		// extract 1D data from grid: slice or marginal
 		m_slice.resize(n);
 		if(sim.grid.rank == 1) {
 			for(int i = 0; i < n; i++)
 				m_slice[i] = psi_all[i];
+		} else if(m_marginal) {
+			// marginal: P(x) = Σ |ψ(x, x')|² dx'
+			// result is real (sqrt of probability density)
+			double dv = 1.0;
+			for(int d = 0; d < sim.grid.rank; d++)
+				if(d != m_slice_axis) dv *= sim.grid.axes[d].dx();
+			for(int i = 0; i < n; i++) {
+				double prob = 0;
+				int coords[MAX_RANK]{};
+				// iterate over all other axes
+				auto sum_axis = [&](auto &&self, int dim) -> void {
+					if(dim == sim.grid.rank) {
+						coords[m_slice_axis] = i;
+						size_t idx = sim.grid.linear_index(coords);
+						prob += std::norm(psi_all[idx]);
+						return;
+					}
+					if(dim == m_slice_axis) {
+						self(self, dim + 1);
+						return;
+					}
+					for(int j = 0; j < sim.grid.axes[dim].points; j++) {
+						coords[dim] = j;
+						self(self, dim + 1);
+					}
+				};
+				sum_axis(sum_axis, 0);
+				m_slice[i] = std::complex<double>(sqrt(prob * dv), 0);
+			}
 		} else {
+			// slice: fix all other axes at m_slice_pos[d]
 			for(int i = 0; i < n; i++) {
 				int coords[MAX_RANK]{};
 				for(int d = 0; d < sim.grid.rank; d++)
@@ -98,13 +130,21 @@ public:
 		}
 		auto *psi = m_slice.data();
 
-		// find max amplitude across the full grid for consistent scaling
+		// find max amplitude for consistent scaling
 		double max_amp = 1e-30;
-		size_t total = sim.grid.total_points();
-		for(size_t i = 0; i < total; i++) {
-			double a = std::abs(psi_all[i]);
-			if(a > max_amp) max_amp = a;
+		if(m_marginal) {
+			for(int i = 0; i < n; i++) {
+				double a = std::abs(psi[i]);
+				if(a > max_amp) max_amp = a;
+			}
+		} else {
+			size_t total = sim.grid.total_points();
+			for(size_t i = 0; i < total; i++) {
+				double a = std::abs(psi_all[i]);
+				if(a > max_amp) max_amp = a;
+			}
 		}
+
 
 		// handle mouse input for rotation
 		handle_mouse(r);
@@ -212,29 +252,31 @@ public:
 		}
 
 		// draw helix line
-		for(int i = 0; i < n - 1; i++) {
-			double amp = std::abs(psi[i]) / max_amp;
-			uint8_t cr, cg, cb;
-			if(m_helix_color == 0) {
-				// gray: white fading by amplitude
-				cr = cg = cb = (uint8_t)(200 * amp + 40 * (1 - amp));
-			} else if(m_helix_color == 1) {
-				// phase: hue from phase angle
-				double phase = atan2(psi[i].imag(), psi[i].real());
-				double hue = (phase + M_PI) / (2 * M_PI);
-				hsv_to_rgb(hue, 1.0, 1.0, cr, cg, cb);
-				cr = (uint8_t)(cr * amp + 40 * (1 - amp));
-				cg = (uint8_t)(cg * amp + 40 * (1 - amp));
-				cb = (uint8_t)(cb * amp + 40 * (1 - amp));
-			} else {
-				// flame: red -> yellow -> white by amplitude
-				cr = (uint8_t)(255 * amp + 40 * (1 - amp));
-				cg = (uint8_t)(255 * fmin(1.0, amp * 2.0) * amp + 40 * (1 - amp));
-				cb = (uint8_t)(255 * fmin(1.0, fmax(0.0, amp * 2.0 - 1.0)) * amp + 20 * (1 - amp));
+		if(m_helix_color) {
+			for(int i = 0; i < n - 1; i++) {
+				double amp = std::abs(psi[i]) / max_amp;
+				uint8_t cr, cg, cb;
+				if(m_helix_color == 1) {
+					// gray: white fading by amplitude
+					cr = cg = cb = (uint8_t)(200 * amp + 40 * (1 - amp));
+				} else if(m_helix_color == 2) {
+					// phase: hue from phase angle
+					double phase = atan2(psi[i].imag(), psi[i].real());
+					double hue = (phase + M_PI) / (2 * M_PI);
+					hsv_to_rgb(hue, 1.0, 1.0, cr, cg, cb);
+					cr = (uint8_t)(cr * amp + 40 * (1 - amp));
+					cg = (uint8_t)(cg * amp + 40 * (1 - amp));
+					cb = (uint8_t)(cb * amp + 40 * (1 - amp));
+				} else {
+					// flame: red -> yellow -> white by amplitude
+					cr = (uint8_t)(255 * amp + 40 * (1 - amp));
+					cg = (uint8_t)(255 * fmin(1.0, amp * 2.0) * amp + 40 * (1 - amp));
+					cb = (uint8_t)(255 * fmin(1.0, fmax(0.0, amp * 2.0 - 1.0)) * amp + 20 * (1 - amp));
+				}
+				SDL_SetRenderDrawColor(rend, cr, cg, cb, 255);
+				SDL_RenderLine(rend, helix_pts[i].x, helix_pts[i].y,
+						     helix_pts[i+1].x, helix_pts[i+1].y);
 			}
-			SDL_SetRenderDrawColor(rend, cr, cg, cb, 255);
-			SDL_RenderLine(rend, helix_pts[i].x, helix_pts[i].y,
-			                     helix_pts[i+1].x, helix_pts[i+1].y);
 		}
 
 		// draw envelope curve on the x-axis plane
@@ -261,23 +303,36 @@ public:
 		if(ImGui::IsWindowFocused()) handle_keys();
 
 		// controls
-		static const char *helix_color_names[] = { "gray", "rainbow", "flame" };
+		static const char *helix_color_names[] = { "off", "gray", "rainbow", "flame" };
+
+		ImGui::Text("Env:");
+		ImGui::SameLine();
 		ImGui::SetNextItemWidth(80);
 		ImGui::Combo("##envelope", &m_envelope, envelope_names, (int)Envelope::COUNT);
 		ImGui::SameLine();
+
+		ImGui::Text("Helix:");
+		ImGui::SameLine();
 		ImGui::SetNextItemWidth(70);
-		ImGui::Combo("##helixcol", &m_helix_color, helix_color_names, 3);
+		ImGui::Combo("##helixcol", &m_helix_color, helix_color_names, 4);
+		ImGui::SameLine();
+		
+		ImGui::Text("Vectors:");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(60);
+		ImGui::SliderInt("##stems", &m_stem_density, 0, 512, "%d");
+		ImGui::SameLine();
+
+		ImGui::Text("Amp:");
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(60);
 		ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 1.0f, "%.2f");
 		ImGui::SameLine();
-		ImGui::SetNextItemWidth(60);
-		ImGui::SliderInt("##stems", &m_stem_density, 0, 256, "%d");
-		ImGui::SameLine();
-		ImGui::Text("%s", m_ortho ? "O" : "P");
 
-		// slice axis selector for rank > 1
+		// slice axis selector and mode controls for rank > 1
 		if(sim.grid.rank > 1) {
+			ImGui::Text("Axis:");
+			ImGui::SameLine();
 			for(int d = 0; d < sim.grid.rank; d++) {
 				ImGui::SameLine();
 				ImGui::PushID(d);
@@ -285,14 +340,17 @@ public:
 				ImGui::RadioButton(label, &m_slice_axis, d);
 				ImGui::PopID();
 			}
+			ImGui::SameLine();
+			if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
+				m_marginal = !m_marginal;
 		}
 
 		// read slice position from shared cursor
-		for(int d = 0; d < sim.grid.rank; d++)
-			m_slice_pos[d] = m_view.cursor[d];
-
-		// publish slice state to view for grid crosshairs
-		m_view.add_slice(m_slice_axis, m_slice_pos);
+		if(!m_marginal) {
+			for(int d = 0; d < sim.grid.rank; d++)
+				m_slice_pos[d] = m_view.cursor[d];
+			m_view.add_slice(m_slice_axis, m_slice_pos);
+		}
 	}
 
 private:
@@ -308,6 +366,7 @@ private:
 	int m_slice_axis{0};
 	int m_slice_pos[MAX_RANK]{};  // fixed position on non-display axes
 	std::vector<std::complex<double>> m_slice;
+	bool m_marginal{false};       // show marginal instead of slice
 	bool m_orbiting{false};
 	bool m_panning{false};
 	float m_drag_x{}, m_drag_y{};
@@ -332,19 +391,28 @@ private:
 		if(key(ImGuiKey_Keypad1, ImGuiKey_1)) {
 			if(ctrl) { m_yaw = M_PI; m_pitch = 0; }      // back
 			else     { m_yaw = 0;    m_pitch = 0; }       // front
-			m_pan_x = 0; m_pan_y = 0; m_dist = 2.5;
 		}
 		if(key(ImGuiKey_Keypad3, ImGuiKey_3)) {
 			if(ctrl) { m_yaw = -M_PI/2; m_pitch = 0; }   // left
 			else     { m_yaw =  M_PI/2; m_pitch = 0; }   // right
-			m_pan_x = 0; m_pan_y = 0; m_dist = 2.5;
 		}
 		if(key(ImGuiKey_Keypad7, ImGuiKey_7)) {
 			if(ctrl) { m_yaw = 0; m_pitch = -M_PI*0.49; } // bottom
 			else     { m_yaw = 0; m_pitch =  M_PI*0.49; } // top
-			m_pan_x = 0; m_pan_y = 0; m_dist = 2.5;
 		}
 		if(key(ImGuiKey_Keypad5, ImGuiKey_5)) { m_ortho = !m_ortho; }
+
+		// A: reset everything to defaults
+		if(ImGui::IsKeyPressed(ImGuiKey_A)) {
+			m_yaw = 0; m_pitch = 0; m_dist = 2.5;
+			m_pan_x = 0; m_pan_y = 0;
+			m_ortho = true;
+			m_amplitude = 1.0f;
+			m_envelope = 1;
+			m_helix_color = 1;
+			m_stem_density = 64;
+			m_marginal = false;
+		}
 
 		if(key(ImGuiKey_Keypad4, ImGuiKey_4)) { m_yaw -= M_PI/12; }
 		if(key(ImGuiKey_Keypad6, ImGuiKey_6)) { m_yaw += M_PI/12; }

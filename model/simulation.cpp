@@ -72,23 +72,45 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 }
 
 
-void Simulation::precompute_phases()
+void Simulation::compute_potential_phase()
 {
-	size_t n = grid.total_points();
-
-	// potential phase: exp(-i V dt / (2 hbar))
 	max_potential_phase = 0;
-	for(size_t i = 0; i < n; i++) {
-		double vr = potential[i].real();
-		double vi = potential[i].imag();
+	grid.each([&](size_t idx, const int *coords, const double *pos) {
+		double vr = potential[idx].real();
+		double vi = potential[idx].imag();
+
 		double phase = -vr * dt / (2.0 * hbar);
 		double decay = -vi * dt / (2.0 * hbar);
-		double amp = exp(decay);
-		m_potential_phase[i] = amp * std::complex<double>(cos(phase), sin(phase));
-		if(fabs(phase) > max_potential_phase) max_potential_phase = fabs(phase);
-	}
 
-	// kinetic phase: exp(-i dt Σ_d hbar k_d² / (2 m_d))
+		// absorbing boundary: always decays, independent of dt sign
+		if(absorbing_boundary) {
+			double absorb = 0;
+			for(int d = 0; d < grid.rank; d++) {
+				double L = grid.axes[d].max - grid.axes[d].min;
+				double w = absorb_width * L;
+				double dist_lo = pos[d] - grid.axes[d].min;
+				double dist_hi = grid.axes[d].max - pos[d];
+				if(dist_lo < w) {
+					double t = cos(0.5 * M_PI * dist_lo / w);
+					absorb += absorb_strength * t * t;
+				}
+				if(dist_hi < w) {
+					double t = cos(0.5 * M_PI * dist_hi / w);
+					absorb += absorb_strength * t * t;
+				}
+			}
+			decay -= absorb * fabs(dt) / (2.0 * hbar);
+		}
+
+		double amp = exp(decay);
+		m_potential_phase[idx] = amp * std::complex<double>(cos(phase), sin(phase));
+		if(fabs(phase) > max_potential_phase) max_potential_phase = fabs(phase);
+	});
+}
+
+
+void Simulation::compute_kinetic_phase()
+{
 	max_kinetic_phase = 0;
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
 		double phase = 0;
@@ -102,6 +124,13 @@ void Simulation::precompute_phases()
 		m_kinetic_phase[idx] = std::complex<double>(cos(-phase), sin(-phase));
 		if(fabs(phase) > max_kinetic_phase) max_kinetic_phase = fabs(phase);
 	});
+}
+
+
+void Simulation::precompute_phases()
+{
+	compute_potential_phase();
+	compute_kinetic_phase();
 }
 
 
@@ -122,6 +151,37 @@ double Simulation::total_probability()
 	for(size_t i = 0; i < n; i++)
 		prob += std::norm(p[i]) * dv;
 	return prob;
+}
+
+
+void Simulation::set_absorbing_boundary(bool on)
+{
+	if(on == absorbing_boundary) return;
+	absorbing_boundary = on;
+
+	// strength: peak imaginary potential at the boundary edge
+	// needs to be large enough to absorb within the boundary width
+	// but not so large that it causes reflections at the boundary onset
+	// use max kinetic phase as a reference for energy scale
+	double dx_min = grid.axes[0].dx();
+	for(int d = 1; d < grid.rank; d++)
+		if(grid.axes[d].dx() < dx_min) dx_min = grid.axes[d].dx();
+	// find peak kinetic energy from the actual potential phases
+	double V_max = 0;
+	size_t n = grid.total_points();
+	for(size_t i = 0; i < n; i++) {
+		double v = fabs(potential[i].real());
+		if(v > V_max) V_max = v;
+	}
+	// fall back to a reasonable scale if no potential
+	if(V_max < 1e-30) {
+		double k_max = M_PI / dx_min;
+		V_max = hbar * hbar * k_max * k_max / (2.0 * mass[0]) * 0.01;
+	}
+	absorb_strength = V_max * 0.1;
+
+	compute_potential_phase();
+	upload_phases();
 }
 
 
@@ -218,6 +278,12 @@ void Simulation::sample_potential(const Setup &setup)
 					double dx = pos[a] - pos[b];
 					double r = sqrt(dx * dx + inter.softening * inter.softening);
 					v += k_coulomb * q_a * q_b / r;
+					break;
+				}
+				case Interaction::Contact: {
+					double dx = fabs(pos[a] - pos[b]);
+					if(dx < inter.width)
+						v += inter.strength;
 					break;
 				}
 			}

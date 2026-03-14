@@ -1,6 +1,7 @@
--- Two electrons in 1D with Coulomb repulsion
+-- Two particles in 1D with contact interaction
 -- Joint configuration space: ψ(x₁, x₂) on a 2D grid
--- x-axis = electron 1 position, y-axis = electron 2 position
+-- Thin barrier along diagonal x₁=x₂ causes partial reflection + tunneling
+-- After scatter: two lobes = entangled superposition of outcomes
 
 dimensions(2)
 
@@ -23,7 +24,7 @@ local momentum = math.sqrt(2 * m_electron * energy)
 particle(electron, {
     position = { -2 * um },
     momentum = { momentum },
-    width = 0.1 * um,
+    width = 0.3 * um,
 })
 
 -- electron 2: moving left from the right
@@ -33,9 +34,11 @@ particle(electron, {
     width = 0.3 * um,
 })
 
--- Coulomb repulsion between the two electrons
+-- contact interaction: thin barrier along diagonal
+-- just above kinetic energy, very thin for partial tunneling
 interaction {
-    type = "coulomb",
+    type = "contact",
     particles = { 1, 2 },
-    softening = 0.1 * um,
+    strength = energy * 1.5,
+    width = 0.02 * um,
 }

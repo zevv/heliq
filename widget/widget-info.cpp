@@ -13,52 +13,85 @@ public:
 		SDL_SetRenderDrawColor(rend, 20, 20, 25, 255);
 		SDL_RenderFillRect(rend, nullptr);
 
-		// transport controls at top
-		if(ImGui::Button(exp.running ? "Pause" : "Play"))
-			exp.running = !exp.running;
-		ImGui::SameLine();
-		ImGui::Text("t = %.4e s", exp.sim_time);
-
-		ImGui::Text("Speed:");
-		ImGui::SameLine();
+		ImVec4 col_ok   = ImVec4(0.4, 0.8, 0.4, 1);
+		ImVec4 col_warn = ImVec4(0.9, 0.8, 0.2, 1);
+		ImVec4 col_bad  = ImVec4(1.0, 0.3, 0.3, 1);
 		bool rev = exp.timescale < 0;
-		if(ImGui::Button(rev ? "<" : ">")) exp.timescale = -exp.timescale;
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(-1);
-		float log_ts = log10f(fabs(exp.timescale));
-		if(ImGui::SliderFloat("##speed", &log_ts, -18.0f, -9.0f, "1e%.1f s/s"))
-			exp.timescale = (rev ? -1.0 : 1.0) * pow(10.0, log_ts);
 
-		if(!exp.simulations.empty()) {
-			auto &sim = *exp.simulations[0];
+		if(ImGui::BeginTable("controls", 2, ImGuiTableFlags_SizingStretchProp)) {
+			ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, 60);
+			ImGui::TableSetupColumn("ctrl", ImGuiTableColumnFlags_WidthStretch);
 
-			ImGui::Text("dt:");
+			// transport
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			if(ImGui::Button(exp.running ? "||" : ">"))
+				exp.running = !exp.running;
 			ImGui::SameLine();
+			if(ImGui::Button(rev ? "<" : ">"))
+				exp.timescale = -exp.timescale;
+			ImGui::TableNextColumn();
+			ImGui::Text("t = %.4e s", exp.sim_time);
+
+			// speed
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::Text("Speed");
+			ImGui::TableNextColumn();
 			ImGui::SetNextItemWidth(-1);
-			float log_dt = log10f(sim.dt);
-			if(ImGui::SliderFloat("##dt", &log_dt, -18.0f, -11.0f, "1e%.1f s")) {
-				double new_dt = pow(10.0, log_dt);
-				for(auto &s : exp.simulations)
-					s->set_dt(new_dt);
+			float log_ts = log10f(fabs(exp.timescale));
+			if(ImGui::SliderFloat("##speed", &log_ts, -18.0f, -9.0f, "1e%.1f s/s"))
+				exp.timescale = (rev ? -1.0 : 1.0) * pow(10.0, log_ts);
+
+			if(!exp.simulations.empty()) {
+				auto &sim = *exp.simulations[0];
+
+				// dt
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::Text("dt");
+				ImGui::TableNextColumn();
+				ImGui::SetNextItemWidth(-1);
+				float log_dt = log10f(sim.dt);
+				if(ImGui::SliderFloat("##dt", &log_dt, -18.0f, -11.0f, "1e%.1f s")) {
+					double new_dt = pow(10.0, log_dt);
+					for(auto &s : exp.simulations)
+						s->set_dt(new_dt);
+				}
+
+				// phases
+				double pp = sim.max_potential_phase;
+				double kp = sim.max_kinetic_phase;
+				ImVec4 col_p = (pp < 0.3) ? col_ok : (pp < 1.0) ? col_warn : col_bad;
+				ImVec4 col_k = (kp < 0.3) ? col_ok : (kp < 1.0) ? col_warn : col_bad;
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::Text("Phase");
+				ImGui::TableNextColumn();
+				ImGui::TextColored(col_p, "V %.2f", pp);
+				ImGui::SameLine();
+				ImGui::TextColored(col_k, "K %.2f", kp);
+
+				// probability + absorb
+				double prob = sim.total_probability();
+				ImVec4 col_prob = (fabs(prob - 1.0) < 0.01) ? col_ok :
+				                  (fabs(prob - 1.0) < 0.05) ? col_warn : col_bad;
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::Text("P");
+				ImGui::TableNextColumn();
+				ImGui::TextColored(col_prob, "%.6f", prob);
+				ImGui::SameLine();
+				bool ab = sim.absorbing_boundary;
+				if(ImGui::Checkbox("Absorb", &ab)) {
+					for(auto &s : exp.simulations)
+						s->set_absorbing_boundary(ab);
+				}
 			}
 
-			// phase diagnostics
-			double pp = sim.max_potential_phase;
-			double kp = sim.max_kinetic_phase;
-			ImVec4 col_ok = ImVec4(0.4, 0.8, 0.4, 1);
-			ImVec4 col_warn = ImVec4(0.9, 0.8, 0.2, 1);
-			ImVec4 col_bad = ImVec4(1.0, 0.3, 0.3, 1);
-			ImVec4 col_p = (pp < 0.3) ? col_ok : (pp < 1.0) ? col_warn : col_bad;
-			ImVec4 col_k = (kp < 0.3) ? col_ok : (kp < 1.0) ? col_warn : col_bad;
-			ImGui::TextColored(col_p, "V phase: %.2f rad", pp);
-			ImGui::SameLine();
-			ImGui::TextColored(col_k, "K phase: %.2f rad", kp);
-
-			// probability conservation
-			double prob = sim.total_probability();
-			ImVec4 col_prob = (fabs(prob - 1.0) < 0.01) ? col_ok :
-			                  (fabs(prob - 1.0) < 0.05) ? col_warn : col_bad;
-			ImGui::TextColored(col_prob, "P(total) = %.6f", prob);
+			ImGui::EndTable();
 		}
 
 		// experiment info below

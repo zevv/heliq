@@ -221,7 +221,7 @@ public:
 
 		// draw slice crosshairs from view
 		if(grid.rank >= 2) {
-			SDL_SetRenderDrawColor(rend, 200, 200, 60, 120);
+			SDL_SetRenderDrawColor(rend, 100, 100, 100, 120);
 			for(int si = 0; si < m_view.n_slices; si++) {
 				auto &sl = m_view.slices[si];
 				if(!sl.valid) continue;
@@ -237,8 +237,8 @@ public:
 			}
 		}
 
-		// reset view — only when panel is focused
-		if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_1)) {
+		// A: reset view to defaults
+		if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
 			m_zoom = 1.0f;
 			m_pan_x = 0;
 			m_pan_y = 0;
@@ -366,7 +366,7 @@ private:
 						row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
 					} break;
 					case Palette::Zebra: {
-						uint8_t c = (uint8_t)(140 + 115 * sin(norm * 2 * M_PI));
+						uint8_t c = (uint8_t)(115 + 115 * sin(norm * 8 * M_PI));
 						row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
 					} break;
 					default: row[x] = 0; break;

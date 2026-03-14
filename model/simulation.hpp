@@ -47,6 +47,12 @@ public:
 	// read access for widgets
 	std::complex<double> *psi_front() { return psi[front.load()]; }
 
+	// absorbing boundary
+	bool absorbing_boundary{false};
+	double absorb_width{0.02};    // fraction of domain width per side
+	double absorb_strength{};     // auto-computed from dt
+	void set_absorbing_boundary(bool on);
+
 	// diagnostics
 	double max_potential_phase{};  // max |V*dt/(2*hbar)| in radians
 	double max_kinetic_phase{};    // max |hbar*k^2/(2m)*dt| in radians
@@ -56,6 +62,8 @@ private:
 	void sample_potential(const Setup &setup);
 	void sample_wavefunction(const Setup &setup);
 	void precompute_phases();
+	void compute_potential_phase();
+	void compute_kinetic_phase();
 	void upload_phases();
 
 	std::unique_ptr<Solver> m_solver{};

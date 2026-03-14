@@ -162,6 +162,7 @@ static bool load_interactions(lua_State *L, Setup &setup)
 			const char *type = getfield_string(L, -1, "type");
 			if(type) {
 				if(strcmp(type, "coulomb") == 0) inter.type = Interaction::Coulomb;
+				else if(strcmp(type, "contact") == 0) inter.type = Interaction::Contact;
 				else fprintf(stderr, "loader: unknown interaction type '%s'\n", type);
 			}
 
@@ -178,6 +179,8 @@ static bool load_interactions(lua_State *L, Setup &setup)
 			lua_pop(L, 1);
 
 			inter.softening = getfield_number(L, -1, "softening");
+			inter.strength  = getfield_number(L, -1, "strength");
+			inter.width     = getfield_number(L, -1, "width");
 
 			setup.interactions.push_back(inter);
 		}

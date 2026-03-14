@@ -114,6 +114,8 @@ function env.interaction(spec)
         type       = spec.type or "coulomb",
         particles  = spec.particles or error("interaction: particles required"),
         softening  = spec.softening or 0,
+        strength   = spec.strength or 0,
+        width      = spec.width or 0,
     }
 end
 
@@ -267,6 +269,24 @@ local function compute_defaults()
         if h > v_max then v_max = h end
         local d = pot.depth or 0
         if d > v_max then v_max = d end
+        -- harmonic: V = 0.5 * k * r_max^2, where r_max is the domain edge
+        if pot.type == "harmonic" and pot.k then
+            local r2_max = 0
+            for i, ax in ipairs(world.domain) do
+                local c = (pot.center and pot.center[i]) or 0
+                local d1 = math.abs(ax.max - c)
+                local d2 = math.abs(ax.min - c)
+                local dmax = math.max(d1, d2)
+                r2_max = r2_max + dmax * dmax
+            end
+            local vh = 0.5 * pot.k * r2_max
+            if vh > v_max then v_max = vh end
+        end
+    end
+    -- also check interaction strengths
+    for _, inter in ipairs(world.interactions) do
+        local s = inter.strength or 0
+        if s > v_max then v_max = s end
     end
     local dt_potential = (v_max > 0) and (math.pi * 2 * hbar / v_max) or math.huge
 
