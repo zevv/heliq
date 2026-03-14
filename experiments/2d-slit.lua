@@ -1,10 +1,10 @@
--- Single electron hitting a potential barrier in 2D
+-- Single electron diffracting through a slit in 2D
 
 dimensions(2)
 
 domain {
-    { min = -5 * um, max = 5 * um, points = 1024 },
-    { min = -5 * um, max = 5 * um, points = 1024 },
+    { min = -5 * um, max = 5 * um, points = 512 },
+    { min = -5 * um, max = 5 * um, points = 512 },
 }
 
 electron = def_particle {
@@ -12,7 +12,7 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.001 * eV
+local energy = 0.062e-3 * eV   -- 0.062 meV, ~8 pts/wavelength at 512
 local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
@@ -22,16 +22,16 @@ particle(electron, {
 })
 
 -- wall with slit: gap of 400nm centered at y=0
-local wall_h = 0.1 * eV   -- 100x kinetic energy, minimal tunneling
-local wall_w = 250 * nm   -- thick enough for ~50 grid points
+local wall_h = 5 * energy
+local wall_w = 0.2 * um
+
 barrier {
-    from = { -wall_w,  0.1 * um },
+    from = { -wall_w,  0.2 * um },
     to   = {  wall_w,  10 * um },
     height = wall_h,
 }
 barrier {
     from = { -wall_w, -10 * um },
-    to   = {  wall_w, -0.1 * um },
+    to   = {  wall_w, -0.2 * um },
     height = wall_h,
 }
-

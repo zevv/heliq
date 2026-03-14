@@ -144,26 +144,50 @@ public:
 			SDL_RenderLines(rend, axis, 2);
 		}
 
-		// draw potential along the slice as thick lines on the x-axis
+		// draw potential regions as 3D quads on the axis
 		{
 			auto *pot = sim.potential;
-			SDL_SetRenderDrawColor(rend, 180, 100, 40, 200);
-			for(int i = 0; i < n; i++) {
-				int coords[MAX_RANK]{};
-				for(int d = 0; d < sim.grid.rank; d++)
-					coords[d] = m_slice_pos[d];
-				coords[m_slice_axis] = i;
-				size_t idx = sim.grid.linear_index(coords);
-				if(pot[idx].real() <= 0) continue;
-
-				double t = (double)i / (n - 1);
-				double x = -1.0 + 2.0 * t;
-				// draw a vertical line segment through the axis
-				vec3 p0 = vp.transform({x, -0.15, 0});
-				vec3 p1 = vp.transform({x,  0.15, 0});
-				SDL_FPoint s0 = project_to_screen(p0, r.x, r.y, r.w, r.h);
-				SDL_FPoint s1 = project_to_screen(p1, r.x, r.y, r.w, r.h);
-				SDL_RenderLine(rend, s0.x, s0.y, s1.x, s1.y);
+			SDL_SetRenderDrawColor(rend, 80, 80, 80, 100);
+			double h = 10.0;  // large enough to fill the view
+			int start = -1;
+			for(int i = 0; i <= n; i++) {
+				double v = 0;
+				if(i < n) {
+					int coords[MAX_RANK]{};
+					for(int d = 0; d < sim.grid.rank; d++)
+						coords[d] = m_slice_pos[d];
+					coords[m_slice_axis] = i;
+					size_t idx = sim.grid.linear_index(coords);
+					v = pot[idx].real();
+				}
+				if(v > 0 && start < 0) {
+					start = i;
+				} else if(v <= 0 && start >= 0) {
+					// draw quad from start to i
+					double x0 = -1.0 + 2.0 * start / (n - 1);
+					double x1 = -1.0 + 2.0 * i / (n - 1);
+					vec3 corners[4] = {
+						vp.transform({x0, -h, 0}),
+						vp.transform({x1, -h, 0}),
+						vp.transform({x1,  h, 0}),
+						vp.transform({x0,  h, 0}),
+					};
+					SDL_FPoint sp[4];
+					for(int c = 0; c < 4; c++)
+						sp[c] = project_to_screen(corners[c], r.x, r.y, r.w, r.h);
+					// filled quad as two triangles
+					SDL_FColor col = {0.31f, 0.31f, 0.31f, 0.4f};
+					SDL_Vertex verts[6] = {
+						{{sp[0].x, sp[0].y}, col, {0,0}},
+						{{sp[1].x, sp[1].y}, col, {0,0}},
+						{{sp[2].x, sp[2].y}, col, {0,0}},
+						{{sp[0].x, sp[0].y}, col, {0,0}},
+						{{sp[2].x, sp[2].y}, col, {0,0}},
+						{{sp[3].x, sp[3].y}, col, {0,0}},
+					};
+					SDL_RenderGeometry(rend, nullptr, verts, 6, nullptr, 0);
+					start = -1;
+				}
 			}
 		}
 
@@ -220,8 +244,8 @@ public:
 			}
 		}
 
-		// view presets (Blender numpad style)
-		handle_keys();
+		// view presets (Blender numpad style) — only when panel is focused
+		if(ImGui::IsWindowFocused()) handle_keys();
 
 		// controls
 		ImGui::SetNextItemWidth(120);
@@ -287,14 +311,17 @@ private:
 		if(key(ImGuiKey_Keypad1, ImGuiKey_1)) {
 			if(ctrl) { m_yaw = M_PI; m_pitch = 0; }      // back
 			else     { m_yaw = 0;    m_pitch = 0; }       // front
+			m_pan_x = 0; m_pan_y = 0; m_dist = 2.5;
 		}
 		if(key(ImGuiKey_Keypad3, ImGuiKey_3)) {
 			if(ctrl) { m_yaw = -M_PI/2; m_pitch = 0; }   // left
 			else     { m_yaw =  M_PI/2; m_pitch = 0; }   // right
+			m_pan_x = 0; m_pan_y = 0; m_dist = 2.5;
 		}
 		if(key(ImGuiKey_Keypad7, ImGuiKey_7)) {
 			if(ctrl) { m_yaw = 0; m_pitch = -M_PI*0.49; } // bottom
 			else     { m_yaw = 0; m_pitch =  M_PI*0.49; } // top
+			m_pan_x = 0; m_pan_y = 0; m_dist = 2.5;
 		}
 		if(key(ImGuiKey_Keypad5, ImGuiKey_5)) { m_ortho = !m_ortho; }
 

@@ -200,8 +200,8 @@ public:
 			}
 		}
 
-		// reset view
-		if(ImGui::IsKeyPressed(ImGuiKey_1)) {
+		// reset view — only when panel is focused
+		if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_1)) {
 			m_zoom = 1.0f;
 			m_pan_x = 0;
 			m_pan_y = 0;

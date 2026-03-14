@@ -3,7 +3,7 @@
 dimensions(1)
 
 domain {
-    { min = -5 * um, max = 5 * um, points = 4096 },
+    { min = -5 * um, max = 5 * um, points = 512 },
 }
 
 electron = def_particle {
@@ -11,17 +11,20 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.001 * eV   -- 1 meV, wavelength ~39nm, ~4 pts per wavelength
+local energy = 0.062e-3 * eV   -- 0.062 meV, ~8 pts/wavelength at 512
 local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
     position = { -2 * um },
     momentum = { momentum },
-    width = 0.6 * um,
+    width = 0.2 * um,
 })
 
+local wall_h = 5 * energy
+local wall_w = 0.2 * um
+
 barrier {
-    from = { -50 * nm },
-    to   = {  50 * nm },
-    height = 0.0005 * eV,    -- 5 meV, higher than kinetic energy
+    from = { -wall_w },
+    to   = {  wall_w },
+    height = wall_h,
 }

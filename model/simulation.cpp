@@ -2,6 +2,7 @@
 #include <fftw3.h>
 #include <algorithm>
 #include <math.h>
+#include <thread>
 
 #include "simulation.hpp"
 #include "constants.hpp"
@@ -12,7 +13,7 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 {
 	if(!fftw_threads_initialized) {
 		fftw_init_threads();
-		fftw_plan_with_nthreads(4);  // TODO: detect core count
+		fftw_plan_with_nthreads(std::thread::hardware_concurrency());
 		fftw_threads_initialized = true;
 	}
 
