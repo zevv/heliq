@@ -12,6 +12,7 @@
 
 #include "app.hpp"
 #include "style.hpp"
+#include "loader.hpp"
 
 
 App::App()
@@ -184,7 +185,17 @@ void App::draw()
 void App::init(int argc, char **argv)
 {
 	init_video();
-	
+
+	// load experiment from script
+	const char *script = (argc > 1) ? argv[1] : "experiments/barrier-1d.lua";
+	if(load_setup(script, m_experiment.setup)) {
+		auto &s = m_experiment.setup;
+		fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",
+			s.spatial_dims, s.particles.size(), s.potentials.size(), s.simulations.size());
+	} else {
+		fprintf(stderr, "failed to load experiment\n");
+	}
+
 	m_root_panel = new Panel(Panel::Type::Root);
 	load();
 

@@ -12,6 +12,7 @@ SRC += ui/widgetregistry.cpp
 SRC += ui/misc.cpp
 SRC += ui/config.cpp
 SRC += ui/style.cpp
+SRC += model/loader.cpp
 SRC += widget/widget-dummy.cpp
 SRC += $(IMGUI_DIR)/imgui.cpp 
 SRC += $(IMGUI_DIR)/imgui_demo.cpp
@@ -21,7 +22,7 @@ SRC += $(IMGUI_DIR)/imgui_widgets.cpp
 SRC += $(IMGUI_DIR)/backends/imgui_impl_sdl3.cpp
 SRC += $(IMGUI_DIR)/backends/imgui_impl_sdlrenderer3.cpp
 
-PKG += fftw3 sdl3
+PKG += fftw3 sdl3 lua5.4
 
 
 PKG_CFLAGS := $(shell pkg-config $(PKG) --cflags)
@@ -79,12 +80,30 @@ CFLAGS = $(CXXFLAGS)
 %.o:$(IMGUI_DIR)/backends/%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+TEST_SRC += test/test_main.cpp
+TEST_SRC += test/test_loader.cpp
+TEST_SRC += test/test_grid.cpp
+TEST_SRC += model/loader.cpp
+
+TEST_OBJS = $(TEST_SRC:.cpp=.o)
+TEST_DEPS = $(TEST_OBJS:.o=.d)
+TEST_BIN = test_quantum
+TEST_PKG = lua5.4
+TEST_CFLAGS = $(shell pkg-config $(TEST_PKG) --cflags)
+TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs)
+
 all: $(BIN)
 
 $(BIN): $(OBJS)
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBS)
 
-clean:
-	rm -f $(BIN) $(OBJS) $(DEPS)
+$(TEST_BIN): $(TEST_OBJS)
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(TEST_LIBS)
 
--include $(DEPS)
+test: $(TEST_BIN)
+	./$(TEST_BIN)
+
+clean:
+	rm -f $(BIN) $(TEST_BIN) $(OBJS) $(DEPS) $(TEST_OBJS) $(TEST_DEPS)
+
+-include $(DEPS) $(TEST_DEPS)
