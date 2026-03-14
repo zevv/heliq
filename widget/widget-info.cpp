@@ -21,10 +21,13 @@ public:
 
 		ImGui::Text("Speed:");
 		ImGui::SameLine();
+		bool rev = exp.timescale < 0;
+		if(ImGui::Button(rev ? "<" : ">")) exp.timescale = -exp.timescale;
+		ImGui::SameLine();
 		ImGui::SetNextItemWidth(-1);
-		float log_ts = log10f(exp.timescale);
+		float log_ts = log10f(fabs(exp.timescale));
 		if(ImGui::SliderFloat("##speed", &log_ts, -18.0f, -9.0f, "1e%.1f s/s"))
-			exp.timescale = pow(10.0, log_ts);
+			exp.timescale = (rev ? -1.0 : 1.0) * pow(10.0, log_ts);
 
 		if(!exp.simulations.empty()) {
 			auto &sim = *exp.simulations[0];

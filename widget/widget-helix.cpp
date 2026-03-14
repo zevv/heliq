@@ -152,11 +152,10 @@ public:
 			SDL_RenderLines(rend, axis, 2);
 		}
 
-		// draw potential regions as 3D quads on the axis
+		// draw potential regions as fat gray lines on the axis
 		{
 			auto *pot = sim.potential;
-			SDL_SetRenderDrawColor(rend, 80, 80, 80, 100);
-			double h = 10.0;  // large enough to fill the view
+			SDL_SetRenderDrawColor(rend, 120, 120, 120, 200);
 			int start = -1;
 			for(int i = 0; i <= n; i++) {
 				double v = 0;
@@ -171,29 +170,28 @@ public:
 				if(v > 0 && start < 0) {
 					start = i;
 				} else if(v <= 0 && start >= 0) {
-					// draw quad from start to i
 					double x0 = -1.0 + 2.0 * start / (n - 1);
 					double x1 = -1.0 + 2.0 * i / (n - 1);
-					vec3 corners[4] = {
-						vp.transform({x0, -h, 0}),
-						vp.transform({x1, -h, 0}),
-						vp.transform({x1,  h, 0}),
-						vp.transform({x0,  h, 0}),
-					};
-					SDL_FPoint sp[4];
-					for(int c = 0; c < 4; c++)
-						sp[c] = project_to_screen(corners[c], r.x, r.y, r.w, r.h);
-					// filled quad as two triangles
-					SDL_FColor col = {0.31f, 0.31f, 0.31f, 0.4f};
-					SDL_Vertex verts[6] = {
-						{{sp[0].x, sp[0].y}, col, {0,0}},
-						{{sp[1].x, sp[1].y}, col, {0,0}},
-						{{sp[2].x, sp[2].y}, col, {0,0}},
-						{{sp[0].x, sp[0].y}, col, {0,0}},
-						{{sp[2].x, sp[2].y}, col, {0,0}},
-						{{sp[3].x, sp[3].y}, col, {0,0}},
-					};
-					SDL_RenderGeometry(rend, nullptr, verts, 6, nullptr, 0);
+					vec3 p0 = vp.transform({x0, 0, 0});
+					vec3 p1 = vp.transform({x1, 0, 0});
+					SDL_FPoint s0 = project_to_screen(p0, r.x, r.y, r.w, r.h);
+					SDL_FPoint s1 = project_to_screen(p1, r.x, r.y, r.w, r.h);
+					// draw fat line as thin quad
+					float dx = s1.x - s0.x, dy = s1.y - s0.y;
+					float len = sqrtf(dx * dx + dy * dy);
+					if(len > 0) {
+						float nx = -dy / len * 2.5f, ny = dx / len * 2.5f;
+						SDL_FColor col = {0.47f, 0.47f, 0.47f, 0.8f};
+						SDL_Vertex verts[6] = {
+							{{s0.x + nx, s0.y + ny}, col, {0,0}},
+							{{s1.x + nx, s1.y + ny}, col, {0,0}},
+							{{s1.x - nx, s1.y - ny}, col, {0,0}},
+							{{s0.x + nx, s0.y + ny}, col, {0,0}},
+							{{s1.x - nx, s1.y - ny}, col, {0,0}},
+							{{s0.x - nx, s0.y - ny}, col, {0,0}},
+						};
+						SDL_RenderGeometry(rend, nullptr, verts, 6, nullptr, 0);
+					}
 					start = -1;
 				}
 			}
@@ -278,7 +276,7 @@ public:
 		ImGui::SameLine();
 		ImGui::Text("%s", m_ortho ? "O" : "P");
 
-		// slice controls for rank > 1
+		// slice axis selector for rank > 1
 		if(sim.grid.rank > 1) {
 			for(int d = 0; d < sim.grid.rank; d++) {
 				ImGui::SameLine();
@@ -287,17 +285,13 @@ public:
 				ImGui::RadioButton(label, &m_slice_axis, d);
 				ImGui::PopID();
 			}
-			for(int d = 0; d < sim.grid.rank; d++) {
-				if(d == m_slice_axis) continue;
-				ImGui::SameLine();
-				ImGui::PushID(d + 100);
-				ImGui::SetNextItemWidth(80);
-				ImGui::SliderInt("##sl", &m_slice_pos[d], 0, sim.grid.axes[d].points - 1);
-				ImGui::PopID();
-			}
 		}
 
-		// publish slice state to view for other widgets to read
+		// read slice position from shared cursor
+		for(int d = 0; d < sim.grid.rank; d++)
+			m_slice_pos[d] = m_view.cursor[d];
+
+		// publish slice state to view for grid crosshairs
 		m_view.add_slice(m_slice_axis, m_slice_pos);
 	}
 

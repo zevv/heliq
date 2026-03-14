@@ -184,12 +184,15 @@ public:
 		float cx = avail_x + avail_w * 0.5f + m_pan_x;
 		float cy = avail_y + avail_h * 0.5f + m_pan_y;
 
-		SDL_FRect dst = {
+		m_grid_w = tw;
+		m_grid_h = th;
+		m_dst = {
 			cx - disp_w * 0.5f,
 			cy - disp_h * 0.5f,
 			disp_w,
 			disp_h,
 		};
+		SDL_FRect &dst = m_dst;
 
 		for(int oi = 0; oi < N_OVERLAYS; oi++) {
 			auto &ov = m_overlays[oi];
@@ -206,6 +209,16 @@ public:
 		SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
 		SDL_RenderRect(rend, &dst);
 
+		// LMB click in grid sets cursor position
+		if(grid.rank >= 2 && ImGui::IsWindowFocused()) {
+			ImVec2 mp = ImGui::GetMousePos();
+			int gx, gy;
+			if(ImGui::IsMouseClicked(ImGuiMouseButton_Left) && screen_to_grid(mp.x, mp.y, gx, gy)) {
+				m_view.cursor[0] = gx;
+				m_view.cursor[1] = gy;
+			}
+		}
+
 		// draw slice crosshairs from view
 		if(grid.rank >= 2) {
 			SDL_SetRenderDrawColor(rend, 200, 200, 60, 120);
@@ -214,14 +227,12 @@ public:
 				if(!sl.valid) continue;
 				for(int d = 0; d < grid.rank; d++) {
 					if(d == sl.axis) continue;
-					float frac = (float)sl.pos[d] / grid.axes[d].points;
-					if(d == 0) {
-						float sx = dst.x + frac * dst.w;
+					float sx, sy;
+					grid_to_screen(sl.pos[0], sl.pos[1], sx, sy);
+					if(d == 0)
 						SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
-					} else if(d == 1) {
-						float sy = dst.y + (1.0f - frac) * dst.h;
+					else if(d == 1)
 						SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
-					}
 				}
 			}
 		}
@@ -241,6 +252,29 @@ private:
 	float m_pan_x{0}, m_pan_y{0};
 	bool m_dragging{false};
 	float m_drag_x{}, m_drag_y{};
+
+	// current display rect (set each frame by do_draw)
+	SDL_FRect m_dst{};
+	int m_grid_w{1}, m_grid_h{1};
+
+	// screen pixel → grid cell
+	bool screen_to_grid(float sx, float sy, int &gx, int &gy) const {
+		if(sx < m_dst.x || sx >= m_dst.x + m_dst.w) return false;
+		if(sy < m_dst.y || sy >= m_dst.y + m_dst.h) return false;
+		gx = (int)((sx - m_dst.x) / m_dst.w * m_grid_w);
+		gy = (int)((1.0f - (sy - m_dst.y) / m_dst.h) * m_grid_h);
+		if(gx < 0) gx = 0;
+		if(gy < 0) gy = 0;
+		if(gx >= m_grid_w) gx = m_grid_w - 1;
+		if(gy >= m_grid_h) gy = m_grid_h - 1;
+		return true;
+	}
+
+	// grid cell → screen pixel (center of cell)
+	void grid_to_screen(int gx, int gy, float &sx, float &sy) const {
+		sx = m_dst.x + ((float)gx + 0.5f) / m_grid_w * m_dst.w;
+		sy = m_dst.y + (1.0f - ((float)gy + 0.5f) / m_grid_h) * m_dst.h;
+	}
 
 	void handle_mouse(SDL_Rect &r, float ctrl_h) {
 		ImVec2 mp = ImGui::GetMousePos();

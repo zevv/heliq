@@ -260,9 +260,13 @@ void App::run()
 		if(wall_dt > 0.1) wall_dt = 1.0 / 60.0;  // clamp on first frame
 		m_experiment.advance(wall_dt);
 
-		// spacebar to toggle
+		// spacebar to toggle play/pause
 		if(ImGui::IsKeyPressed(ImGuiKey_Space))
 			m_experiment.running = !m_experiment.running;
+
+		// / to reverse time direction
+		if(ImGui::IsKeyPressed(ImGuiKey_Slash))
+			m_experiment.timescale = -m_experiment.timescale;
 
 		// [ and ] adjust timescale by 10^(1/3) ~= 2.154x
 		// shift+[ and shift+] adjust dt

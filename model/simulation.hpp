@@ -30,8 +30,9 @@ public:
 	double dt{};
 	double mass{};          // kg, first particle for now
 	size_t step_count{};
+	double sim_time{};      // accumulated simulation time (supports negative dt)
 
-	double time() const { return step_count * dt; }
+	double time() const { return sim_time; }
 
 	// CPU-side wavefunction double buffer (for widget reads)
 	std::complex<double> *psi[2]{};

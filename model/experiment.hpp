@@ -22,13 +22,27 @@ public:
 		if(!running || simulations.empty()) return;
 
 		// target is always relative to current sim_time, never accumulates debt
+		// timescale sign determines forward/reverse
 		double target = sim_time + timescale * wall_dt;
+		bool forward = timescale >= 0;
+
+		// ensure sim dt sign matches timescale direction
+		for(auto &sim : simulations) {
+			double desired_dt = (forward ? 1.0 : -1.0) * fabs(sim->dt);
+			if(sim->dt != desired_dt)
+				sim->set_dt(desired_dt);
+		}
 
 		// ensure at least one step per frame so changing dt doesn't stall
 		for(auto &sim : simulations) {
-			if(sim->time() >= target)
+			bool past = forward ? sim->time() >= target : sim->time() <= target;
+			if(past)
 				target = sim->time() + sim->dt;
 		}
+
+		auto reached = [&](double t) {
+			return forward ? t >= target : t <= target;
+		};
 
 		// per-sim budget, split evenly
 		double per_sim_ms = budget_ms / simulations.size();
@@ -36,10 +50,10 @@ public:
 
 		for(auto &sim : simulations) {
 			auto t0 = std::chrono::steady_clock::now();
-			while(sim->time() < target) {
+			while(!reached(sim->time())) {
 				// enqueue a batch, then flush once to measure real GPU time
 				int batch = batch_size;
-				for(int i = 0; i < batch && sim->time() < target; i++)
+				for(int i = 0; i < batch && !reached(sim->time()); i++)
 					sim->step_compute();
 				sim->flush();
 
@@ -56,7 +70,8 @@ public:
 					batch_size = batch_size / 2;
 			}
 			sim->sync();
-			if(sim->time() < slowest)
+			bool behind = forward ? sim->time() < slowest : sim->time() > slowest;
+			if(behind)
 				slowest = sim->time();
 		}
 

@@ -18,7 +18,10 @@ public:
 
     bool lock{true};
 
-    // shared slice state — helix widgets write, grid reads
+    // persistent grid cursor — set by grid LMB click, read by helix widgets
+    int cursor[MAX_RANK]{};
+
+    // per-frame slice list — rebuilt each frame by helix widgets, read by grid for crosshairs
     static constexpr int MAX_SLICES = 8;
     struct Slice {
         int axis{};
