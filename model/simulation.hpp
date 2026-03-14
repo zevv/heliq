@@ -45,6 +45,11 @@ public:
 	// read access for widgets
 	std::complex<double> *psi_front() { return psi[front.load()]; }
 
+	// diagnostics
+	double max_potential_phase{};  // max |V*dt/(2*hbar)| in radians
+	double max_kinetic_phase{};    // max |hbar*k^2/(2m)*dt| in radians
+	double total_probability();    // should be ~1.0
+
 private:
 	void sample_potential(const Setup &setup);
 	void sample_wavefunction(const Setup &setup);

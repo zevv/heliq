@@ -27,15 +27,35 @@ public:
 			exp.timescale = pow(10.0, log_ts);
 
 		if(!exp.simulations.empty()) {
+			auto &sim = *exp.simulations[0];
+
 			ImGui::Text("dt:");
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(-1);
-			float log_dt = log10f(exp.simulations[0]->dt);
+			float log_dt = log10f(sim.dt);
 			if(ImGui::SliderFloat("##dt", &log_dt, -18.0f, -11.0f, "1e%.1f s")) {
 				double new_dt = pow(10.0, log_dt);
-				for(auto &sim : exp.simulations)
-					sim->set_dt(new_dt);
+				for(auto &s : exp.simulations)
+					s->set_dt(new_dt);
 			}
+
+			// phase diagnostics
+			double pp = sim.max_potential_phase;
+			double kp = sim.max_kinetic_phase;
+			ImVec4 col_ok = ImVec4(0.4, 0.8, 0.4, 1);
+			ImVec4 col_warn = ImVec4(0.9, 0.8, 0.2, 1);
+			ImVec4 col_bad = ImVec4(1.0, 0.3, 0.3, 1);
+			ImVec4 col_p = (pp < 0.3) ? col_ok : (pp < 1.0) ? col_warn : col_bad;
+			ImVec4 col_k = (kp < 0.3) ? col_ok : (kp < 1.0) ? col_warn : col_bad;
+			ImGui::TextColored(col_p, "V phase: %.2f rad", pp);
+			ImGui::SameLine();
+			ImGui::TextColored(col_k, "K phase: %.2f rad", kp);
+
+			// probability conservation
+			double prob = sim.total_probability();
+			ImVec4 col_prob = (fabs(prob - 1.0) < 0.01) ? col_ok :
+			                  (fabs(prob - 1.0) < 0.05) ? col_warn : col_bad;
+			ImGui::TextColored(col_prob, "P(total) = %.6f", prob);
 		}
 
 		// experiment info below

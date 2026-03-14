@@ -73,19 +73,19 @@ void Simulation::precompute_phases()
 	size_t n = grid.total_points();
 
 	// potential phase: exp(-i V dt / (2 hbar))
+	max_potential_phase = 0;
 	for(size_t i = 0; i < n; i++) {
 		double vr = potential[i].real();
 		double vi = potential[i].imag();
 		double phase = -vr * dt / (2.0 * hbar);
-		double decay = -vi * dt / (2.0 * hbar); // absorbing part
+		double decay = -vi * dt / (2.0 * hbar);
 		double amp = exp(decay);
 		potential_phase[i] = amp * std::complex<double>(cos(phase), sin(phase));
+		if(fabs(phase) > max_potential_phase) max_potential_phase = fabs(phase);
 	}
 
 	// kinetic phase: exp(-i hbar k^2 dt / (2m))
-	// k values follow FFTW convention: k[i] = 2*pi*i/L for i < N/2,
-	//                                   k[i] = 2*pi*(i-N)/L for i >= N/2
-	// for N-dimensional, iterate with coordinates
+	max_kinetic_phase = 0;
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
 		double k2 = 0;
 		for(int d = 0; d < grid.rank; d++) {
@@ -95,9 +95,24 @@ void Simulation::precompute_phases()
 			double ki = (coords[d] < ni/2) ? coords[d] * dk : (coords[d] - ni) * dk;
 			k2 += ki * ki;
 		}
-		double phase = -hbar * k2 * dt / (2.0 * mass);
-		kinetic_phase[idx] = std::complex<double>(cos(phase), sin(phase));
+		double phase = hbar * k2 * dt / (2.0 * mass);
+		kinetic_phase[idx] = std::complex<double>(cos(-phase), sin(-phase));
+		if(phase > max_kinetic_phase) max_kinetic_phase = phase;
 	});
+}
+
+
+double Simulation::total_probability()
+{
+	double prob = 0;
+	double dv = 1.0;
+	for(int d = 0; d < grid.rank; d++)
+		dv *= grid.axes[d].dx();
+	auto *psi = psi_front();
+	size_t n = grid.total_points();
+	for(size_t i = 0; i < n; i++)
+		prob += std::norm(psi[i]) * dv;
+	return prob;
 }
 
 
