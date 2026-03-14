@@ -6,11 +6,37 @@
 #include "widget.hpp"
 #include "widgetregistry.hpp"
 #include "experiment.hpp"
+#include "config.hpp"
 #include "math3d.hpp"
+
+enum class Envelope { Amplitude, ProbDensity, Real, Imaginary, COUNT };
+
+static const char *envelope_names[] = { "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
 
 class WidgetHelix : public Widget {
 public:
 	WidgetHelix(Widget::Info &info) : Widget(info) {}
+
+	void do_save(ConfigWriter &cfg) override {
+		cfg.write("yaw", m_yaw);
+		cfg.write("pitch", m_pitch);
+		cfg.write("dist", m_dist);
+		cfg.write("pan_x", m_pan_x);
+		cfg.write("pan_y", m_pan_y);
+		cfg.write("ortho", m_ortho);
+		cfg.write("envelope", m_envelope);
+	}
+
+	void do_load(ConfigReader::Node *node) override {
+		if(!node) return;
+		node->read("yaw", m_yaw);
+		node->read("pitch", m_pitch);
+		node->read("dist", m_dist);
+		node->read("pan_x", m_pan_x);
+		node->read("pan_y", m_pan_y);
+		node->read("ortho", m_ortho);
+		node->read("envelope", m_envelope);
+	}
 
 	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override {
 		SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
@@ -115,7 +141,7 @@ public:
 			                     helix_pts[i+1].x, helix_pts[i+1].y);
 		}
 
-		// draw |ψ|² curve on the x-axis plane
+		// draw envelope curve on the x-axis plane
 		{
 			SDL_SetRenderDrawColor(rend, 100, 200, 100, 180);
 			for(int i = 0; i < n - 1; i++) {
@@ -123,8 +149,8 @@ public:
 				double t1 = (double)(i+1) / (n - 1);
 				double x0 = -1.0 + 2.0 * t0;
 				double x1 = -1.0 + 2.0 * t1;
-				double a0 = std::norm(psi[i]) / (max_amp * max_amp);
-				double a1 = std::norm(psi[i+1]) / (max_amp * max_amp);
+				double a0 = envelope_value(psi[i], max_amp);
+				double a1 = envelope_value(psi[i+1], max_amp);
 				vec3 p0 = vp.transform({x0, a0, 0});
 				vec3 p1 = vp.transform({x1, a1, 0});
 				SDL_FPoint sp[2] = {
@@ -138,18 +164,34 @@ public:
 		// view presets (Blender numpad style)
 		handle_keys();
 
-		ImGui::Text("yaw=%.1f  pitch=%.1f", m_yaw * 180/M_PI, m_pitch * 180/M_PI);
+		// controls
+		ImGui::SetNextItemWidth(120);
+		ImGui::Combo("##envelope", &m_envelope, envelope_names, (int)Envelope::COUNT);
+		ImGui::SameLine();
+		ImGui::Text("%s  yaw=%.0f  pitch=%.0f", m_ortho ? "ortho" : "persp",
+			m_yaw * 180/M_PI, m_pitch * 180/M_PI);
 	}
 
 private:
-	double m_yaw{0.3};
-	double m_pitch{0.3};
+	double m_yaw{0};
+	double m_pitch{0};
 	double m_dist{2.5};
 	double m_pan_x{0}, m_pan_y{0};
-	bool m_ortho{false};
+	bool m_ortho{true};
+	int m_envelope{0};  // Envelope enum
 	bool m_orbiting{false};
 	bool m_panning{false};
 	float m_drag_x{}, m_drag_y{};
+
+	double envelope_value(std::complex<double> psi, double max_amp) {
+		switch((Envelope)m_envelope) {
+			case Envelope::Amplitude:   return std::abs(psi) / max_amp;
+			case Envelope::ProbDensity: return std::norm(psi) / (max_amp * max_amp);
+			case Envelope::Real:        return psi.real() / max_amp * 0.5 + 0.5;
+			case Envelope::Imaginary:   return psi.imag() / max_amp * 0.5 + 0.5;
+			default: return 0;
+		}
+	}
 
 	bool key(ImGuiKey numpad, ImGuiKey regular) {
 		return ImGui::IsKeyPressed(numpad) || ImGui::IsKeyPressed(regular);

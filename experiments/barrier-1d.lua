@@ -3,7 +3,7 @@
 dimensions(1)
 
 domain {
-    { min = -5 * um, max = 5 * um, points = 1024 },
+    { min = -5 * um, max = 5 * um, points = 4096 },
 }
 
 electron = def_particle {
@@ -17,11 +17,11 @@ local momentum = math.sqrt(2 * m_electron * energy)
 particle(electron, {
     position = { -2 * um },
     momentum = { momentum },
-    width = 0.2 * um,
+    width = 0.6 * um,
 })
 
 barrier {
     from = { -50 * nm },
     to   = {  50 * nm },
-    height = 0.005 * eV,    -- 5 meV, higher than kinetic energy
+    height = 0.0005 * eV,    -- 5 meV, higher than kinetic energy
 }
