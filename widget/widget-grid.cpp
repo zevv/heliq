@@ -180,6 +180,24 @@ public:
 		SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
 		SDL_RenderRect(rend, &dst);
 
+		// draw slice crosshair from view
+		if(m_view.slice_valid && grid.rank >= 2) {
+			SDL_SetRenderDrawColor(rend, 200, 200, 60, 120);
+			for(int d = 0; d < grid.rank; d++) {
+				if(d == m_view.slice_axis) continue;
+				float frac = (float)m_view.slice_pos[d] / grid.axes[d].points;
+				if(d == 0) {
+					// vertical line (slice along x at this x position)
+					float sx = dst.x + frac * dst.w;
+					SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
+				} else if(d == 1) {
+					// horizontal line (slice along y at this y position)
+					float sy = dst.y + (1.0f - frac) * dst.h;
+					SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
+				}
+			}
+		}
+
 		// reset view
 		if(ImGui::IsKeyPressed(ImGuiKey_1)) {
 			m_zoom = 1.0f;
