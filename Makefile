@@ -16,6 +16,7 @@ SRC += model/loader.cpp
 SRC += model/simulation.cpp
 SRC += widget/widget-dummy.cpp
 SRC += widget/widget-info.cpp
+SRC += widget/widget-grid.cpp
 SRC += $(IMGUI_DIR)/imgui.cpp 
 SRC += $(IMGUI_DIR)/imgui_demo.cpp
 SRC += $(IMGUI_DIR)/imgui_draw.cpp 

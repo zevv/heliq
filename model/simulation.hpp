@@ -36,4 +36,8 @@ public:
 
 	// read access for widgets
 	std::complex<double> *psi_front() { return psi[front.load()]; }
+
+private:
+	void sample_potential(const Setup &setup);
+	void sample_wavefunction(const Setup &setup);
 };

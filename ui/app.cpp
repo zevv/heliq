@@ -192,6 +192,11 @@ void App::init(int argc, char **argv)
 		auto &s = m_experiment.setup;
 		fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",
 			s.spatial_dims, s.particles.size(), s.potentials.size(), s.simulations.size());
+		// create simulation instances
+		for(auto &sc : s.simulations) {
+			m_experiment.simulations.push_back(
+				std::make_unique<Simulation>(sc, s));
+		}
 	} else {
 		fprintf(stderr, "failed to load experiment\n");
 	}
@@ -214,8 +219,7 @@ void App::run()
 	while (!done)
 	{
 		SDL_Event event;
-		SDL_WaitEvent(&event);
-		do {
+		while (SDL_PollEvent(&event)) {
 			ImGui_ImplSDL3_ProcessEvent(&event);
 			if (event.type == SDL_EVENT_QUIT)
 				done = true;
@@ -227,17 +231,9 @@ void App::run()
 			if(event.type == SDL_EVENT_WINDOW_RESIZED && 
 			   event.window.windowID == SDL_GetWindowID(m_win))
 				resize_window(event.window.data1, event.window.data2);
-
-			req_redraw();
 		}
-		while (SDL_PollEvent(&event));
 
-		if(m_redraw > 0) {
-			draw();
-			m_redraw --;
-		} else {
-			SDL_Delay(10);
-		}
+		draw();
 	}
 }
 
