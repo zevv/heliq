@@ -123,13 +123,29 @@ void Simulation::set_dt(double new_dt)
 
 void Simulation::step()
 {
-	m_solver->step();
+	step_compute();
+	sync();
+}
 
-	// read back to CPU display buffer
+
+void Simulation::step_compute()
+{
+	m_solver->step();
+	step_count++;
+}
+
+
+void Simulation::flush()
+{
+	m_solver->flush();
+}
+
+
+void Simulation::sync()
+{
 	int back = 1 - front.load();
 	m_solver->read_psi(psi[back]);
 	front.store(back);
-	step_count++;
 }
 
 

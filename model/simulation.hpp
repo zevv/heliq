@@ -18,7 +18,10 @@ public:
 	Simulation(const Simulation &) = delete;
 	Simulation &operator=(const Simulation &) = delete;
 
-	void step();
+	void step();          // compute + flush + readback
+	void step_compute();  // enqueue compute (may return before GPU finishes)
+	void flush();         // wait for enqueued compute to finish
+	void sync();          // flush + readback to CPU display buffer
 	void set_dt(double new_dt);
 
 	Grid grid{};

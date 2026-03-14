@@ -16,6 +16,7 @@ SRC += model/loader.cpp
 SRC += model/simulation.cpp
 SRC += model/solver.cpp
 SRC += model/solver_cpu.cpp
+SRC += model/solver_gpu.cpp
 SRC += widget/widget-dummy.cpp
 SRC += widget/widget-info.cpp
 SRC += widget/widget-grid.cpp
@@ -48,7 +49,7 @@ CXXFLAGS += -Iui -Imodel -Iwidget
 CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 CXXFLAGS += $(PKG_CFLAGS)
 
-LIBS += -ldl -latomic -lfftw3_threads -lpthread $(PKG_LIBS)
+LIBS += -ldl -latomic -lfftw3_threads -lpthread -lOpenCL $(PKG_LIBS)
 
 ifdef clang
 CXX=clang++
@@ -77,6 +78,9 @@ endif
 
 CFLAGS = $(CXXFLAGS)
 
+model/solver_gpu.o: model/solver_gpu.cpp
+	$(CXX) $(CXXFLAGS) -DVKFFT_BACKEND=3 -c -o $@ $<
+
 %.o:%.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
@@ -94,12 +98,13 @@ TEST_SRC += model/loader.cpp
 TEST_SRC += model/simulation.cpp
 TEST_SRC += model/solver.cpp
 TEST_SRC += model/solver_cpu.cpp
+TEST_SRC += model/solver_gpu.cpp
 
 TEST_OBJS = $(TEST_SRC:.cpp=.o)
 TEST_DEPS = $(TEST_OBJS:.o=.d)
 TEST_BIN = test_quantum
 TEST_PKG = lua5.4 fftw3
-TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs) -lfftw3_threads -lpthread
+TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs) -lfftw3_threads -lpthread -lOpenCL
 
 all: $(BIN)
 

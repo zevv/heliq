@@ -37,18 +37,33 @@ public:
 		for(auto &sim : simulations) {
 			auto t0 = std::chrono::steady_clock::now();
 			while(sim->time() < target) {
-				sim->step();
+				// enqueue a batch, then flush once to measure real GPU time
+				int batch = batch_size;
+				for(int i = 0; i < batch && sim->time() < target; i++)
+					sim->step_compute();
+				sim->flush();
+
 				auto elapsed = std::chrono::steady_clock::now() - t0;
 				double ms = std::chrono::duration<double, std::milli>(elapsed).count();
 				if(ms > per_sim_ms)
 					break;
+
+				// adapt: if we used less than half the budget, double the batch
+				// if we overshot, halve it
+				if(ms < per_sim_ms * 0.5 && batch_size < 1024)
+					batch_size = batch_size * 2;
+				else if(ms > per_sim_ms * 0.9 && batch_size > 1)
+					batch_size = batch_size / 2;
 			}
+			sim->sync();
 			if(sim->time() < slowest)
 				slowest = sim->time();
 		}
 
 		sim_time = slowest;
 	}
+
+	int batch_size{4};  // adaptive, grows/shrinks per frame
 
 	// owned simulations
 	std::vector<std::unique_ptr<Simulation>> simulations{};

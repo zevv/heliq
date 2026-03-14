@@ -20,6 +20,9 @@ public:
 	// one full split-step iteration
 	virtual void step() = 0;
 
+	// wait for all queued work to complete (GPU: clFinish, CPU: no-op)
+	virtual void flush() {}
+
 	// copy current psi to CPU buffer (for visualization)
 	virtual void read_psi(std::complex<double> *out) const = 0;
 

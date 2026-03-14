@@ -72,10 +72,12 @@ public:
 		if(m_slice_axis >= sim.grid.rank) m_slice_axis = 0;
 		int n = sim.grid.axes[m_slice_axis].points;
 
-		// default slice positions to center if not set
+		// default slice positions to center if not set, clamp to grid bounds
 		for(int d = 0; d < sim.grid.rank; d++) {
 			if(m_slice_pos[d] == 0 && d != m_slice_axis)
 				m_slice_pos[d] = sim.grid.axes[d].points / 2;
+			if(m_slice_pos[d] >= sim.grid.axes[d].points)
+				m_slice_pos[d] = sim.grid.axes[d].points - 1;
 		}
 
 		// extract a 1D slice from the grid
