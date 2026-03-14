@@ -249,10 +249,7 @@ public:
 		}
 
 		// publish slice state to view for other widgets to read
-		m_view.slice_axis = m_slice_axis;
-		for(int d = 0; d < MAX_RANK; d++)
-			m_view.slice_pos[d] = m_slice_pos[d];
-		m_view.slice_valid = true;
+		m_view.add_slice(m_slice_axis, m_slice_pos);
 	}
 
 private:

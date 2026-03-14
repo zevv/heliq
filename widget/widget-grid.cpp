@@ -180,20 +180,22 @@ public:
 		SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
 		SDL_RenderRect(rend, &dst);
 
-		// draw slice crosshair from view
-		if(m_view.slice_valid && grid.rank >= 2) {
+		// draw slice crosshairs from view
+		if(grid.rank >= 2) {
 			SDL_SetRenderDrawColor(rend, 200, 200, 60, 120);
-			for(int d = 0; d < grid.rank; d++) {
-				if(d == m_view.slice_axis) continue;
-				float frac = (float)m_view.slice_pos[d] / grid.axes[d].points;
-				if(d == 0) {
-					// vertical line (slice along x at this x position)
-					float sx = dst.x + frac * dst.w;
-					SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
-				} else if(d == 1) {
-					// horizontal line (slice along y at this y position)
-					float sy = dst.y + (1.0f - frac) * dst.h;
-					SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
+			for(int si = 0; si < m_view.n_slices; si++) {
+				auto &sl = m_view.slices[si];
+				if(!sl.valid) continue;
+				for(int d = 0; d < grid.rank; d++) {
+					if(d == sl.axis) continue;
+					float frac = (float)sl.pos[d] / grid.axes[d].points;
+					if(d == 0) {
+						float sx = dst.x + frac * dst.w;
+						SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
+					} else if(d == 1) {
+						float sy = dst.y + (1.0f - frac) * dst.h;
+						SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
+					}
 				}
 			}
 		}
