@@ -179,7 +179,7 @@ static bool load_simulations(lua_State *L, Setup &setup)
 }
 
 
-bool load_setup(const char *script, Setup &setup)
+bool load_setup(const char *script, Setup &setup, bool verbose)
 {
 	lua_State *L = luaL_newstate();
 	luaL_openlibs(L);
@@ -187,6 +187,9 @@ bool load_setup(const char *script, Setup &setup)
 	// set the user script path for the prelude
 	lua_pushstring(L, script);
 	lua_setglobal(L, "script");
+
+	lua_pushboolean(L, verbose);
+	lua_setglobal(L, "verbose");
 
 	// run prelude (which runs the user script internally)
 	if(luaL_dofile(L, "lua/prelude.lua") != LUA_OK) {

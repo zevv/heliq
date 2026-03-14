@@ -13,7 +13,9 @@ SRC += ui/misc.cpp
 SRC += ui/config.cpp
 SRC += ui/style.cpp
 SRC += model/loader.cpp
+SRC += model/simulation.cpp
 SRC += widget/widget-dummy.cpp
+SRC += widget/widget-info.cpp
 SRC += $(IMGUI_DIR)/imgui.cpp 
 SRC += $(IMGUI_DIR)/imgui_demo.cpp
 SRC += $(IMGUI_DIR)/imgui_draw.cpp 
@@ -83,13 +85,14 @@ CFLAGS = $(CXXFLAGS)
 TEST_SRC += test/test_main.cpp
 TEST_SRC += test/test_loader.cpp
 TEST_SRC += test/test_grid.cpp
+TEST_SRC += test/test_simulation.cpp
 TEST_SRC += model/loader.cpp
+TEST_SRC += model/simulation.cpp
 
 TEST_OBJS = $(TEST_SRC:.cpp=.o)
 TEST_DEPS = $(TEST_OBJS:.o=.d)
 TEST_BIN = test_quantum
-TEST_PKG = lua5.4
-TEST_CFLAGS = $(shell pkg-config $(TEST_PKG) --cflags)
+TEST_PKG = lua5.4 fftw3
 TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs)
 
 all: $(BIN)
