@@ -43,4 +43,5 @@ struct Setup {
 	std::vector<Particle> particles{};
 	std::vector<Potential> potentials{};
 	std::vector<SimConfig> simulations{};
+	double timescale{1e-15};
 };

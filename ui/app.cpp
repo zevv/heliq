@@ -196,6 +196,7 @@ void App::init(int argc, char **argv)
 		auto &s = m_experiment.setup;
 		fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",
 			s.spatial_dims, s.particles.size(), s.potentials.size(), s.simulations.size());
+		m_experiment.timescale = s.timescale;
 		// create simulation instances
 		for(auto &sc : s.simulations) {
 			m_experiment.simulations.push_back(

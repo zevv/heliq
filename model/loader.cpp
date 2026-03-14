@@ -205,6 +205,7 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 	}
 
 	setup.spatial_dims = (int)getfield_number(L, -1, "spatial_dims");
+	setup.timescale = getfield_number(L, -1, "timescale", 1e-15);
 
 	bool ok = load_domain(L, setup)
 	       && load_particles(L, setup)

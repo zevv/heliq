@@ -221,15 +221,59 @@ if #world.domain ~= world.spatial_dims then
     return nil
 end
 
+-- compute sensible defaults from experiment parameters
+local function compute_defaults()
+    -- find smallest dx across domain axes
+    local dx_min = math.huge
+    for _, ax in ipairs(world.domain) do
+        local dx = (ax.max - ax.min) / ax.points
+        if dx < dx_min then dx_min = dx end
+    end
+
+    -- find lightest particle mass
+    local mass = m_electron  -- fallback
+    for _, p in ipairs(world.particles) do
+        if p.mass < mass then mass = p.mass end
+    end
+
+    -- max stable dt: hbar * k_max^2 / (2m) * dt < pi
+    -- k_max = pi / dx_min
+    local k_max = math.pi / dx_min
+    local dt_max = math.pi / (hbar * k_max * k_max / (2 * mass))
+
+    -- use 10% of stability limit for safety
+    local dt = dt_max * 0.1
+
+    -- timescale: how long for the packet to cross ~20% of the domain?
+    -- pick a reasonable "watch time" of ~5 seconds
+    local L = world.domain[1].max - world.domain[1].min
+    local v = 0
+    for _, p in ipairs(world.particles) do
+        for _, mom in ipairs(p.momentum) do
+            v = v + math.abs(mom) / p.mass
+        end
+    end
+    if v < 1 then v = 1 end
+    local crossing_time = 0.2 * L / v  -- sim time to cross 20% of domain
+    local timescale = crossing_time / 5.0  -- do it in 5 wall seconds
+
+    return dt, timescale
+end
+
+local default_dt, default_timescale = compute_defaults()
+
 -- default simulation if none specified
 if #world.simulations == 0 then
     world.simulations[1] = {
         name = "default",
         mode = "joint",
-        resolution = nil,  -- use domain resolution
-        dt = 0.1 * 1e-15,  -- 0.1 fs default, TODO: compute from grid/potential
+        resolution = nil,
+        dt = default_dt,
     }
 end
+
+-- set timescale on world for C++ to pick up
+world.timescale = default_timescale
 
 dump()
 
