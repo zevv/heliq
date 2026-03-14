@@ -46,7 +46,7 @@ CXXFLAGS += -Iui -Imodel -Iwidget
 CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 CXXFLAGS += $(PKG_CFLAGS)
 
-LIBS += -ldl -latomic $(PKG_LIBS)
+LIBS += -ldl -latomic -lfftw3_threads -lpthread $(PKG_LIBS)
 
 ifdef clang
 CXX=clang++

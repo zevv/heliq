@@ -6,9 +6,16 @@
 #include "simulation.hpp"
 #include "constants.hpp"
 
+static bool fftw_threads_initialized = false;
 
 Simulation::Simulation(const SimConfig &config, const Setup &setup)
 {
+	if(!fftw_threads_initialized) {
+		fftw_init_threads();
+		fftw_plan_with_nthreads(4);  // TODO: detect core count
+		fftw_threads_initialized = true;
+	}
+
 	name = config.name;
 	mode = config.mode;
 	dt = config.dt;

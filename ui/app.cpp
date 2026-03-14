@@ -295,8 +295,8 @@ void App::run()
 				int nx = sim.grid.axes[0].points;
 				int ny = (sim.grid.rank >= 2) ? sim.grid.axes[1].points : 1;
 
-				// downsample to max 128x128
-				int sx = (nx + 127) / 128;
+				// downsample: 2x horizontal resolution for aspect ratio
+				int sx = (nx + 255) / 256;
 				int sy = (ny + 127) / 128;
 				int ox = nx / sx;
 				int oy = ny / sy;
@@ -313,22 +313,21 @@ void App::run()
 					sim.time(), nx, ny, ox, oy, max_val);
 
 				// |psi|^2 with potential overlay
-				fprintf(f, "# |psi|^2 (potential shown as #):\n");
-				const char *shades = " .:-=+*#@";
-				int nshades = 9;
+				fprintf(f, "# |psi|^2 (potential shown as ||):\n");
+				const char *shades = "_.:-=o+*#%@";
+				int nshades = 11;
 				for(int iy = oy - 1; iy >= 0; iy--) {
 					for(int ix = 0; ix < ox; ix++) {
 						int gx = ix * sx + sx/2;
 						int gy = iy * sy + sy/2;
 						size_t idx = (size_t)gx * ny + gy;
 						if(pot[idx].real() > 0) {
-							fputc('#', f);
+							fputc('|', f);
 						} else {
-							double raw = std::norm(psi[idx]) / max_val;
-						double v = (raw > 0) ? 1.0 + log10(raw) / 20.0 : 0;  // 20 decades range
-						if(v < 0) v = 0;
+							double v = pow(std::norm(psi[idx]) / max_val, 0.15);
 							int si = (int)(v * (nshades - 1));
 							if(si >= nshades) si = nshades - 1;
+							if(si < 0) si = 0;
 							fputc(shades[si], f);
 						}
 					}
