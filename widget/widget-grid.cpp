@@ -125,6 +125,7 @@ public:
 		auto &grid = sim.grid;
 
 		// determine texture dimensions from grid
+		// axis 0 = x = horizontal, axis 1 = y = vertical
 		int tw = (grid.rank >= 1) ? grid.axes[0].points : 1;
 		int th = (grid.rank >= 2) ? grid.axes[1].points : 1;
 
@@ -173,6 +174,17 @@ public:
 			SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
 			SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
 			SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
+		}
+
+		// draw border around grid
+		SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
+		SDL_RenderRect(rend, &dst);
+
+		// reset view
+		if(ImGui::IsKeyPressed(ImGuiKey_1)) {
+			m_zoom = 1.0f;
+			m_pan_x = 0;
+			m_pan_y = 0;
 		}
 	}
 
@@ -253,7 +265,10 @@ private:
 		for(int y = 0; y < th; y++) {
 			uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
 			for(int x = 0; x < tw; x++) {
-				size_t idx = (size_t)(th - 1 - y) * tw + x;
+				// axis 0 = x (column), axis 1 = y (row)
+			// grid linear index: coords[0]*stride[0] + coords[1]*stride[1]
+			// stride[0] = axes[1].points = th, stride[1] = 1
+			size_t idx = (size_t)x * th + (th - 1 - y);
 				if(idx >= total) idx = 0;
 				double v = sample_value(ov.source, psi[idx], pot[idx]);
 				double norm = (v - vmin) / range;

@@ -236,12 +236,22 @@ local function compute_defaults()
         if p.mass < mass then mass = p.mass end
     end
 
-    -- max stable dt: hbar * k_max^2 / (2m) * dt < pi
-    -- k_max = pi / dx_min
+    -- max stable dt from kinetic term: hbar * k_max^2 / (2m) * dt < pi
     local k_max = math.pi / dx_min
-    local dt_max = math.pi / (hbar * k_max * k_max / (2 * mass))
+    local dt_kinetic = math.pi / (hbar * k_max * k_max / (2 * mass))
 
-    -- use 10% of stability limit for safety
+    -- max stable dt from potential term: V_max * dt / (2*hbar) < pi
+    local v_max = 0
+    for _, pot in ipairs(world.potentials) do
+        local h = pot.height or 0
+        if h > v_max then v_max = h end
+        local d = pot.depth or 0
+        if d > v_max then v_max = d end
+    end
+    local dt_potential = (v_max > 0) and (math.pi * 2 * hbar / v_max) or math.huge
+
+    -- take the smaller limit, then 10% safety margin
+    local dt_max = math.min(dt_kinetic, dt_potential)
     local dt = dt_max * 0.1
 
     -- timescale: how long for the packet to cross ~20% of the domain?
