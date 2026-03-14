@@ -14,6 +14,8 @@ SRC += ui/config.cpp
 SRC += ui/style.cpp
 SRC += model/loader.cpp
 SRC += model/simulation.cpp
+SRC += model/solver.cpp
+SRC += model/solver_cpu.cpp
 SRC += widget/widget-dummy.cpp
 SRC += widget/widget-info.cpp
 SRC += widget/widget-grid.cpp
@@ -90,6 +92,8 @@ TEST_SRC += test/test_grid.cpp
 TEST_SRC += test/test_simulation.cpp
 TEST_SRC += model/loader.cpp
 TEST_SRC += model/simulation.cpp
+TEST_SRC += model/solver.cpp
+TEST_SRC += model/solver_cpu.cpp
 
 TEST_OBJS = $(TEST_SRC:.cpp=.o)
 TEST_DEPS = $(TEST_OBJS:.o=.d)

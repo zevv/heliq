@@ -3,9 +3,11 @@
 #include <complex>
 #include <atomic>
 #include <string>
+#include <memory>
 
 #include "grid.hpp"
 #include "setup.hpp"
+#include "solver.hpp"
 
 class Simulation {
 public:
@@ -28,16 +30,12 @@ public:
 
 	double time() const { return step_count * dt; }
 
-	// wavefunction double buffer
+	// CPU-side wavefunction double buffer (for widget reads)
 	std::complex<double> *psi[2]{};
 	std::atomic<int> front{0};
 
-	// potential (same grid shape)
+	// potential (CPU-side, for widget display)
 	std::complex<double> *potential{};
-
-	// precomputed phase factors
-	std::complex<double> *potential_phase{};  // exp(-i V dt / 2hbar)
-	std::complex<double> *kinetic_phase{};    // exp(-i hbar k^2 dt / 2m)
 
 	// initial state snapshot for reset
 	std::complex<double> *psi_initial{};
@@ -54,8 +52,11 @@ private:
 	void sample_potential(const Setup &setup);
 	void sample_wavefunction(const Setup &setup);
 	void precompute_phases();
+	void upload_phases();
 
-	// FFTW plans
-	void *fft_forward{};
-	void *fft_inverse{};
+	std::unique_ptr<Solver> m_solver{};
+
+	// CPU-side phase arrays (computed here, uploaded to solver)
+	std::complex<double> *m_potential_phase{};
+	std::complex<double> *m_kinetic_phase{};
 };

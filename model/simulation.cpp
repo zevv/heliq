@@ -2,21 +2,12 @@
 #include <fftw3.h>
 #include <algorithm>
 #include <math.h>
-#include <thread>
 
 #include "simulation.hpp"
 #include "constants.hpp"
 
-static bool fftw_threads_initialized = false;
-
 Simulation::Simulation(const SimConfig &config, const Setup &setup)
 {
-	if(!fftw_threads_initialized) {
-		fftw_init_threads();
-		fftw_plan_with_nthreads(std::thread::hardware_concurrency());
-		fftw_threads_initialized = true;
-	}
-
 	name = config.name;
 	mode = config.mode;
 	dt = config.dt;
@@ -31,46 +22,37 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	}
 	grid.compute_strides();
 
-	// allocate arrays (fftw_malloc for SIMD alignment)
 	size_t n = grid.total_points();
 	size_t bytes = n * sizeof(std::complex<double>);
 
+	// CPU-side arrays for widget display and setup data
 	psi[0]          = (std::complex<double> *)fftw_malloc(bytes);
 	psi[1]          = (std::complex<double> *)fftw_malloc(bytes);
 	potential       = (std::complex<double> *)fftw_malloc(bytes);
-	potential_phase = (std::complex<double> *)fftw_malloc(bytes);
-	kinetic_phase   = (std::complex<double> *)fftw_malloc(bytes);
 	psi_initial     = (std::complex<double> *)fftw_malloc(bytes);
+	m_potential_phase = (std::complex<double> *)fftw_malloc(bytes);
+	m_kinetic_phase   = (std::complex<double> *)fftw_malloc(bytes);
 
-	std::fill_n(psi[0],          n, std::complex<double>(0));
-	std::fill_n(psi[1],          n, std::complex<double>(0));
-	std::fill_n(potential,       n, std::complex<double>(0));
-	std::fill_n(potential_phase, n, std::complex<double>(0));
-	std::fill_n(kinetic_phase,   n, std::complex<double>(0));
-	std::fill_n(psi_initial,     n, std::complex<double>(0));
+	std::fill_n(psi[0],            n, std::complex<double>(0));
+	std::fill_n(psi[1],            n, std::complex<double>(0));
+	std::fill_n(potential,         n, std::complex<double>(0));
+	std::fill_n(psi_initial,       n, std::complex<double>(0));
+	std::fill_n(m_potential_phase,  n, std::complex<double>(0));
+	std::fill_n(m_kinetic_phase,    n, std::complex<double>(0));
 
-	// sample potentials and wavefunction
+	// sample potentials and wavefunction into CPU arrays
 	sample_potential(setup);
 	sample_wavefunction(setup);
 
-	// precompute phase factors for split-step
+	// precompute phase factors
 	precompute_phases();
 
-	// create FFTW plans
-	// FFTW dims array: rank dimensions
-	int dims[MAX_RANK];
-	for(int i = 0; i < grid.rank; i++)
-		dims[i] = grid.axes[i].points;
+	// create solver and upload data
+	m_solver = Solver::create(grid);
+	upload_phases();
+	m_solver->write_psi(psi_initial);
 
-	fft_forward = fftw_plan_dft(grid.rank, dims,
-		(fftw_complex *)psi[0], (fftw_complex *)psi[0],
-		FFTW_FORWARD, FFTW_MEASURE);
-
-	fft_inverse = fftw_plan_dft(grid.rank, dims,
-		(fftw_complex *)psi[0], (fftw_complex *)psi[0],
-		FFTW_BACKWARD, FFTW_MEASURE);
-
-	// FFTW_MEASURE may have trashed psi[0], restore it
+	// copy initial state into display buffers
 	std::copy_n(psi_initial, n, psi[0]);
 	std::copy_n(psi_initial, n, psi[1]);
 }
@@ -88,7 +70,7 @@ void Simulation::precompute_phases()
 		double phase = -vr * dt / (2.0 * hbar);
 		double decay = -vi * dt / (2.0 * hbar);
 		double amp = exp(decay);
-		potential_phase[i] = amp * std::complex<double>(cos(phase), sin(phase));
+		m_potential_phase[i] = amp * std::complex<double>(cos(phase), sin(phase));
 		if(fabs(phase) > max_potential_phase) max_potential_phase = fabs(phase);
 	}
 
@@ -104,9 +86,15 @@ void Simulation::precompute_phases()
 			k2 += ki * ki;
 		}
 		double phase = hbar * k2 * dt / (2.0 * mass);
-		kinetic_phase[idx] = std::complex<double>(cos(-phase), sin(-phase));
+		m_kinetic_phase[idx] = std::complex<double>(cos(-phase), sin(-phase));
 		if(phase > max_kinetic_phase) max_kinetic_phase = phase;
 	});
+}
+
+
+void Simulation::upload_phases()
+{
+	m_solver->set_phases(m_potential_phase, m_kinetic_phase);
 }
 
 
@@ -116,10 +104,10 @@ double Simulation::total_probability()
 	double dv = 1.0;
 	for(int d = 0; d < grid.rank; d++)
 		dv *= grid.axes[d].dx();
-	auto *psi = psi_front();
+	auto *p = psi_front();
 	size_t n = grid.total_points();
 	for(size_t i = 0; i < n; i++)
-		prob += std::norm(psi[i]) * dv;
+		prob += std::norm(p[i]) * dv;
 	return prob;
 }
 
@@ -129,42 +117,17 @@ void Simulation::set_dt(double new_dt)
 	if(new_dt == dt) return;
 	dt = new_dt;
 	precompute_phases();
+	upload_phases();
 }
 
 
 void Simulation::step()
 {
-	size_t n = grid.total_points();
+	m_solver->step();
+
+	// read back to CPU display buffer
 	int back = 1 - front.load();
-	auto *buf = psi[back];
-
-	// copy front to back (we work on back)
-	std::copy_n(psi[front.load()], n, buf);
-
-	// 1. half-step potential
-	for(size_t i = 0; i < n; i++)
-		buf[i] *= potential_phase[i];
-
-	// 2. FFT forward
-	fftw_execute_dft((fftw_plan)fft_forward, (fftw_complex *)buf, (fftw_complex *)buf);
-
-	// 3. full-step kinetic (with FFTW normalization: divide by n on inverse)
-	for(size_t i = 0; i < n; i++)
-		buf[i] *= kinetic_phase[i];
-
-	// 4. FFT inverse
-	fftw_execute_dft((fftw_plan)fft_inverse, (fftw_complex *)buf, (fftw_complex *)buf);
-
-	// FFTW inverse doesn't normalize, divide by n
-	double inv_n = 1.0 / (double)n;
-	for(size_t i = 0; i < n; i++)
-		buf[i] *= inv_n;
-
-	// 5. half-step potential
-	for(size_t i = 0; i < n; i++)
-		buf[i] *= potential_phase[i];
-
-	// swap front
+	m_solver->read_psi(psi[back]);
 	front.store(back);
 	step_count++;
 }
@@ -251,12 +214,12 @@ void Simulation::sample_wavefunction(const Setup &setup)
 
 Simulation::~Simulation()
 {
-	if(fft_forward) fftw_destroy_plan((fftw_plan)fft_forward);
-	if(fft_inverse) fftw_destroy_plan((fftw_plan)fft_inverse);
+	// solver destroyed via unique_ptr before we free arrays
+	m_solver.reset();
 	fftw_free(psi[0]);
 	fftw_free(psi[1]);
 	fftw_free(potential);
-	fftw_free(potential_phase);
-	fftw_free(kinetic_phase);
 	fftw_free(psi_initial);
+	fftw_free(m_potential_phase);
+	fftw_free(m_kinetic_phase);
 }
