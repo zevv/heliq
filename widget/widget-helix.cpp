@@ -62,6 +62,7 @@ private:
 	int m_slice_pos[MAX_RANK]{};
 	int m_slice_mode{Slice};
 	bool m_normalize_slice{false};
+	bool m_auto_slice{false};
 	bool m_orbiting{false}, m_panning{false};
 	float m_drag_x{}, m_drag_y{};
 	float m_cursor_val{0};
@@ -70,6 +71,8 @@ private:
 	// data
 	std::vector<std::complex<double>> m_slice;
 	std::vector<std::complex<double>> m_fft_buf;
+	std::vector<double> m_marginals[MAX_RANK];  // probability marginals per axis
+	int m_marginal_peak[MAX_RANK]{};            // argmax per axis
 	fftw_plan m_fft_plan{};
 	int m_fft_n{0};
 
@@ -83,6 +86,7 @@ private:
 	void extract_slice(const Simulation &sim, const std::complex<double> *psi_all, int n);
 	void extract_marginal(const Simulation &sim, const std::complex<double> *psi_all, int n);
 	void extract_momentum(const Simulation &sim, const std::complex<double> *psi_all, int n);
+	void compute_marginals(const Simulation &sim, const std::complex<double> *psi_all);
 	double compute_max_amp(const Simulation &sim, const std::complex<double> *psi,
 	                       const std::complex<double> *psi_all, int n);
 	double envelope_value(std::complex<double> psi, double max_amp);
@@ -146,6 +150,7 @@ void WidgetHelixGL::do_save(ConfigWriter &cfg)
 	cfg.write("slice_axis", m_slice_axis);
 	cfg.write("slice_mode", m_slice_mode);
 	cfg.write("normalize_slice", m_normalize_slice ? 1 : 0);
+	cfg.write("auto_slice", m_auto_slice ? 1 : 0);
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
 		cfg.write(key, m_slice_pos[d]);
@@ -176,6 +181,7 @@ void WidgetHelixGL::do_load(ConfigReader::Node *node)
 	node->read("slice_axis", m_slice_axis);
 	node->read("slice_mode", m_slice_mode);
 	int ns = 0; node->read("normalize_slice", ns); m_normalize_slice = ns;
+	int as = 0; node->read("auto_slice", as); m_auto_slice = as;
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
 		node->read(key, m_slice_pos[d]);
@@ -203,6 +209,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	int n = sim.grid.axes[m_slice_axis].points;
 
 	clamp_slice_positions(sim);
+	if(sim.grid.rank > 1) compute_marginals(sim, psi_all);
 	extract_data(sim, psi_all, n);
 
 	auto *psi = m_slice.data();
@@ -274,6 +281,41 @@ void WidgetHelixGL::clamp_slice_positions(const Simulation &sim)
 	}
 }
 
+void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<double> *psi_all)
+{
+	// fast path for rank 2
+	if(sim.grid.rank == 2) {
+		int n0 = sim.grid.axes[0].points;
+		int n1 = sim.grid.axes[1].points;
+		m_marginals[0].assign(n0, 0);
+		m_marginals[1].assign(n1, 0);
+		int s0 = sim.grid.stride[0];  // = n1
+		int s1 = sim.grid.stride[1];  // = 1
+		for(int i = 0; i < n0; i++) {
+			for(int j = 0; j < n1; j++) {
+				double v = std::norm(psi_all[i * s0 + j * s1]);
+				m_marginals[0][i] += v;
+				m_marginals[1][j] += v;
+			}
+		}
+		// find global peak position
+		double best = -1;
+		m_marginal_peak[0] = n0 / 2;
+		m_marginal_peak[1] = n1 / 2;
+		for(int i = 0; i < n0; i++) {
+			for(int j = 0; j < n1; j++) {
+				double v = std::norm(psi_all[i * s0 + j * s1]);
+				if(v > best) {
+					best = v;
+					m_marginal_peak[0] = i;
+					m_marginal_peak[1] = j;
+				}
+			}
+		}
+	}
+}
+
+
 void WidgetHelixGL::extract_slice(const Simulation &sim, const std::complex<double> *psi_all, int n)
 {
 	for(int i = 0; i < n; i++) {
@@ -289,24 +331,9 @@ void WidgetHelixGL::extract_marginal(const Simulation &sim, const std::complex<d
 	double dv = 1.0;
 	for(int d = 0; d < sim.grid.rank; d++)
 		if(d != m_slice_axis) dv *= sim.grid.axes[d].dx();
-	for(int i = 0; i < n; i++) {
-		double prob = 0;
-		int coords[MAX_RANK]{};
-		auto sum_axis = [&](auto &&self, int dim) -> void {
-			if(dim == sim.grid.rank) {
-				coords[m_slice_axis] = i;
-				prob += std::norm(psi_all[sim.grid.linear_index(coords)]);
-				return;
-			}
-			if(dim == m_slice_axis) { self(self, dim + 1); return; }
-			for(int j = 0; j < sim.grid.axes[dim].points; j++) {
-				coords[dim] = j;
-				self(self, dim + 1);
-			}
-		};
-		sum_axis(sum_axis, 0);
-		m_slice[i] = std::complex<double>(sqrt(prob * dv), 0);
-	}
+	auto &marg = m_marginals[m_slice_axis];
+	for(int i = 0; i < n; i++)
+		m_slice[i] = std::complex<double>(sqrt(marg[i] * dv), 0);
 }
 
 void WidgetHelixGL::extract_momentum(const Simulation &sim, const std::complex<double> *psi_all, int n)
@@ -716,6 +743,8 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 		if(m_slice_mode == Slice) {
 			ImGui::SameLine();
 			ImGui::Checkbox("Norm", &m_normalize_slice);
+			ImGui::SameLine();
+			ImGui::Checkbox("Auto", &m_auto_slice);
 		}
 	} else {
 		if(ImGui::Button(m_slice_mode == Momentum ? "Momentum" : "Position"))
@@ -762,8 +791,16 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 	}
 
 	if(m_slice_mode != Marginal) {
-		for(int d = 0; d < sim.grid.rank; d++)
-			m_slice_pos[d] = m_view.cursor[d];
+		if(m_auto_slice && sim.grid.rank > 1) {
+			for(int d = 0; d < sim.grid.rank; d++) {
+				if(d == m_slice_axis) continue;
+				m_slice_pos[d] = m_marginal_peak[d];
+				m_view.cursor[d] = m_marginal_peak[d];
+			}
+		} else {
+			for(int d = 0; d < sim.grid.rank; d++)
+				m_slice_pos[d] = m_view.cursor[d];
+		}
 		m_view.add_slice(m_slice_axis, m_slice_pos);
 	}
 

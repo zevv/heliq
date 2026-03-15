@@ -367,7 +367,7 @@ private:
 						row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
 					} break;
 					case Palette::Zebra: {
-						uint8_t c = (uint8_t)(115 + 115 * sin(norm * 8 * M_PI));
+						uint8_t c = (uint8_t)(115 + 115 * sin(norm * 2 * M_PI));
 						row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
 					} break;
 					default: row[x] = 0; break;

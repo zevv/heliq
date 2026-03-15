@@ -19,7 +19,7 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.1e-3 * eV
+local energy = 0.2e-3 * eV
 local p = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {

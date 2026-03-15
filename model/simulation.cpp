@@ -222,10 +222,11 @@ int Simulation::measure(int axis, double collapse_width)
 	size_t n = grid.total_points();
 	auto *p = psi_front();
 
-	// default collapse width: 3 grid cells along the measured axis
+	// default collapse width: 5% of domain along the measured axis
 	if(collapse_width <= 0) {
 		int ax = (axis >= 0 && axis < grid.rank) ? axis : 0;
-		collapse_width = grid.axes[ax].dx() * 3.0;
+		double L = grid.axes[ax].max - grid.axes[ax].min;
+		collapse_width = L * 0.05;
 	}
 
 	// for multi-axis: if axis specified, measure along that axis only
