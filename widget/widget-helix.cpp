@@ -12,6 +12,8 @@
 #include "math3d.hpp"
 #include "grid.hpp"
 
+static constexpr double PITCH_LIMIT = M_PI * 0.49;  // just under 90° to avoid gimbal lock
+
 enum class Envelope { Off, Amplitude, ProbDensity, Real, Imaginary, COUNT };
 
 static const char *envelope_names[] = { "off", "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
@@ -61,6 +63,7 @@ public:
 	}
 
 	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override {
+		SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
 		SDL_RenderFillRect(rend, nullptr);
 
@@ -110,7 +113,7 @@ private:
 	bool m_ortho{true};
 	int m_envelope{1};
 	int m_helix_color{1};
-	float m_amplitude{0.2f};
+	float m_amplitude{0.1f};
 	int m_stem_density{64};
 	int m_slice_axis{0};
 	int m_slice_pos[MAX_RANK]{};
@@ -438,6 +441,38 @@ private:
 	void draw_envelope(SDL_Renderer *rend, const std::complex<double> *psi,
 	                   double max_amp, int n, const mat4 &vp, SDL_Rect &r) {
 		if((Envelope)m_envelope == Envelope::Off) return;
+
+		bool rotational = (Envelope)m_envelope == Envelope::Amplitude ||
+		                  (Envelope)m_envelope == Envelope::ProbDensity;
+
+		int n_ghosts = rotational ? 64 : 0;
+
+		// draw ghost envelopes rotated around x-axis
+		for(int g = 0; g < n_ghosts; g++) {
+			double angle = 2.0 * M_PI * g / n_ghosts;
+			double cy = cos(angle);
+			double cz = sin(angle);
+			SDL_SetRenderDrawColor(rend, 100, 200, 100, 20);
+			for(int i = 0; i < n - 1; i++) {
+				double t0 = (double)i / (n - 1);
+				double t1 = (double)(i+1) / (n - 1);
+				double x0 = -1.0 + 2.0 * t0;
+				double x1 = -1.0 + 2.0 * t1;
+				double a0 = envelope_value(psi[i], max_amp) * m_amplitude;
+				double a1 = envelope_value(psi[i+1], max_amp) * m_amplitude;
+				vec3 p0 = vp.transform({x0, a0 * cy, a0 * cz});
+				vec3 p1 = vp.transform({x1, a1 * cy, a1 * cz});
+				SDL_FPoint sp[2] = {
+					project_to_screen(p0, r.x, r.y, r.w, r.h),
+					project_to_screen(p1, r.x, r.y, r.w, r.h),
+				};
+				SDL_RenderLines(rend, sp, 2);
+			}
+		}
+
+		// draw primary envelope (full alpha)
+		// Im(psi) projects on Z plane, everything else on Y plane
+		bool on_z = (Envelope)m_envelope == Envelope::Imaginary;
 		SDL_SetRenderDrawColor(rend, 100, 200, 100, 180);
 		for(int i = 0; i < n - 1; i++) {
 			double t0 = (double)i / (n - 1);
@@ -446,8 +481,8 @@ private:
 			double x1 = -1.0 + 2.0 * t1;
 			double a0 = envelope_value(psi[i], max_amp) * m_amplitude;
 			double a1 = envelope_value(psi[i+1], max_amp) * m_amplitude;
-			vec3 p0 = vp.transform({x0, a0, 0});
-			vec3 p1 = vp.transform({x1, a1, 0});
+			vec3 p0 = vp.transform({x0, on_z ? 0 : a0, on_z ? a0 : 0});
+			vec3 p1 = vp.transform({x1, on_z ? 0 : a1, on_z ? a1 : 0});
 			SDL_FPoint sp[2] = {
 				project_to_screen(p0, r.x, r.y, r.w, r.h),
 				project_to_screen(p1, r.x, r.y, r.w, r.h),
@@ -533,7 +568,7 @@ private:
 		ImGui::Text("Amp:");
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(60);
-		ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 1.0f, "%.2f");
+		ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 0.2f, "%.2f");
 		ImGui::SameLine();
 
 		// mode controls
@@ -605,8 +640,8 @@ private:
 			float dy = mp.y - m_drag_y;
 			m_yaw   -= dx * 0.005;
 			m_pitch += dy * 0.005;
-			if(m_pitch >  M_PI * 0.49) m_pitch =  M_PI * 0.49;
-			if(m_pitch < -M_PI * 0.49) m_pitch = -M_PI * 0.49;
+			if(m_pitch >  PITCH_LIMIT) m_pitch =  PITCH_LIMIT;
+			if(m_pitch < -PITCH_LIMIT) m_pitch = -PITCH_LIMIT;
 			m_drag_x = mp.x;
 			m_drag_y = mp.y;
 		}
@@ -651,8 +686,8 @@ private:
 			else     { m_yaw =  M_PI/2; m_pitch = 0; }
 		}
 		if(key(ImGuiKey_Keypad7, ImGuiKey_7)) {
-			if(ctrl) { m_yaw = 0; m_pitch = -M_PI*0.49; }
-			else     { m_yaw = 0; m_pitch =  M_PI*0.49; }
+			if(ctrl) { m_yaw = 0; m_pitch = -PITCH_LIMIT; }
+			else     { m_yaw = 0; m_pitch =  PITCH_LIMIT; }
 		}
 		if(key(ImGuiKey_Keypad5, ImGuiKey_5)) { m_ortho = !m_ortho; }
 
@@ -661,7 +696,7 @@ private:
 			m_yaw = 0; m_pitch = 0; m_dist = 2.5;
 			m_pan_x = 0; m_pan_y = 0;
 			m_ortho = true;
-			m_amplitude = 0.2f;
+			m_amplitude = 0.1f;
 			m_envelope = 1;
 			m_helix_color = 1;
 			m_stem_density = 64;
@@ -672,11 +707,11 @@ private:
 		if(key(ImGuiKey_Keypad6, ImGuiKey_6)) { m_yaw += M_PI/12; }
 		if(key(ImGuiKey_Keypad8, ImGuiKey_8)) {
 			m_pitch += M_PI/12;
-			if(m_pitch > M_PI*0.49) m_pitch = M_PI*0.49;
+			if(m_pitch > PITCH_LIMIT) m_pitch = PITCH_LIMIT;
 		}
 		if(key(ImGuiKey_Keypad2, ImGuiKey_2)) {
 			m_pitch -= M_PI/12;
-			if(m_pitch < -M_PI*0.49) m_pitch = -M_PI*0.49;
+			if(m_pitch < -PITCH_LIMIT) m_pitch = -PITCH_LIMIT;
 		}
 	}
 };
