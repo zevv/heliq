@@ -233,7 +233,7 @@ void App::init(int argc, char **argv)
 	init_video();
 
 	// load experiment from script
-	const char *script = (argc > 1) ? argv[1] : "experiments/barrier-1d.lua";
+	const char *script = (argc > 1) ? argv[1] : "experiments/1d-barrier.lua";
 	if(load_setup(script, m_experiment.setup, true)) {
 		auto &s = m_experiment.setup;
 		fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",

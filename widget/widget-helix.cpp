@@ -12,6 +12,8 @@
 #include "config.hpp"
 #include "math3d.hpp"
 #include "grid.hpp"
+#include "constants.hpp"
+#include "misc.hpp"
 
 static constexpr double PITCH_LIMIT = M_PI * 0.49;
 
@@ -24,28 +26,6 @@ static SDL_FPoint project(vec3 ndc, float rx, float ry, float rw, float rh)
 {
 	return { rx + (1.0f + (float)ndc.x) * 0.5f * rw,
 	         ry + (1.0f - (float)ndc.y) * 0.5f * rh };
-}
-
-
-static void hsv_to_rgb(double h, double s, double v, uint8_t &r, uint8_t &g, uint8_t &b)
-{
-	int i = (int)(h * 6);
-	double f = h * 6 - i;
-	double p = v * (1 - s);
-	double q = v * (1 - f * s);
-	double t = v * (1 - (1 - f) * s);
-	double rr, gg, bb;
-	switch(i % 6) {
-		case 0: rr=v; gg=t; bb=p; break;
-		case 1: rr=q; gg=v; bb=p; break;
-		case 2: rr=p; gg=v; bb=t; break;
-		case 3: rr=p; gg=q; bb=v; break;
-		case 4: rr=t; gg=p; bb=v; break;
-		default: rr=v; gg=p; bb=q; break;
-	}
-	r = (uint8_t)(rr * 255);
-	g = (uint8_t)(gg * 255);
-	b = (uint8_t)(bb * 255);
 }
 
 
@@ -214,8 +194,8 @@ void WidgetHelix::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		draw_potentials(rend, sim, n, vp, r);
 		draw_absorb_zones(rend, sim, n, vp, r);
 	}
-	draw_surface(rend, n, vp, r, pts3d, helix_pts);
 	draw_axis(rend, vp, r);
+	draw_surface(rend, n, vp, r, pts3d, helix_pts);
 	draw_helix(rend, psi, max_amp, n, helix_pts);
 	draw_envelope(rend, psi, max_amp, n, vp, r);
 	draw_cursor(rend, sim, vp, r, n);
@@ -763,7 +743,7 @@ void WidgetHelix::draw_controls(const Simulation &sim)
 			double dk = 2.0 * M_PI / L;
 			int n = ax.points;
 			double k = m_cursor_val * (n / 2) * dk;
-			double p = k * 1.054571817e-34;
+			double p = k * hbar;
 			ImGui::Text("k=%.2e 1/m  p=%.2e kg·m/s", k, p);
 		} else {
 			double x = ax.min + (m_cursor_val * 0.5 + 0.5) * (ax.max - ax.min);

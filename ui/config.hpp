@@ -21,7 +21,6 @@ public:
 
 	void write(const char *key, bool val);
 	void write(const char *key, int val);
-	void write(const char *key, size_t val);
 	void write(const char *key, float val);
 	void write(const char *key, double val);
 	void write(const char *key, const char *val);

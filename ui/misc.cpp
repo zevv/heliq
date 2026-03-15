@@ -45,6 +45,29 @@ void humanize(double val, char *buf, size_t buf_len)
 }
 
 
+void hsv_to_rgb(double h, double s, double v, uint8_t &r, uint8_t &g, uint8_t &b)
+{
+	int i = (int)(h * 6.0) % 6;
+	if(i < 0) i += 6;
+	double f = h * 6.0 - (int)(h * 6.0);
+	double p = v * (1 - s);
+	double q = v * (1 - f * s);
+	double t = v * (1 - (1 - f) * s);
+	double rr, gg, bb;
+	switch(i) {
+		case 0: rr=v; gg=t; bb=p; break;
+		case 1: rr=q; gg=v; bb=p; break;
+		case 2: rr=p; gg=v; bb=t; break;
+		case 3: rr=p; gg=q; bb=v; break;
+		case 4: rr=t; gg=p; bb=v; break;
+		default: rr=v; gg=p; bb=q; break;
+	}
+	r = (uint8_t)(rr * 255);
+	g = (uint8_t)(gg * 255);
+	b = (uint8_t)(bb * 255);
+}
+
+
 namespace ImGui {
 bool ToggleButton(const char* str_id, bool* v)
 {

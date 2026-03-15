@@ -10,6 +10,7 @@
 double hirestime();
 
 void humanize(double val, char *buf, size_t buf_len);
+void hsv_to_rgb(double h, double s, double v, uint8_t &r, uint8_t &g, uint8_t &b);
 
 namespace ImGui {
 	bool ToggleButton(const char* str_id, bool* v);

@@ -1,5 +1,4 @@
--- Single electron diffracting through a slit in 2D
-
+-- Free electron in 1D, stationary, no potential
 
 domain {
     { min = -5 * um, max = 5 * um, points = 512 },
@@ -9,8 +8,6 @@ electron = def_particle {
     mass = m_electron,
     charge = -e_charge,
 }
-
-local energy = 0.0002e-3 * eV
 
 particle(electron, {
     position = { 0 },

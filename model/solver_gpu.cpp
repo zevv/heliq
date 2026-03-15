@@ -116,6 +116,11 @@ GpuSolver::GpuSolver(const Grid &grid)
 		}
 	}
 
+	if(!m->device) {
+		fprintf(stderr, "solver: no GPU device found\n");
+		return;
+	}
+
 	// log device name
 	char dev_name[256]{};
 	clGetDeviceInfo(m->device, CL_DEVICE_NAME, sizeof(dev_name), dev_name, nullptr);

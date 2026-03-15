@@ -51,9 +51,9 @@ public:
 				ImGui::TableNextColumn();
 				ImGui::TableNextColumn();
 				ImGui::SetNextItemWidth(-1);
-				float log_dt = log10f(sim.dt);
+				float log_dt = log10f(fabs(sim.dt));
 				if(ImGui::SliderFloat("##dt", &log_dt, -18.0f, -11.0f, "step: 1e%.1f s")) {
-					double new_dt = pow(10.0, log_dt);
+					double new_dt = (sim.dt < 0 ? -1.0 : 1.0) * pow(10.0, log_dt);
 					for(auto &s : exp.simulations)
 						s->set_dt(new_dt);
 				}
