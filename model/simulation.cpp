@@ -2,6 +2,7 @@
 #include <fftw3.h>
 #include <algorithm>
 #include <math.h>
+#include <random>
 
 #include "simulation.hpp"
 #include "constants.hpp"
@@ -206,6 +207,140 @@ void Simulation::reset()
 	front.store(0);
 	step_count = 0;
 	sim_time = 0;
+}
+
+
+static std::mt19937 &rng()
+{
+	static std::mt19937 gen(std::random_device{}());
+	return gen;
+}
+
+
+int Simulation::measure(int axis, double collapse_width)
+{
+	size_t n = grid.total_points();
+	auto *p = psi_front();
+
+	// default collapse width: 3 grid cells along the measured axis
+	if(collapse_width <= 0) {
+		int ax = (axis >= 0 && axis < grid.rank) ? axis : 0;
+		collapse_width = grid.axes[ax].dx() * 3.0;
+	}
+
+	// for multi-axis: if axis specified, measure along that axis only
+	// by computing the marginal and sampling from it
+	// for single axis (1D) or axis == -1: measure all axes at once
+
+	if(axis >= 0 && axis < grid.rank && grid.rank > 1) {
+		// marginal along this axis
+		int na = grid.axes[axis].points;
+		double dv = 1.0;
+		for(int d = 0; d < grid.rank; d++)
+			if(d != axis) dv *= grid.axes[d].dx();
+
+		std::vector<double> prob(na, 0);
+		grid.each([&](size_t idx, const int *coords, const double *pos) {
+			prob[coords[axis]] += std::norm(p[idx]);
+		});
+
+		// build CDF
+		std::vector<double> cdf(na);
+		cdf[0] = prob[0];
+		for(int i = 1; i < na; i++)
+			cdf[i] = cdf[i-1] + prob[i];
+		double total = cdf[na-1];
+		if(total < 1e-30) return na / 2;
+
+		// sample
+		std::uniform_real_distribution<double> dist(0, total);
+		double r = dist(rng());
+		int result = 0;
+		for(int i = 0; i < na; i++) {
+			if(cdf[i] >= r) { result = i; break; }
+		}
+
+		// collapse: multiply psi by Gaussian along measured axis
+		double x_measured = grid.axes[axis].min + result * grid.axes[axis].dx();
+		double sigma2 = collapse_width * collapse_width;
+		double norm = 0;
+
+		grid.each([&](size_t idx, const int *coords, const double *pos) {
+			double dx = pos[axis] - x_measured;
+			double envelope = exp(-dx * dx / (2.0 * sigma2));
+			p[idx] *= envelope;
+			norm += std::norm(p[idx]);
+		});
+
+		// renormalize
+		dv = 1.0;
+		for(int d = 0; d < grid.rank; d++) dv *= grid.axes[d].dx();
+		norm *= dv;
+		double scale = 1.0 / sqrt(norm);
+		for(size_t i = 0; i < n; i++) p[i] *= scale;
+
+		// upload to solver
+		m_solver->write_psi(p);
+		int back = 1 - front.load();
+		std::copy_n(p, n, psi[back]);
+		front.store(back);
+
+		return result;
+
+	} else {
+		// 1D or measure all axes: sample from full |psi|^2
+
+		// build CDF
+		std::vector<double> cdf(n);
+		cdf[0] = std::norm(p[0]);
+		for(size_t i = 1; i < n; i++)
+			cdf[i] = cdf[i-1] + std::norm(p[i]);
+		double total = cdf[n-1];
+		if(total < 1e-30) return (int)(n / 2);
+
+		// sample
+		std::uniform_real_distribution<double> dist(0, total);
+		double r = dist(rng());
+		int result = 0;
+		for(size_t i = 0; i < n; i++) {
+			if(cdf[i] >= r) { result = (int)i; break; }
+		}
+
+		// collapse: Gaussian centered at measured position
+		double sigma2 = collapse_width * collapse_width;
+		int coords_result[MAX_RANK]{};
+		grid.coords_from_index(result, coords_result);
+		double pos_result[MAX_RANK];
+		for(int d = 0; d < grid.rank; d++)
+			pos_result[d] = grid.axes[d].min + coords_result[d] * grid.axes[d].dx();
+
+		double norm = 0;
+		grid.each([&](size_t idx, const int *coords, const double *pos) {
+			double r2 = 0;
+			for(int d = 0; d < grid.rank; d++) {
+				double dx = pos[d] - pos_result[d];
+				r2 += dx * dx;
+			}
+			double envelope = exp(-r2 / (2.0 * sigma2));
+			p[idx] *= envelope;
+			norm += std::norm(p[idx]);
+		});
+
+		// renormalize
+		double dv = 1.0;
+		for(int d = 0; d < grid.rank; d++) dv *= grid.axes[d].dx();
+		norm *= dv;
+		double scale = 1.0 / sqrt(norm);
+		for(size_t i = 0; i < n; i++) p[i] *= scale;
+
+		// upload
+		m_solver->write_psi(p);
+		int back = 1 - front.load();
+		std::copy_n(p, n, psi[back]);
+		front.store(back);
+
+		return result;
+	}
 }
 
 

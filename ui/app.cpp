@@ -234,7 +234,7 @@ void App::init(int argc, char **argv)
 	init_video();
 
 	// load experiment from script
-	const char *script = (argc > 1) ? argv[1] : "experiments/1d-barrier.lua";
+	const char *script = (argc > 1) ? argv[1] : "experiments/1p1d-barrier.lua";
 	if(load_setup(script, m_experiment.setup, true)) {
 		auto &s = m_experiment.setup;
 		fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",
@@ -299,6 +299,16 @@ void App::run()
 			for(auto &sim : m_experiment.simulations)
 				sim->reset();
 			m_experiment.sim_time = 0;
+		}
+
+		// M/N to measure particle 1/2 (random position sample + collapse)
+		if(ImGui::IsKeyPressed(ImGuiKey_M)) {
+			for(auto &sim : m_experiment.simulations)
+				sim->measure(0);
+		}
+		if(ImGui::IsKeyPressed(ImGuiKey_N)) {
+			for(auto &sim : m_experiment.simulations)
+				sim->measure(1);
 		}
 
 		// B to toggle absorbing boundary

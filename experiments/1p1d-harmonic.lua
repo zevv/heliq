@@ -1,5 +1,6 @@
--- Single electron in a 1D harmonic trap
--- Width matched to ground state: packet stays stationary
+-- Electron in a 1D harmonic trap, ground state coherent state.
+-- Width matched to ground state: packet oscillates without spreading.
+-- Watch it slosh back and forth in the parabolic potential.
 
 domain {
     { min = -5 * um, max = 5 * um, points = 512 },

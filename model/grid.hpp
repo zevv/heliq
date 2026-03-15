@@ -41,6 +41,13 @@ struct Grid {
 		return idx;
 	}
 
+	void coords_from_index(size_t idx, int *coords) const {
+		for(int d = 0; d < rank; d++) {
+			coords[d] = (int)(idx / stride[d]);
+			idx %= stride[d];
+		}
+	}
+
 	// coordinate-aware iteration over all grid points.
 	// callback receives (linear_index, coords[], positions[])
 	template<typename F>

@@ -56,9 +56,12 @@ private:
 	float m_helix_alpha{1.0f};
 	bool m_surface{true};
 	float m_surface_alpha{0.1f};
+	bool m_potential_on{true};
+	float m_potential_alpha{0.3f};
 	int m_slice_axis{0};
 	int m_slice_pos[MAX_RANK]{};
 	int m_slice_mode{Slice};
+	bool m_normalize_slice{false};
 	bool m_orbiting{false}, m_panning{false};
 	float m_drag_x{}, m_drag_y{};
 	float m_cursor_val{0};
@@ -138,8 +141,11 @@ void WidgetHelixGL::do_save(ConfigWriter &cfg)
 	cfg.write("helix_alpha", m_helix_alpha);
 	cfg.write("surface", m_surface ? 1 : 0);
 	cfg.write("surface_alpha", m_surface_alpha);
+	cfg.write("potential_on", m_potential_on ? 1 : 0);
+	cfg.write("potential_alpha", m_potential_alpha);
 	cfg.write("slice_axis", m_slice_axis);
 	cfg.write("slice_mode", m_slice_mode);
+	cfg.write("normalize_slice", m_normalize_slice ? 1 : 0);
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
 		cfg.write(key, m_slice_pos[d]);
@@ -165,8 +171,11 @@ void WidgetHelixGL::do_load(ConfigReader::Node *node)
 	node->read("helix_alpha", m_helix_alpha);
 	int surf = m_surface; node->read("surface", surf); m_surface = surf;
 	node->read("surface_alpha", m_surface_alpha);
+	int pot_on = m_potential_on; node->read("potential_on", pot_on); m_potential_on = pot_on;
+	node->read("potential_alpha", m_potential_alpha);
 	node->read("slice_axis", m_slice_axis);
 	node->read("slice_mode", m_slice_mode);
+	int ns = 0; node->read("normalize_slice", ns); m_normalize_slice = ns;
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
 		node->read(key, m_slice_pos[d]);
@@ -213,7 +222,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	mvp_to_float(vp, mvp);
 	m_gl.set_mvp(mvp);
 
-	if(m_slice_mode != Momentum) {
+	if(m_slice_mode == Slice && m_potential_on) {
 		gl_draw_potentials(sim, n);
 		gl_draw_absorb_zones(sim, n);
 	}
@@ -338,7 +347,7 @@ double WidgetHelixGL::compute_max_amp(const Simulation &sim, const std::complex<
                                        const std::complex<double> *psi_all, int n)
 {
 	double max_amp = 1e-30;
-	if(m_slice_mode != Slice) {
+	if(m_slice_mode != Slice || m_normalize_slice) {
 		for(int i = 0; i < n; i++) {
 			double a = std::abs(psi[i]);
 			if(a > max_amp) max_amp = a;
@@ -594,28 +603,33 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 		double v = pot[sim.grid.linear_index(coords)].real();
 		float x = -1.0f + 2.0f * i / n;
 		float h = (float)v * scale;
-		m_vbuf[i*6+0] = x; m_vbuf[i*6+1] = 0;  m_vbuf[i*6+2] = 0;
-		m_vbuf[i*6+3] = x; m_vbuf[i*6+4] = h;  m_vbuf[i*6+5] = 0;
+		m_vbuf[i*6+0] = x; m_vbuf[i*6+1] = -h;  m_vbuf[i*6+2] = 0;
+		m_vbuf[i*6+3] = x; m_vbuf[i*6+4] =  h;  m_vbuf[i*6+5] = 0;
 		if(v != 0) any = true;
 	}
 
 	if(!any) return;
 
 	glUseProgram(m_gl.solid_shader());
-	glUniform4f(m_gl.color_loc(), 0.47f, 0.47f, 0.47f, 0.3f);
+	glUniform4f(m_gl.color_loc(), 0.47f, 0.47f, 0.47f, m_potential_alpha);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, m_vbuf.data());
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
 
-	// outline at the top
-	std::vector<float> outline(n * 3);
+	// outline top and bottom edges
+	std::vector<float> outline(n * 2 * 3);
 	for(int i = 0; i < n; i++) {
-		outline[i*3+0] = m_vbuf[i*6+3];
+		outline[i*3+0] = m_vbuf[i*6+3];         // top
 		outline[i*3+1] = m_vbuf[i*6+4];
 		outline[i*3+2] = m_vbuf[i*6+5];
+		outline[(n+i)*3+0] = m_vbuf[i*6+0];     // bottom
+		outline[(n+i)*3+1] = m_vbuf[i*6+1];
+		outline[(n+i)*3+2] = m_vbuf[i*6+2];
 	}
-	glUniform4f(m_gl.color_loc(), 0.6f, 0.6f, 0.6f, 0.8f);
+	glUniform4f(m_gl.color_loc(), 0.6f, 0.6f, 0.6f, fminf(1.0f, m_potential_alpha * 2.0f));
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, outline.data());
+	glDrawArrays(GL_LINE_STRIP, 0, n);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, outline.data() + n * 3);
 	glDrawArrays(GL_LINE_STRIP, 0, n);
 	glDisableVertexAttribArray(0);
 }
@@ -699,6 +713,10 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 		static const char *mode_names[] = { "Slice", "Marginal", "Momentum" };
 		if(ImGui::Button(mode_names[m_slice_mode]))
 			m_slice_mode = (m_slice_mode + 1) % 3;
+		if(m_slice_mode == Slice) {
+			ImGui::SameLine();
+			ImGui::Checkbox("Norm", &m_normalize_slice);
+		}
 	} else {
 		if(ImGui::Button(m_slice_mode == Momentum ? "Momentum" : "Position"))
 			m_slice_mode = (m_slice_mode == Momentum) ? Slice : Momentum;
@@ -732,6 +750,13 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 		ImGui::SliderFloat("##env_a", &m_envelope_alpha, 0.0f, 1.0f, "%.1f");
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
 		ImGui::Combo("##env", &m_envelope, envelope_names, (int)Envelope::COUNT);
+
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn(); ImGui::Text("Pot");
+		ImGui::TableNextColumn(); ImGui::Checkbox("##pot_on", &m_potential_on);
+		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+		ImGui::SliderFloat("##pot_a", &m_potential_alpha, 0.0f, 1.0f, "%.1f");
+		ImGui::TableNextColumn();
 
 		ImGui::EndTable();
 	}
@@ -829,6 +854,7 @@ void WidgetHelixGL::handle_keys()
 		m_ortho = true;
 		m_amplitude = 0.1f;
 		m_surface = true; m_surface_alpha = 0.1f;
+		m_potential_on = true; m_potential_alpha = 0.3f;
 		m_helix_on = true; m_helix_color = 0; m_helix_alpha = 1.0f;
 		m_envelope_on = true; m_envelope = 0; m_envelope_alpha = 0.7f;
 		m_slice_mode = Slice;

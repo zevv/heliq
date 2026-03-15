@@ -1,6 +1,6 @@
--- Single electron orbiting in a 2D harmonic trap
--- Coherent state: packet circles without dispersing
-
+-- Electron orbiting in a 2D harmonic trap.
+-- Coherent state: packet circles the origin without dispersing.
+-- Watch it trace a perfect circular orbit in real space.
 
 domain {
     { min = -5 * um, max = 5 * um, points = 512 },

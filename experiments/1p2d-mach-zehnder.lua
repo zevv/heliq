@@ -1,8 +1,8 @@
--- Splitter + mirror: interference demo
--- Particle moves right, hits thin barrier (splitter).
--- Transmitted continues right. Reflected goes back left, hits mirror, returns.
--- Reflected part hits the splitter again — interference with transmitted part.
-
+-- Beam splitter and mirror: quantum interference demo.
+-- Particle moves right, hits a thin barrier (beam splitter).
+-- Transmitted part continues right. Reflected part bounces off a mirror.
+-- Reflected part returns and hits the splitter again — self-interference.
+-- Enable absorbing boundary (B key) to clean up edge reflections.
 
 local L = 5 * um
 
@@ -25,7 +25,7 @@ particle(electron, {
     width = 0.3 * um,
 })
 
--- splitter: thin barrier at x=1um
+-- beam splitter: thin barrier at x = 1um
 local split_h = energy * 0.9
 local split_w = 0.02 * um
 
@@ -35,7 +35,7 @@ barrier {
     height = split_h,
 }
 
--- mirror: thick wall at x = -3um, sends reflected part back
+-- mirror: thick wall at x = -3um
 local wall_h = energy * 200
 local wall_w = 0.15 * um
 
