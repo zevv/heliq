@@ -1,8 +1,11 @@
 -- Mach-Zehnder interferometer in 2D.
--- Particle enters at 45°, splits at first beam splitter (x=0, lower half).
--- Two paths diverge to mirrors at x=±3um, reflect back to second splitter (x=0, upper half).
--- Interference at the second splitter determines which output the particle takes.
--- The gap in the splitter separates the two beam-splitting events.
+-- Particle enters at 45°, hits the bottom beam splitter and splits.
+-- Path A (transmitted) goes right to the right mirror, reflects upward.
+-- Path B (reflected) goes left to the left mirror, reflects upward.
+-- Both paths meet at the top beam splitter and interfere.
+-- The gap between the two splitter halves keeps the paths separate.
+-- Output depends on the relative phase accumulated on each path.
+-- Try adjusting splitter height to tune the splitting ratio.
 
 local L = 5 * um
 
@@ -25,9 +28,10 @@ particle(electron, {
     width = 0.3 * um,
 })
 
--- beam splitter: thin barrier at x = 1um
 local split_h = energy * 0.9
 local split_w = 0.02 * um
+local mirror_h = energy * 20
+local mirror_w = 0.15 * um
 
 -- Top splitter
 barrier {
@@ -43,21 +47,16 @@ barrier {
     height = split_h,
 }
 
-local wall_h = energy * 20
-local wall_w = 0.15 * um
-
 -- left mirror
-
 barrier {
-    from = { -3 * um - wall_w, -2 * um},
-    to   = { -3 * um + wall_w,  2 * um},
-    height = wall_h,
+    from = { -3 * um - mirror_w, -2 * um},
+    to   = { -3 * um + mirror_w,  2 * um},
+    height = mirror_h,
 }
 
 -- right mirror
-
 barrier {
-	from = { 3 * um - wall_w, -2 * um},
-	to   = { 3 * um + wall_w,  2 * um},
-	height = wall_h,
+    from = { 3 * um - mirror_w, -2 * um},
+    to   = { 3 * um + mirror_w,  2 * um},
+    height = mirror_h,
 }
