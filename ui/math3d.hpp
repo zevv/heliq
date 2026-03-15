@@ -87,6 +87,11 @@ struct mat4 {
 		if(w != 0) { x /= w; y /= w; z /= w; }
 		return {x, y, z};
 	}
+
+	// transform point, return w for clipping
+	double transform_w(vec3 p) const {
+		return m[3]*p.x + m[7]*p.y + m[11]*p.z + m[15];
+	}
 };
 
 // project a 3D point to screen coordinates within a rect

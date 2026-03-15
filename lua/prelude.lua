@@ -290,6 +290,26 @@ local function compute_defaults()
     end
     local dt_potential = (v_max > 0) and (math.pi * 2 * hbar / v_max) or math.huge
 
+    -- check wavefunction resolvability
+    for i, p in ipairs(world.particles) do
+        for d, ax in ipairs(world.domain) do
+            local dx = (ax.max - ax.min) / ax.points
+            -- Nyquist: phase per cell must be < pi
+            local mom = p.momentum[d] or 0
+            local phase_per_cell = math.abs(mom) * dx / hbar
+            if phase_per_cell > math.pi then
+                print(string.format("WARNING: particle %d axis %d: momentum too high for grid", i, d))
+                print(string.format("  phase/cell = %.1f rad (max pi), need %d points or lower momentum",
+                    phase_per_cell, math.ceil(ax.points * phase_per_cell / math.pi)))
+            end
+            -- width check
+            if p.width < 2 * dx then
+                print(string.format("WARNING: particle %d: width %.2e m < 2*dx = %.2e m, poorly resolved",
+                    i, p.width, 2 * dx))
+            end
+        end
+    end
+
     -- take the smaller limit, then 10% safety margin
     local dt_max = math.min(dt_kinetic, dt_potential)
     local dt = dt_max * 0.1
