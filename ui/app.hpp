@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "panel.hpp"
 #include "misc.hpp"
 #include "view.hpp"
@@ -38,5 +40,6 @@ private:
     int m_redraw{1};
     char m_session_name[64]{"default"};
     ImFont *m_font{nullptr};
+    std::string m_script;
 };
 

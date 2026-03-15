@@ -19,3 +19,8 @@ particle(electron, {
     momentum = { momentum },
     width = 0.05 * um,
 })
+
+absorbing_boundary {
+    width = 0.07,
+    strength = 10^-23.3,
+}

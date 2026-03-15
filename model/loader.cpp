@@ -254,6 +254,15 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 	setup.spatial_dims = (int)getfield_number(L, -1, "spatial_dims");
 	setup.timescale = getfield_number(L, -1, "timescale", 1e-15);
 
+	// absorbing boundary
+	lua_getfield(L, -1, "absorbing_boundary");
+	setup.absorbing_boundary = lua_toboolean(L, -1);
+	lua_pop(L, 1);
+	if(setup.absorbing_boundary) {
+		setup.absorb_width = getfield_number(L, -1, "absorb_width", 0.02);
+		setup.absorb_strength = getfield_number(L, -1, "absorb_strength", 0.0);
+	}
+
 	bool ok = load_domain(L, setup)
 	       && load_particles(L, setup)
 	       && load_potentials(L, setup)

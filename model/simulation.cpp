@@ -70,6 +70,13 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	// copy initial state into display buffers
 	std::copy_n(psi_initial, n, psi[0]);
 	std::copy_n(psi_initial, n, psi[1]);
+
+	// apply absorbing boundary from setup
+	if(setup.absorbing_boundary) {
+		absorb_width = setup.absorb_width;
+		absorb_strength = setup.absorb_strength;
+		set_absorbing_boundary(true);
+	}
 }
 
 
@@ -357,6 +364,7 @@ void Simulation::decohere(int axis, double strength)
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
 		double phi = 0;
 		for(int d = 0; d < grid.rank; d++) {
+			if(axis >= 0 && d != axis) continue;
 			double L = grid.axes[d].max - grid.axes[d].min;
 			phi += strength * M_PI * pos[d] / L;
 		}

@@ -10,6 +10,9 @@ local world = {
     potentials = {},
     interactions = {},
     simulations = {},
+    absorbing_boundary = false,
+    absorb_width = 0.02,
+    absorb_strength = 0,
 }
 
 -- build the user script environment
@@ -130,6 +133,12 @@ function env.simulate(spec)
     }
 end
 
+function env.absorbing_boundary(spec)
+    world.absorbing_boundary = true
+    world.absorb_width = spec.width or 0.02
+    world.absorb_strength = spec.strength or 0
+end
+
 -- load and run user script in sandboxed environment
 local chunk, load_err = loadfile(script, "t", env)
 if not chunk then
@@ -225,6 +234,11 @@ local function dump()
             print(string.format("  %d: \"%s\"  mode=%s  resolution=%s  dt=%ss",
                 i, sim.name, sim.mode, res, humanize(sim.dt)))
         end
+    end
+    if world.absorbing_boundary then
+        print(string.format("absorbing boundary: width=%.3f  strength=%s",
+            world.absorb_width,
+            world.absorb_strength > 0 and humanize(world.absorb_strength) or "auto"))
     end
 end
 

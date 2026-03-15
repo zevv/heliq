@@ -55,4 +55,7 @@ struct Setup {
 	std::vector<Interaction> interactions{};
 	std::vector<SimConfig> simulations{};
 	double timescale{1e-15};
+	bool absorbing_boundary{false};
+	double absorb_width{0.02};     // fraction of domain width per side
+	double absorb_strength{};      // 0 = auto-compute from potential/grid
 };

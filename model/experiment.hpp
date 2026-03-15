@@ -3,9 +3,11 @@
 #include <vector>
 #include <memory>
 #include <chrono>
+#include <string>
 
 #include "setup.hpp"
 #include "simulation.hpp"
+#include "loader.hpp"
 
 class Experiment {
 public:
@@ -15,6 +17,37 @@ public:
 	double sim_time{};               // current simulation time (seconds)
 	double timescale{1e-15};         // sim seconds per wall second (default 1 fs/s)
 	bool running{false};
+
+	// reload experiment from script
+	bool load(const std::string& path) {
+		// clear existing state
+		simulations.clear();
+		setup = Setup{};
+
+		// load setup from script
+		if(!load_setup(path.c_str(), setup, true)) {
+			fprintf(stderr, "failed to load experiment from %s\n", path.c_str());
+			return false;
+		}
+
+		fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",
+			setup.spatial_dims, setup.particles.size(), setup.potentials.size(), setup.simulations.size());
+
+		// apply timescale from setup
+		timescale = setup.timescale;
+
+		// create simulation instances
+		for(auto &sc : setup.simulations) {
+			simulations.push_back(std::make_unique<Simulation>(sc, setup));
+		}
+
+		// reset state
+		sim_time = 0;
+		batch_size = 4;
+		running = false;
+
+		return true;
+	}
 
 	// advance simulations, but don't spend more than budget_ms on it.
 	// all sims stay in lockstep — clock tracks the slowest.

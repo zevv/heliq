@@ -52,24 +52,11 @@ void App::load()
 		n->read("timescale", ts);
 		m_experiment.timescale = fabs(ts);
 		if(!m_experiment.simulations.empty()) {
-			double dt = m_experiment.simulations[0]->dt;
-			n->read("dt", dt);
-			for(auto &sim : m_experiment.simulations)
-				sim->set_dt(dt);
-			int ab = 0;
-			n->read("absorb", ab);
-			if(ab) {
-				double aw = m_experiment.simulations[0]->absorb_width;
-				double as = m_experiment.simulations[0]->absorb_strength;
-				n->read("absorb_width", aw);
-				n->read("absorb_strength", as);
-				for(auto &sim : m_experiment.simulations) {
-					sim->absorb_width = aw;
-					sim->absorb_strength = as;
-					sim->set_absorbing_boundary(true);
-				}
-			}
-		}
+		double dt = m_experiment.simulations[0]->dt;
+		n->read("dt", dt);
+		for(auto &sim : m_experiment.simulations)
+			sim->set_dt(dt);
+	}
 		for(int d = 0; d < MAX_RANK; d++) {
 			char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
 			n->read(key, m_view.cursor[d]);
@@ -95,9 +82,6 @@ void App::save()
 	cw.write("timescale", m_experiment.timescale);
 	if(!m_experiment.simulations.empty()) {
 		cw.write("dt", m_experiment.simulations[0]->dt);
-		cw.write("absorb", m_experiment.simulations[0]->absorbing_boundary ? 1 : 0);
-		cw.write("absorb_width", m_experiment.simulations[0]->absorb_width);
-		cw.write("absorb_strength", m_experiment.simulations[0]->absorb_strength);
 	}
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
@@ -234,20 +218,8 @@ void App::init(int argc, char **argv)
 	init_video();
 
 	// load experiment from script
-	const char *script = (argc > 1) ? argv[1] : "experiments/1p1d-barrier.lua";
-	if(load_setup(script, m_experiment.setup, true)) {
-		auto &s = m_experiment.setup;
-		fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",
-			s.spatial_dims, s.particles.size(), s.potentials.size(), s.simulations.size());
-		m_experiment.timescale = s.timescale;
-		// create simulation instances
-		for(auto &sc : s.simulations) {
-			m_experiment.simulations.push_back(
-				std::make_unique<Simulation>(sc, s));
-		}
-	} else {
-		fprintf(stderr, "failed to load experiment\n");
-	}
+	m_script = (argc > 1) ? argv[1] : "experiments/1p1d-barrier.lua";
+	m_experiment.load(m_script);
 
 	m_root_panel = new Panel(Panel::Type::Root);
 	load();
@@ -296,11 +268,9 @@ void App::run()
 		if(ImGui::IsKeyPressed(ImGuiKey_Period))
 			m_experiment.timescale = fabs(m_experiment.timescale);
 
-		// R to reset experiment
+		// R to reload experiment
 		if(ImGui::IsKeyPressed(ImGuiKey_R)) {
-			for(auto &sim : m_experiment.simulations)
-				sim->reset();
-			m_experiment.sim_time = 0;
+			m_experiment.load(m_script);
 		}
 
 		// M/N to measure, Shift+M/N to decohere
