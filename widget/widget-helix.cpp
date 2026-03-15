@@ -432,13 +432,11 @@ void WidgetHelixGL::gl_draw_surface(const std::complex<double> *psi, double max_
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, m_vbuf.data());
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
 
-	// stem lines: draw every ~8th stem
-	int step = n / 64;
-	if(step < 1) step = 1;
-	std::vector<float> stems;
-	for(int i = 0; i < n; i += step) {
-		stems.push_back(m_vbuf[i*6+0]); stems.push_back(0); stems.push_back(0);
-		stems.push_back(m_vbuf[i*6+3]); stems.push_back(m_vbuf[i*6+4]); stems.push_back(m_vbuf[i*6+5]);
+	// stem lines
+	std::vector<float> stems(n * 6);
+	for(int i = 0; i < n; i++) {
+		stems[i*6+0] = m_vbuf[i*6+0]; stems[i*6+1] = 0; stems[i*6+2] = 0;
+		stems[i*6+3] = m_vbuf[i*6+3]; stems[i*6+4] = m_vbuf[i*6+4]; stems[i*6+5] = m_vbuf[i*6+5];
 	}
 	glUniform4f(m_gl.color_loc(), 0.31f, 0.31f, 0.47f, 1.0f);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, stems.data());
@@ -574,31 +572,52 @@ void WidgetHelixGL::gl_draw_envelope(const std::complex<double> *psi, double max
 void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 {
 	auto *pot = sim.potential;
-	glUseProgram(m_gl.solid_shader());
-	int start = -1;
-	for(int i = 0; i <= n; i++) {
-		double v = 0;
-		if(i < n) {
-			int coords[MAX_RANK]{};
-			for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice_pos[d];
-			coords[m_slice_axis] = i;
-			v = pot[sim.grid.linear_index(coords)].real();
-		}
-		if(v > 0 && start < 0) {
-			start = i;
-		} else if(v <= 0 && start >= 0) {
-			float x0 = -1.0f + 2.0f * start / n;
-			float x1 = -1.0f + 2.0f * i / n;
-			float h = 0.02f;
-			glUniform4f(m_gl.color_loc(), 0.47f, 0.47f, 0.47f, 0.8f);
-			float quad[] = { x0,-h,0, x1,-h,0, x0,h,0, x1,h,0 };
-			glEnableVertexAttribArray(0);
-			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, quad);
-			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-			glDisableVertexAttribArray(0);
-			start = -1;
-		}
+
+	// find max potential for scaling
+	double v_max = 1e-30;
+	for(int i = 0; i < n; i++) {
+		int coords[MAX_RANK]{};
+		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice_pos[d];
+		coords[m_slice_axis] = i;
+		double v = fabs(pot[sim.grid.linear_index(coords)].real());
+		if(v > v_max) v_max = v;
 	}
+
+	// draw as triangle strip: axis to V(x), scaled to amplitude
+	float scale = m_amplitude / (float)v_max;
+	m_vbuf.resize(n * 2 * 3);
+	bool any = false;
+	for(int i = 0; i < n; i++) {
+		int coords[MAX_RANK]{};
+		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice_pos[d];
+		coords[m_slice_axis] = i;
+		double v = pot[sim.grid.linear_index(coords)].real();
+		float x = -1.0f + 2.0f * i / n;
+		float h = (float)v * scale;
+		m_vbuf[i*6+0] = x; m_vbuf[i*6+1] = 0;  m_vbuf[i*6+2] = 0;
+		m_vbuf[i*6+3] = x; m_vbuf[i*6+4] = h;  m_vbuf[i*6+5] = 0;
+		if(v != 0) any = true;
+	}
+
+	if(!any) return;
+
+	glUseProgram(m_gl.solid_shader());
+	glUniform4f(m_gl.color_loc(), 0.47f, 0.47f, 0.47f, 0.3f);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, m_vbuf.data());
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
+
+	// outline at the top
+	std::vector<float> outline(n * 3);
+	for(int i = 0; i < n; i++) {
+		outline[i*3+0] = m_vbuf[i*6+3];
+		outline[i*3+1] = m_vbuf[i*6+4];
+		outline[i*3+2] = m_vbuf[i*6+5];
+	}
+	glUniform4f(m_gl.color_loc(), 0.6f, 0.6f, 0.6f, 0.8f);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, outline.data());
+	glDrawArrays(GL_LINE_STRIP, 0, n);
+	glDisableVertexAttribArray(0);
 }
 
 
