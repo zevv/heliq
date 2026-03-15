@@ -205,6 +205,27 @@ public:
 			SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
 		}
 
+		// draw absorbing boundary zones
+		if(sim.absorbing_boundary) {
+			float w = (float)sim.absorb_width;
+			SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
+			SDL_SetRenderDrawColor(rend, 200, 40, 40, 40);
+			// left
+			SDL_FRect ab_left = { dst.x, dst.y, dst.w * w, dst.h };
+			SDL_RenderFillRect(rend, &ab_left);
+			// right
+			SDL_FRect ab_right = { dst.x + dst.w * (1.0f - w), dst.y, dst.w * w, dst.h };
+			SDL_RenderFillRect(rend, &ab_right);
+			if(grid.rank >= 2) {
+				// bottom
+				SDL_FRect ab_bot = { dst.x, dst.y + dst.h * (1.0f - w), dst.w, dst.h * w };
+				SDL_RenderFillRect(rend, &ab_bot);
+				// top
+				SDL_FRect ab_top = { dst.x, dst.y, dst.w, dst.h * w };
+				SDL_RenderFillRect(rend, &ab_top);
+			}
+		}
+
 		// draw border around grid
 		SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
 		SDL_RenderRect(rend, &dst);

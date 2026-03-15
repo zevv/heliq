@@ -106,6 +106,8 @@ private:
 	void draw_axis(SDL_Renderer *rend, const mat4 &vp, SDL_Rect &r);
 	void draw_potentials(SDL_Renderer *rend, const Simulation &sim, int n,
 	                     const mat4 &vp, SDL_Rect &r);
+	void draw_absorb_zones(SDL_Renderer *rend, const Simulation &sim, int n,
+	                       const mat4 &vp, SDL_Rect &r);
 	void draw_surface(SDL_Renderer *rend, int n, const mat4 &vp, SDL_Rect &r,
 	                  const std::vector<vec3> &pts3d, const std::vector<SDL_FPoint> &helix_pts);
 	void draw_helix(SDL_Renderer *rend, const std::complex<double> *psi,
@@ -208,8 +210,10 @@ void WidgetHelix::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	std::vector<vec3> pts3d(n);
 	build_points(psi, max_amp, n, vp, r, helix_pts, pts3d);
 
-	if(m_slice_mode != Momentum)
+	if(m_slice_mode != Momentum) {
 		draw_potentials(rend, sim, n, vp, r);
+		draw_absorb_zones(rend, sim, n, vp, r);
+	}
 	draw_surface(rend, n, vp, r, pts3d, helix_pts);
 	draw_axis(rend, vp, r);
 	draw_helix(rend, psi, max_amp, n, helix_pts);
@@ -469,6 +473,66 @@ void WidgetHelix::draw_potentials(SDL_Renderer *rend, const Simulation &sim, int
 				SDL_RenderGeometry(rend, nullptr, verts, 6, nullptr, 0);
 			}
 			start = -1;
+		}
+	}
+}
+
+
+void WidgetHelix::draw_absorb_zones(SDL_Renderer *rend, const Simulation &sim, int n,
+                                     const mat4 &vp, SDL_Rect &r)
+{
+	if(!sim.absorbing_boundary) return;
+	float w = (float)sim.absorb_width;
+	int n_left = (int)(w * n);
+	int n_right = n - n_left;
+
+	// left zone
+	if(n_left > 0) {
+		double x0 = -1.0 + 2.0 * 0 / n;
+		double x1 = -1.0 + 2.0 * n_left / n;
+		vec3 p0 = vp.transform({x0, 0, 0});
+		vec3 p1 = vp.transform({x1, 0, 0});
+		SDL_FPoint s0 = project(p0, r.x, r.y, r.w, r.h);
+		SDL_FPoint s1 = project(p1, r.x, r.y, r.w, r.h);
+		float dx = s1.x - s0.x, dy = s1.y - s0.y;
+		float len = sqrtf(dx * dx + dy * dy);
+		if(len > 0) {
+			float nx = -dy / len * 2.5f, ny = dx / len * 2.5f;
+			SDL_FColor col = {0.8f, 0.15f, 0.15f, 0.6f};
+			SDL_Vertex verts[6] = {
+				{{s0.x + nx, s0.y + ny}, col, {0,0}},
+				{{s1.x + nx, s1.y + ny}, col, {0,0}},
+				{{s1.x - nx, s1.y - ny}, col, {0,0}},
+				{{s0.x + nx, s0.y + ny}, col, {0,0}},
+				{{s1.x - nx, s1.y - ny}, col, {0,0}},
+				{{s0.x - nx, s0.y - ny}, col, {0,0}},
+			};
+			SDL_RenderGeometry(rend, nullptr, verts, 6, nullptr, 0);
+		}
+	}
+
+	// right zone
+	if(n_right < n) {
+		double x0 = -1.0 + 2.0 * n_right / n;
+		double x1 = -1.0 + 2.0 * (n - 1) / n;
+		vec3 p0 = vp.transform({x0, 0, 0});
+		vec3 p1 = vp.transform({x1, 0, 0});
+		SDL_FPoint s0 = project(p0, r.x, r.y, r.w, r.h);
+		SDL_FPoint s1 = project(p1, r.x, r.y, r.w, r.h);
+		float dx = s1.x - s0.x, dy = s1.y - s0.y;
+		float len = sqrtf(dx * dx + dy * dy);
+		if(len > 0) {
+			float nx = -dy / len * 2.5f, ny = dx / len * 2.5f;
+			SDL_FColor col = {0.8f, 0.15f, 0.15f, 0.6f};
+			SDL_Vertex verts[6] = {
+				{{s0.x + nx, s0.y + ny}, col, {0,0}},
+				{{s1.x + nx, s1.y + ny}, col, {0,0}},
+				{{s1.x - nx, s1.y - ny}, col, {0,0}},
+				{{s0.x + nx, s0.y + ny}, col, {0,0}},
+				{{s1.x - nx, s1.y - ny}, col, {0,0}},
+				{{s0.x - nx, s0.y - ny}, col, {0,0}},
+			};
+			SDL_RenderGeometry(rend, nullptr, verts, 6, nullptr, 0);
 		}
 	}
 }
@@ -807,4 +871,5 @@ void WidgetHelix::handle_keys()
 REGISTER_WIDGET(WidgetHelix,
 	.name = "helix",
 	.description = "3D helix wavefunction viewer",
+    .hotkey = ImGuiKey_F2,
 );

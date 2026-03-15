@@ -20,5 +20,4 @@ public:
 REGISTER_WIDGET(WidgetDummy,
     .name = "dummy",
     .description = "Empty placeholder widget",
-    .hotkey = ImGuiKey_F1,
 )

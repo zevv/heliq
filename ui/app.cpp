@@ -59,8 +59,15 @@ void App::load()
 			int ab = 0;
 			n->read("absorb", ab);
 			if(ab) {
-				for(auto &sim : m_experiment.simulations)
+				double aw = m_experiment.simulations[0]->absorb_width;
+				double as = m_experiment.simulations[0]->absorb_strength;
+				n->read("absorb_width", aw);
+				n->read("absorb_strength", as);
+				for(auto &sim : m_experiment.simulations) {
+					sim->absorb_width = aw;
+					sim->absorb_strength = as;
 					sim->set_absorbing_boundary(true);
+				}
 			}
 		}
 		for(int d = 0; d < MAX_RANK; d++) {
@@ -89,6 +96,8 @@ void App::save()
 	if(!m_experiment.simulations.empty()) {
 		cw.write("dt", m_experiment.simulations[0]->dt);
 		cw.write("absorb", m_experiment.simulations[0]->absorbing_boundary ? 1 : 0);
+		cw.write("absorb_width", m_experiment.simulations[0]->absorb_width);
+		cw.write("absorb_strength", m_experiment.simulations[0]->absorb_strength);
 	}
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);

@@ -36,11 +36,11 @@ public:
 			// speed
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
-			ImGui::Text("Speed");
+			ImGui::Text("Time");
 			ImGui::TableNextColumn();
 			ImGui::SetNextItemWidth(-1);
 			float log_ts = log10f(fabs(exp.timescale));
-			if(ImGui::SliderFloat("##speed", &log_ts, -18.0f, -9.0f, "1e%.1f s/s"))
+			if(ImGui::SliderFloat("##speed", &log_ts, -18.0f, -9.0f, "speed: 1e%.1f x"))
 				exp.timescale = (rev ? -1.0 : 1.0) * pow(10.0, log_ts);
 
 			if(!exp.simulations.empty()) {
@@ -49,11 +49,10 @@ public:
 				// dt
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
-				ImGui::Text("dt");
 				ImGui::TableNextColumn();
 				ImGui::SetNextItemWidth(-1);
 				float log_dt = log10f(sim.dt);
-				if(ImGui::SliderFloat("##dt", &log_dt, -18.0f, -11.0f, "1e%.1f s")) {
+				if(ImGui::SliderFloat("##dt", &log_dt, -18.0f, -11.0f, "step: 1e%.1f s")) {
 					double new_dt = pow(10.0, log_dt);
 					for(auto &s : exp.simulations)
 						s->set_dt(new_dt);
@@ -83,11 +82,41 @@ public:
 				ImGui::Text("P");
 				ImGui::TableNextColumn();
 				ImGui::TextColored(col_prob, "%.6f", prob);
-				ImGui::SameLine();
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
 				bool ab = sim.absorbing_boundary;
-				if(ImGui::Checkbox("Absorb", &ab)) {
+				ImGui::Text("Absorb");
+				ImGui::SameLine();
+				if(ImGui::Checkbox("##Absorb", &ab)) {
 					for(auto &s : exp.simulations)
 						s->set_absorbing_boundary(ab);
+				}
+
+				if(sim.absorbing_boundary) {
+					// width
+					ImGui::TableNextColumn();
+					ImGui::SetNextItemWidth(-1);
+					float w = (float)sim.absorb_width;
+					if(ImGui::SliderFloat("##abw", &w, 0.01f, 0.3f, "width: %.2f")) {
+						for(auto &s : exp.simulations) {
+							s->absorb_width = w;
+							s->recompute_boundary();
+						}
+					}
+
+					// strength (log scale)
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
+					ImGui::TableNextColumn();
+					ImGui::SetNextItemWidth(-1);
+					float log_s = log10f(sim.absorb_strength);
+					if(ImGui::SliderFloat("##abs", &log_s, -30.0f, -15.0f, "depth: 1e%.0f")) {
+						for(auto &s : exp.simulations) {
+							s->absorb_strength = pow(10.0, log_s);
+							s->recompute_boundary();
+						}
+					}
 				}
 			}
 
@@ -158,5 +187,5 @@ public:
 REGISTER_WIDGET(WidgetInfo,
 	.name = "info",
 	.description = "Experiment status",
-	.hotkey = ImGuiKey_F2,
+	.hotkey = ImGuiKey_F1,
 )

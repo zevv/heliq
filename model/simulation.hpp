@@ -53,6 +53,7 @@ public:
 	double absorb_width{0.02};    // fraction of domain width per side
 	double absorb_strength{};     // auto-computed from dt
 	void set_absorbing_boundary(bool on);
+	void recompute_boundary();  // re-apply after width/strength change
 
 	// diagnostics
 	double max_potential_phase{};  // max |V*dt/(2*hbar)| in radians

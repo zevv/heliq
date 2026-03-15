@@ -159,27 +159,30 @@ void Simulation::set_absorbing_boundary(bool on)
 	if(on == absorbing_boundary) return;
 	absorbing_boundary = on;
 
-	// strength: peak imaginary potential at the boundary edge
-	// needs to be large enough to absorb within the boundary width
-	// but not so large that it causes reflections at the boundary onset
-	// use max kinetic phase as a reference for energy scale
-	double dx_min = grid.axes[0].dx();
-	for(int d = 1; d < grid.rank; d++)
-		if(grid.axes[d].dx() < dx_min) dx_min = grid.axes[d].dx();
-	// find peak kinetic energy from the actual potential phases
-	double V_max = 0;
-	size_t n = grid.total_points();
-	for(size_t i = 0; i < n; i++) {
-		double v = fabs(potential[i].real());
-		if(v > V_max) V_max = v;
-	}
-	// fall back to a reasonable scale if no potential
-	if(V_max < 1e-30) {
+	// auto-compute strength if not already set
+	if(on && absorb_strength <= 0) {
+		double dx_min = grid.axes[0].dx();
+		for(int d = 1; d < grid.rank; d++)
+			if(grid.axes[d].dx() < dx_min) dx_min = grid.axes[d].dx();
 		double k_max = M_PI / dx_min;
-		V_max = hbar * hbar * k_max * k_max / (2.0 * mass[0]) * 0.01;
+		double E_nyquist = hbar * hbar * k_max * k_max / (2.0 * mass[0]);
+		double V_max = 0;
+		size_t n = grid.total_points();
+		for(size_t i = 0; i < n; i++) {
+			double v = fabs(potential[i].real());
+			if(v > V_max) V_max = v;
+		}
+		absorb_strength = fmax(V_max, E_nyquist * 0.01);
 	}
-	absorb_strength = V_max * 0.1;
 
+	compute_potential_phase();
+	upload_phases();
+}
+
+
+void Simulation::recompute_boundary()
+{
+	if(!absorbing_boundary) return;
 	compute_potential_phase();
 	upload_phases();
 }
