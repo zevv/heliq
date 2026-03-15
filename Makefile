@@ -1,5 +1,5 @@
 
-BIN = quantum
+BIN = heliq
 
 IMGUI_DIR = /home/ico/external/imgui
 
