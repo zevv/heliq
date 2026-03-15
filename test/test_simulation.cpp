@@ -4,7 +4,7 @@
 
 TEST_CASE("simulation allocation from setup") {
 	Setup setup{};
-	REQUIRE(load_setup("experiments/1d-barrier.lua", setup));
+	REQUIRE(load_setup("test/test-1d-barrier.lua", setup));
 	REQUIRE(setup.simulations.size() == 1);
 
 	Simulation sim(setup.simulations[0], setup);
@@ -52,7 +52,7 @@ TEST_CASE("simulation allocation from setup") {
 
 TEST_CASE("simulation step evolves wavefunction") {
 	Setup setup{};
-	REQUIRE(load_setup("experiments/1d-barrier.lua", setup));
+	REQUIRE(load_setup("test/test-1d-barrier.lua", setup));
 
 	Simulation sim(setup.simulations[0], setup);
 
@@ -71,7 +71,7 @@ TEST_CASE("simulation step evolves wavefunction") {
 
 TEST_CASE("simulation with custom resolution") {
 	Setup setup{};
-	REQUIRE(load_setup("experiments/1d-barrier.lua", setup));
+	REQUIRE(load_setup("test/test-1d-barrier.lua", setup));
 
 	SimConfig config{};
 	config.name = "coarse";

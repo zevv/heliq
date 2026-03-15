@@ -1,7 +1,6 @@
 #pragma once
 
 #include <math.h>
-#include <SDL3/SDL.h>
 
 struct vec3 {
 	double x{}, y{}, z{};
@@ -87,17 +86,4 @@ struct mat4 {
 		if(w != 0) { x /= w; y /= w; z /= w; }
 		return {x, y, z};
 	}
-
-	// transform point, return w for clipping
-	double transform_w(vec3 p) const {
-		return m[3]*p.x + m[7]*p.y + m[11]*p.z + m[15];
-	}
 };
-
-// project a 3D point to screen coordinates within a rect
-inline SDL_FPoint project_to_screen(vec3 ndc, int rx, int ry, int rw, int rh) {
-	return {
-		(float)(rx + (ndc.x * 0.5 + 0.5) * rw),
-		(float)(ry + (-ndc.y * 0.5 + 0.5) * rh),
-	};
-}

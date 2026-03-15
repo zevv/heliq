@@ -12,6 +12,7 @@ SRC += ui/widgetregistry.cpp
 SRC += ui/misc.cpp
 SRC += ui/config.cpp
 SRC += ui/style.cpp
+SRC += ui/glview.cpp
 SRC += model/loader.cpp
 SRC += model/simulation.cpp
 SRC += model/solver.cpp
@@ -50,7 +51,7 @@ CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 CXXFLAGS += -DVKFFT_BACKEND=3
 CXXFLAGS += $(PKG_CFLAGS)
 
-LIBS += -ldl -latomic -lfftw3_threads -lpthread -lOpenCL $(PKG_LIBS)
+LIBS += -ldl -latomic -lfftw3_threads -lpthread -lOpenCL -lEGL -lGLESv2 $(PKG_LIBS)
 
 ifdef clang
 CXX=clang++

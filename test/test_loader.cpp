@@ -3,7 +3,7 @@
 
 TEST_CASE("load 1d-barrier experiment") {
 	Setup setup{};
-	REQUIRE(load_setup("experiments/1d-barrier.lua", setup));
+	REQUIRE(load_setup("test/test-1d-barrier.lua", setup));
 
 	CHECK(setup.spatial_dims == 1);
 

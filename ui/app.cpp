@@ -123,6 +123,7 @@ void App::init_video()
         fprintf(stderr, "Error: SDL_CreateRenderer(): %s\n", SDL_GetError());
         ::exit(1);
     }
+    fprintf(stderr, "SDL renderer: %s\n", SDL_GetRendererName(m_rend));
     SDL_SetWindowPosition(m_win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(m_win);
 
