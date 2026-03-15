@@ -41,35 +41,57 @@ private:
 
 	enum SliceMode { Slice, Marginal, Momentum };
 
-	// state
-	double m_yaw{0}, m_pitch{0}, m_dist{2.5};
-	double m_pan_x{0}, m_pan_y{0};
-	bool m_ortho{true};
+	// camera state
+	struct {
+		double yaw{0}, pitch{0}, dist{2.5};
+		double pan_x{0}, pan_y{0};
+		bool ortho{true};
+	} m_camera;
+
 	float m_amplitude{0.1f};
 
 	// visual layers
-	bool m_envelope_on{true};
-	int m_envelope{0};
-	float m_envelope_alpha{0.7f};
-	bool m_helix_on{true};
-	int m_helix_color{0};
-	float m_helix_alpha{1.0f};
-	bool m_surface{true};
-	float m_surface_alpha{0.1f};
-	bool m_potential_on{true};
-	float m_potential_alpha{0.3f};
-	int m_slice_axis{0};
-	int m_slice_pos[MAX_RANK]{};
-	int m_slice_mode{Slice};
-	bool m_normalize_slice{false};
-	bool m_auto_slice{false};
-	bool m_orbiting{false}, m_panning{false};
-	float m_drag_x{}, m_drag_y{};
-	float m_cursor_val{0};
-	bool m_cursor_valid{false};
+	struct {
+		bool on{true};
+		int mode{0};
+		float alpha{0.7f};
+	} m_envelope;
+
+	struct {
+		bool on{true};
+		int color{0};
+		float alpha{1.0f};
+	} m_helix;
+
+	struct {
+		bool on{true};
+		float alpha{0.1f};
+	} m_surface;
+
+	struct {
+		bool on{true};
+		float alpha{0.3f};
+	} m_potential;
+
+	// slice state
+	struct {
+		int axis{0};
+		int pos[MAX_RANK]{};
+		int mode{Slice};
+		bool normalize{false};
+		bool auto_track{false};
+	} m_slice;
+
+	// input state
+	struct {
+		bool orbiting{false}, panning{false};
+		float drag_x{}, drag_y{};
+		float cursor_val{0};
+		bool cursor_valid{false};
+	} m_input;
 
 	// data
-	std::vector<std::complex<double>> m_slice;
+	std::vector<std::complex<double>> m_slice_data;
 	std::vector<std::complex<double>> m_fft_buf;
 	std::vector<double> m_marginals[MAX_RANK];  // probability marginals per axis
 	int m_marginal_peak[MAX_RANK]{};            // argmax per axis
@@ -130,30 +152,30 @@ WidgetHelixGL::~WidgetHelixGL()
 
 void WidgetHelixGL::do_save(ConfigWriter &cfg)
 {
-	cfg.write("yaw", m_yaw);
-	cfg.write("pitch", m_pitch);
-	cfg.write("dist", m_dist);
-	cfg.write("pan_x", m_pan_x);
-	cfg.write("pan_y", m_pan_y);
-	cfg.write("ortho", m_ortho);
+	cfg.write("yaw", m_camera.yaw);
+	cfg.write("pitch", m_camera.pitch);
+	cfg.write("dist", m_camera.dist);
+	cfg.write("pan_x", m_camera.pan_x);
+	cfg.write("pan_y", m_camera.pan_y);
+	cfg.write("ortho", m_camera.ortho);
 	cfg.write("amplitude", m_amplitude);
-	cfg.write("envelope_on", m_envelope_on ? 1 : 0);
-	cfg.write("envelope", m_envelope);
-	cfg.write("envelope_alpha", m_envelope_alpha);
-	cfg.write("helix_on", m_helix_on ? 1 : 0);
-	cfg.write("helix_color", m_helix_color);
-	cfg.write("helix_alpha", m_helix_alpha);
-	cfg.write("surface", m_surface ? 1 : 0);
-	cfg.write("surface_alpha", m_surface_alpha);
-	cfg.write("potential_on", m_potential_on ? 1 : 0);
-	cfg.write("potential_alpha", m_potential_alpha);
-	cfg.write("slice_axis", m_slice_axis);
-	cfg.write("slice_mode", m_slice_mode);
-	cfg.write("normalize_slice", m_normalize_slice ? 1 : 0);
-	cfg.write("auto_slice", m_auto_slice ? 1 : 0);
+	cfg.write("envelope_on", m_envelope.on ? 1 : 0);
+	cfg.write("envelope", m_envelope.mode);
+	cfg.write("envelope_alpha", m_envelope.alpha);
+	cfg.write("helix_on", m_helix.on ? 1 : 0);
+	cfg.write("helix_color", m_helix.color);
+	cfg.write("helix_alpha", m_helix.alpha);
+	cfg.write("surface", m_surface.on ? 1 : 0);
+	cfg.write("surface_alpha", m_surface.alpha);
+	cfg.write("potential_on", m_potential.on ? 1 : 0);
+	cfg.write("potential_alpha", m_potential.alpha);
+	cfg.write("slice_axis", m_slice.axis);
+	cfg.write("slice_mode", m_slice.mode);
+	cfg.write("normalize_slice", m_slice.normalize ? 1 : 0);
+	cfg.write("auto_slice", m_slice.auto_track ? 1 : 0);
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
-		cfg.write(key, m_slice_pos[d]);
+		cfg.write(key, m_slice.pos[d]);
 	}
 }
 
@@ -161,30 +183,30 @@ void WidgetHelixGL::do_save(ConfigWriter &cfg)
 void WidgetHelixGL::do_load(ConfigReader::Node *node)
 {
 	if(!node) return;
-	node->read("yaw", m_yaw);
-	node->read("pitch", m_pitch);
-	node->read("dist", m_dist);
-	node->read("pan_x", m_pan_x);
-	node->read("pan_y", m_pan_y);
-	node->read("ortho", m_ortho);
+	node->read("yaw", m_camera.yaw);
+	node->read("pitch", m_camera.pitch);
+	node->read("dist", m_camera.dist);
+	node->read("pan_x", m_camera.pan_x);
+	node->read("pan_y", m_camera.pan_y);
+	node->read("ortho", m_camera.ortho);
 	node->read("amplitude", m_amplitude);
-	int env_on = m_envelope_on; node->read("envelope_on", env_on); m_envelope_on = env_on;
-	node->read("envelope", m_envelope);
-	node->read("envelope_alpha", m_envelope_alpha);
-	int hx_on = m_helix_on; node->read("helix_on", hx_on); m_helix_on = hx_on;
-	node->read("helix_color", m_helix_color);
-	node->read("helix_alpha", m_helix_alpha);
-	int surf = m_surface; node->read("surface", surf); m_surface = surf;
-	node->read("surface_alpha", m_surface_alpha);
-	int pot_on = m_potential_on; node->read("potential_on", pot_on); m_potential_on = pot_on;
-	node->read("potential_alpha", m_potential_alpha);
-	node->read("slice_axis", m_slice_axis);
-	node->read("slice_mode", m_slice_mode);
-	int ns = 0; node->read("normalize_slice", ns); m_normalize_slice = ns;
-	int as = 0; node->read("auto_slice", as); m_auto_slice = as;
+	int env_on = m_envelope.on; node->read("envelope_on", env_on); m_envelope.on = env_on;
+	node->read("envelope", m_envelope.mode);
+	node->read("envelope_alpha", m_envelope.alpha);
+	int hx_on = m_helix.on; node->read("helix_on", hx_on); m_helix.on = hx_on;
+	node->read("helix_color", m_helix.color);
+	node->read("helix_alpha", m_helix.alpha);
+	int surf = m_surface.on; node->read("surface", surf); m_surface.on = surf;
+	node->read("surface_alpha", m_surface.alpha);
+	int pot_on = m_potential.on; node->read("potential_on", pot_on); m_potential.on = pot_on;
+	node->read("potential_alpha", m_potential.alpha);
+	node->read("slice_axis", m_slice.axis);
+	node->read("slice_mode", m_slice.mode);
+	int ns = 0; node->read("normalize_slice", ns); m_slice.normalize = ns;
+	int as = 0; node->read("auto_slice", as); m_slice.auto_track = as;
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "slice_%d", d);
-		node->read(key, m_slice_pos[d]);
+		node->read(key, m_slice.pos[d]);
 	}
 }
 
@@ -205,14 +227,14 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	if(sim.grid.rank < 1) return;
 
 	auto *psi_all = sim.psi_front();
-	if(m_slice_axis >= sim.grid.rank) m_slice_axis = 0;
-	int n = sim.grid.axes[m_slice_axis].points;
+	if(m_slice.axis >= sim.grid.rank) m_slice.axis = 0;
+	int n = sim.grid.axes[m_slice.axis].points;
 
 	clamp_slice_positions(sim);
 	if(sim.grid.rank > 1) compute_marginals(sim, psi_all);
 	extract_data(sim, psi_all, n);
 
-	auto *psi = m_slice.data();
+	auto *psi = m_slice_data.data();
 	double max_amp = compute_max_amp(sim, psi, psi_all, n);
 
 	handle_mouse(r);
@@ -230,14 +252,14 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	mvp_to_float(vp, mvp);
 	m_gl.set_mvp(mvp);
 
-	if(m_slice_mode == Slice && m_potential_on) {
+	if(m_slice.mode == Slice && m_potential.on) {
 		gl_draw_potentials(sim, n);
 		gl_draw_absorb_zones(sim, n);
 	}
-	if(m_surface) gl_draw_surface(psi, max_amp, n);
+	if(m_surface.on) gl_draw_surface(psi, max_amp, n);
 	gl_draw_axis(vp);
-	if(m_helix_on) gl_draw_helix(psi, max_amp, n);
-	if(m_envelope_on) gl_draw_envelope(psi, max_amp, n, vp);
+	if(m_helix.on) gl_draw_helix(psi, max_amp, n);
+	if(m_envelope.on) gl_draw_envelope(psi, max_amp, n, vp);
 	gl_draw_cursor();
 
 	m_gl.end(rend);
@@ -255,12 +277,12 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
 		               mp.y >= r.y && mp.y < r.y + r.h;
 		if(in_rect) {
-			m_cursor_val = screen_x_to_axis(vp, r.w, r.h, mp.x - r.x);
-			if(m_cursor_val < -1.0f) m_cursor_val = -1.0f;
-			if(m_cursor_val >  1.0f) m_cursor_val =  1.0f;
-			m_cursor_valid = true;
+			m_input.cursor_val = screen_x_to_axis(vp, r.w, r.h, mp.x - r.x);
+			if(m_input.cursor_val < -1.0f) m_input.cursor_val = -1.0f;
+			if(m_input.cursor_val >  1.0f) m_input.cursor_val =  1.0f;
+			m_input.cursor_valid = true;
 		} else {
-			m_cursor_valid = false;
+			m_input.cursor_valid = false;
 		}
 	}
 
@@ -275,10 +297,10 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 void WidgetHelixGL::clamp_slice_positions(const Simulation &sim)
 {
 	for(int d = 0; d < sim.grid.rank; d++) {
-		if(m_slice_pos[d] == 0 && d != m_slice_axis)
-			m_slice_pos[d] = sim.grid.axes[d].points / 2;
-		if(m_slice_pos[d] >= sim.grid.axes[d].points)
-			m_slice_pos[d] = sim.grid.axes[d].points - 1;
+		if(m_slice.pos[d] == 0 && d != m_slice.axis)
+			m_slice.pos[d] = sim.grid.axes[d].points / 2;
+		if(m_slice.pos[d] >= sim.grid.axes[d].points)
+			m_slice.pos[d] = sim.grid.axes[d].points - 1;
 	}
 }
 
@@ -321,9 +343,9 @@ void WidgetHelixGL::extract_slice(const Simulation &sim, const std::complex<doub
 {
 	for(int i = 0; i < n; i++) {
 		int coords[MAX_RANK]{};
-		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice_pos[d];
-		coords[m_slice_axis] = i;
-		m_slice[i] = psi_all[sim.grid.linear_index(coords)];
+		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice.pos[d];
+		coords[m_slice.axis] = i;
+		m_slice_data[i] = psi_all[sim.grid.linear_index(coords)];
 	}
 }
 
@@ -331,16 +353,16 @@ void WidgetHelixGL::extract_marginal(const Simulation &sim, const std::complex<d
 {
 	double dv = 1.0;
 	for(int d = 0; d < sim.grid.rank; d++)
-		if(d != m_slice_axis) dv *= sim.grid.axes[d].dx();
-	auto &marg = m_marginals[m_slice_axis];
+		if(d != m_slice.axis) dv *= sim.grid.axes[d].dx();
+	auto &marg = m_marginals[m_slice.axis];
 	for(int i = 0; i < n; i++)
-		m_slice[i] = std::complex<double>(sqrt(marg[i] * dv), 0);
+		m_slice_data[i] = std::complex<double>(sqrt(marg[i] * dv), 0);
 }
 
 void WidgetHelixGL::extract_momentum(const Simulation &sim, const std::complex<double> *psi_all, int n)
 {
 	if(sim.grid.rank == 1)
-		for(int i = 0; i < n; i++) m_slice[i] = psi_all[i];
+		for(int i = 0; i < n; i++) m_slice_data[i] = psi_all[i];
 	else
 		extract_slice(sim, psi_all, n);
 
@@ -348,24 +370,24 @@ void WidgetHelixGL::extract_momentum(const Simulation &sim, const std::complex<d
 		if(m_fft_plan) fftw_destroy_plan(m_fft_plan);
 		m_fft_buf.resize(n);
 		m_fft_plan = fftw_plan_dft_1d(n,
-			(fftw_complex *)m_slice.data(), (fftw_complex *)m_fft_buf.data(),
+			(fftw_complex *)m_slice_data.data(), (fftw_complex *)m_fft_buf.data(),
 			FFTW_FORWARD, FFTW_ESTIMATE);
 		m_fft_n = n;
 	}
 	fftw_execute_dft(m_fft_plan,
-		(fftw_complex *)m_slice.data(), (fftw_complex *)m_fft_buf.data());
-	for(int i = 0; i < n; i++) m_slice[i] = m_fft_buf[(i + n/2) % n];
+		(fftw_complex *)m_slice_data.data(), (fftw_complex *)m_fft_buf.data());
+	for(int i = 0; i < n; i++) m_slice_data[i] = m_fft_buf[(i + n/2) % n];
 }
 
 void WidgetHelixGL::extract_data(const Simulation &sim, const std::complex<double> *psi_all, int n)
 {
-	m_slice.resize(n);
-	switch(m_slice_mode) {
+	m_slice_data.resize(n);
+	switch(m_slice.mode) {
 		case Marginal:  extract_marginal(sim, psi_all, n); break;
 		case Momentum:  extract_momentum(sim, psi_all, n); break;
 		default:
 			if(sim.grid.rank == 1)
-				for(int i = 0; i < n; i++) m_slice[i] = psi_all[i];
+				for(int i = 0; i < n; i++) m_slice_data[i] = psi_all[i];
 			else extract_slice(sim, psi_all, n);
 			break;
 	}
@@ -375,7 +397,7 @@ double WidgetHelixGL::compute_max_amp(const Simulation &sim, const std::complex<
                                        const std::complex<double> *psi_all, int n)
 {
 	double max_amp = 1e-30;
-	if(m_slice_mode != Slice || m_normalize_slice) {
+	if(m_slice.mode != Slice || m_slice.normalize) {
 		for(int i = 0; i < n; i++) {
 			double a = std::abs(psi[i]);
 			if(a > max_amp) max_amp = a;
@@ -392,7 +414,7 @@ double WidgetHelixGL::compute_max_amp(const Simulation &sim, const std::complex<
 
 double WidgetHelixGL::envelope_value(std::complex<double> psi, double max_amp)
 {
-	switch((Envelope)m_envelope) {
+	switch((Envelope)m_envelope.mode) {
 		case Envelope::Amplitude:   return std::abs(psi) / max_amp;
 		case Envelope::ProbDensity: return std::norm(psi) / (max_amp * max_amp);
 		case Envelope::Real:        return psi.real() / max_amp;
@@ -407,16 +429,16 @@ double WidgetHelixGL::envelope_value(std::complex<double> psi, double max_amp)
 
 mat4 WidgetHelixGL::build_camera(int w, int h)
 {
-	vec3 center = {m_pan_x, m_pan_y, 0};
+	vec3 center = {m_camera.pan_x, m_camera.pan_y, 0};
 	vec3 eye = {
-		center.x + m_dist * sin(m_yaw) * cos(m_pitch),
-		center.y + m_dist * sin(m_pitch),
-		center.z + m_dist * cos(m_yaw) * cos(m_pitch),
+		center.x + m_camera.dist * sin(m_camera.yaw) * cos(m_camera.pitch),
+		center.y + m_camera.dist * sin(m_camera.pitch),
+		center.z + m_camera.dist * cos(m_camera.yaw) * cos(m_camera.pitch),
 	};
 	mat4 view = mat4::look_at(eye, center, {0, 1, 0});
 	double aspect = (double)w / h;
-	mat4 proj = m_ortho
-		? mat4::ortho(m_dist * 0.5, aspect, 0.001, 1000.0)
+	mat4 proj = m_camera.ortho
+		? mat4::ortho(m_camera.dist * 0.5, aspect, 0.001, 1000.0)
 		: mat4::perspective(0.8, aspect, 0.001, 1000.0);
 	return proj * view;
 }
@@ -480,7 +502,7 @@ void WidgetHelixGL::gl_draw_surface(const std::complex<double> *psi, double max_
 	}
 
 	glUseProgram(m_gl.solid_shader());
-	glUniform4f(m_gl.color_loc(), 0.3f, 0.4f, 0.7f, m_surface_alpha);
+	glUniform4f(m_gl.color_loc(), 0.3f, 0.4f, 0.7f, m_surface.alpha);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, m_vbuf.data());
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
@@ -513,7 +535,7 @@ void WidgetHelixGL::gl_draw_helix(const std::complex<double> *psi, double max_am
 
 		float amp = (float)(std::abs(psi[i]) / max_amp);
 		float cr, cg, cb;
-		switch((HelixColor)m_helix_color) {
+		switch((HelixColor)m_helix.color) {
 			case HelixColor::Gray:
 				cr = cg = cb = 0.78f * amp + 0.16f * (1 - amp);
 				break;
@@ -537,7 +559,7 @@ void WidgetHelixGL::gl_draw_helix(const std::complex<double> *psi, double max_am
 		m_vbuf[i*7+3] = cr;
 		m_vbuf[i*7+4] = cg;
 		m_vbuf[i*7+5] = cb;
-		m_vbuf[i*7+6] = m_helix_alpha;
+		m_vbuf[i*7+6] = m_helix.alpha;
 	}
 
 	glUseProgram(m_gl.vcol_shader());
@@ -554,12 +576,12 @@ void WidgetHelixGL::gl_draw_helix(const std::complex<double> *psi, double max_am
 void WidgetHelixGL::gl_draw_envelope(const std::complex<double> *psi, double max_amp, int n,
                                       const mat4 &vp)
 {
-	bool rotational = (Envelope)m_envelope == Envelope::Amplitude ||
-	                  (Envelope)m_envelope == Envelope::ProbDensity;
+	bool rotational = (Envelope)m_envelope.mode == Envelope::Amplitude ||
+	                  (Envelope)m_envelope.mode == Envelope::ProbDensity;
 
 	if(rotational) {
 		// ghost longitudinal lines
-		float ghost_a = m_envelope_alpha * 0.12f;
+		float ghost_a = m_envelope.alpha * 0.12f;
 		glUseProgram(m_gl.solid_shader());
 		int n_ghosts = 64;
 		m_vbuf.resize(n * 3);
@@ -603,9 +625,9 @@ void WidgetHelixGL::gl_draw_envelope(const std::complex<double> *psi, double max
 	}
 
 	// primary envelope line
-	bool on_z = (Envelope)m_envelope == Envelope::Imaginary;
+	bool on_z = (Envelope)m_envelope.mode == Envelope::Imaginary;
 	glUseProgram(m_gl.solid_shader());
-	glUniform4f(m_gl.color_loc(), 0.39f, 0.78f, 0.39f, m_envelope_alpha);
+	glUniform4f(m_gl.color_loc(), 0.39f, 0.78f, 0.39f, m_envelope.alpha);
 	m_vbuf.resize(n * 3);
 	for(int i = 0; i < n; i++) {
 		float t = (float)i / n;
@@ -670,8 +692,8 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 	bool any = false;
 	for(int i = 0; i < n; i++) {
 		int coords[MAX_RANK]{};
-		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice_pos[d];
-		coords[m_slice_axis] = i;
+		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice.pos[d];
+		coords[m_slice.axis] = i;
 		double v = fabs(pot[sim.grid.linear_index(coords)].real());
 		if(v > v_max) v_max = v;
 		if(v > 0) any = true;
@@ -685,12 +707,12 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 
 	for(int i = 0; i < n; i++) {
 		int coords[MAX_RANK]{};
-		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice_pos[d];
-		coords[m_slice_axis] = i;
+		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice.pos[d];
+		coords[m_slice.axis] = i;
 		double v = fabs(pot[sim.grid.linear_index(coords)].real());
 		if(v < 1e-30) continue;
 
-		float alpha = (float)(v / v_max) * m_potential_alpha;
+		float alpha = (float)(v / v_max) * m_potential.alpha;
 		float x0 = -1.0f + dx * i;
 		float x1 = x0 + dx;
 		float col[] = { 0.5f, 0.5f, 0.5f, alpha };
@@ -730,7 +752,7 @@ void WidgetHelixGL::gl_draw_absorb_zones(const Simulation &sim, int n)
 
 void WidgetHelixGL::gl_draw_cursor()
 {
-	if(!m_cursor_valid) return;
+	if(!m_input.cursor_valid) return;
 
 	// vertical line at cursor position, in clip space
 	// we need to draw in NDC, so temporarily set identity MVP
@@ -739,7 +761,7 @@ void WidgetHelixGL::gl_draw_cursor()
 	glUniformMatrix4fv(m_gl.mvp_loc(), 1, GL_FALSE, identity);
 	glUniform4f(m_gl.color_loc(), 0.78f, 0.24f, 0.24f, 0.78f);
 
-	float x = m_cursor_val;  // already in [-1,1] which is NDC
+	float x = m_input.cursor_val;  // already in [-1,1] which is NDC
 	float line[] = { x, -1, 0, x, 1, 0 };
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, line);
@@ -776,22 +798,22 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 			ImGui::SameLine();
 			ImGui::PushID(d);
 			char label[8]; snprintf(label, sizeof(label), "%d", d);
-			ImGui::RadioButton(label, &m_slice_axis, d);
+			ImGui::RadioButton(label, &m_slice.axis, d);
 			ImGui::PopID();
 		}
 		ImGui::SameLine();
 		static const char *mode_names[] = { "Slice", "Marginal", "Momentum" };
-		if(ImGui::Button(mode_names[m_slice_mode]))
-			m_slice_mode = (m_slice_mode + 1) % 3;
-		if(m_slice_mode == Slice) {
+		if(ImGui::Button(mode_names[m_slice.mode]))
+			m_slice.mode = (m_slice.mode + 1) % 3;
+		if(m_slice.mode == Slice) {
 			ImGui::SameLine();
-			ImGui::Checkbox("Norm", &m_normalize_slice);
+			ImGui::Checkbox("Norm", &m_slice.normalize);
 			ImGui::SameLine();
-			ImGui::Checkbox("Auto", &m_auto_slice);
+			ImGui::Checkbox("Auto", &m_slice.auto_track);
 		}
 	} else {
-		if(ImGui::Button(m_slice_mode == Momentum ? "Momentum" : "Position"))
-			m_slice_mode = (m_slice_mode == Momentum) ? Slice : Momentum;
+		if(ImGui::Button(m_slice.mode == Momentum ? "Momentum" : "Position"))
+			m_slice.mode = (m_slice.mode == Momentum) ? Slice : Momentum;
 	}
 
 	if(ImGui::BeginTable("layers", 4, ImGuiTableFlags_SizingStretchProp)) {
@@ -802,62 +824,62 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn(); ImGui::Text("Surf");
-		ImGui::TableNextColumn(); ImGui::Checkbox("##sf_on", &m_surface);
+		ImGui::TableNextColumn(); ImGui::Checkbox("##sf_on", &m_surface.on);
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
-		ImGui::SliderFloat("##sf_a", &m_surface_alpha, 0.0f, 0.5f, "%.2f");
+		ImGui::SliderFloat("##sf_a", &m_surface.alpha, 0.0f, 0.5f, "%.2f");
 		ImGui::TableNextColumn();
 
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn(); ImGui::Text("Helix");
-		ImGui::TableNextColumn(); ImGui::Checkbox("##hx_on", &m_helix_on);
+		ImGui::TableNextColumn(); ImGui::Checkbox("##hx_on", &m_helix.on);
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
-		ImGui::SliderFloat("##hx_a", &m_helix_alpha, 0.0f, 1.0f, "%.1f");
+		ImGui::SliderFloat("##hx_a", &m_helix.alpha, 0.0f, 1.0f, "%.1f");
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
-		ImGui::Combo("##hx", &m_helix_color, helix_color_names, (int)HelixColor::COUNT);
+		ImGui::Combo("##hx", &m_helix.color, helix_color_names, (int)HelixColor::COUNT);
 
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn(); ImGui::Text("Env");
-		ImGui::TableNextColumn(); ImGui::Checkbox("##env_on", &m_envelope_on);
+		ImGui::TableNextColumn(); ImGui::Checkbox("##env_on", &m_envelope.on);
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
-		ImGui::SliderFloat("##env_a", &m_envelope_alpha, 0.0f, 1.0f, "%.1f");
+		ImGui::SliderFloat("##env_a", &m_envelope.alpha, 0.0f, 1.0f, "%.1f");
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
-		ImGui::Combo("##env", &m_envelope, envelope_names, (int)Envelope::COUNT);
+		ImGui::Combo("##env", &m_envelope.mode, envelope_names, (int)Envelope::COUNT);
 
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn(); ImGui::Text("Pot");
-		ImGui::TableNextColumn(); ImGui::Checkbox("##pot_on", &m_potential_on);
+		ImGui::TableNextColumn(); ImGui::Checkbox("##pot_on", &m_potential.on);
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
-		ImGui::SliderFloat("##pot_a", &m_potential_alpha, 0.0f, 1.0f, "%.1f");
+		ImGui::SliderFloat("##pot_a", &m_potential.alpha, 0.0f, 1.0f, "%.1f");
 		ImGui::TableNextColumn();
 
 		ImGui::EndTable();
 	}
 
-	if(m_slice_mode != Marginal) {
-		if(m_auto_slice && sim.grid.rank > 1) {
+	if(m_slice.mode != Marginal) {
+		if(m_slice.auto_track && sim.grid.rank > 1) {
 			for(int d = 0; d < sim.grid.rank; d++) {
-				if(d == m_slice_axis) continue;
-				m_slice_pos[d] = m_marginal_peak[d];
+				if(d == m_slice.axis) continue;
+				m_slice.pos[d] = m_marginal_peak[d];
 				m_view.cursor[d] = m_marginal_peak[d];
 			}
 		} else {
 			for(int d = 0; d < sim.grid.rank; d++)
-				m_slice_pos[d] = m_view.cursor[d];
+				m_slice.pos[d] = m_view.cursor[d];
 		}
-		m_view.add_slice(m_slice_axis, m_slice_pos);
+		m_view.add_slice(m_slice.axis, m_slice.pos);
 	}
 
-	if(m_cursor_valid) {
-		auto &ax = sim.grid.axes[m_slice_axis];
-		if(m_slice_mode == Momentum) {
+	if(m_input.cursor_valid) {
+		auto &ax = sim.grid.axes[m_slice.axis];
+		if(m_slice.mode == Momentum) {
 			double L = ax.max - ax.min;
 			double dk = 2.0 * M_PI / L;
 			int nn = ax.points;
-			double k = m_cursor_val * (nn / 2) * dk;
+			double k = m_input.cursor_val * (nn / 2) * dk;
 			double p = k * hbar;
 			ImGui::Text("k=%.2e 1/m  p=%.2e kg·m/s", k, p);
 		} else {
-			double x = ax.min + (m_cursor_val * 0.5 + 0.5) * (ax.max - ax.min);
+			double x = ax.min + (m_input.cursor_val * 0.5 + 0.5) * (ax.max - ax.min);
 			ImGui::Text("x=%.2e m", x);
 		}
 	}
@@ -875,33 +897,33 @@ void WidgetHelixGL::handle_mouse(SDL_Rect &r)
 	bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 
 	if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
-		if(shift) m_panning = true;
-		else      m_orbiting = true;
-		m_drag_x = mp.x; m_drag_y = mp.y;
+		if(shift) m_input.panning = true;
+		else      m_input.orbiting = true;
+		m_input.drag_x = mp.x; m_input.drag_y = mp.y;
 	}
-	if(m_orbiting && ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !shift) {
-		m_yaw   -= (mp.x - m_drag_x) * 0.005;
-		m_pitch += (mp.y - m_drag_y) * 0.005;
-		if(m_pitch >  PITCH_LIMIT) m_pitch =  PITCH_LIMIT;
-		if(m_pitch < -PITCH_LIMIT) m_pitch = -PITCH_LIMIT;
-		m_drag_x = mp.x; m_drag_y = mp.y;
+	if(m_input.orbiting && ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !shift) {
+		m_camera.yaw   -= (mp.x - m_input.drag_x) * 0.005;
+		m_camera.pitch += (mp.y - m_input.drag_y) * 0.005;
+		if(m_camera.pitch >  PITCH_LIMIT) m_camera.pitch =  PITCH_LIMIT;
+		if(m_camera.pitch < -PITCH_LIMIT) m_camera.pitch = -PITCH_LIMIT;
+		m_input.drag_x = mp.x; m_input.drag_y = mp.y;
 	}
-	if(m_panning && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
-		double scale = m_dist * 0.002;
-		m_pan_x -= (mp.x - m_drag_x) * scale * cos(m_yaw);
-		m_pan_y += (mp.y - m_drag_y) * scale;
-		m_drag_x = mp.x; m_drag_y = mp.y;
+	if(m_input.panning && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+		double scale = m_camera.dist * 0.002;
+		m_camera.pan_x -= (mp.x - m_input.drag_x) * scale * cos(m_camera.yaw);
+		m_camera.pan_y += (mp.y - m_input.drag_y) * scale;
+		m_input.drag_x = mp.x; m_input.drag_y = mp.y;
 	}
 	if(ImGui::IsMouseReleased(ImGuiMouseButton_Middle)) {
-		m_orbiting = false; m_panning = false;
+		m_input.orbiting = false; m_input.panning = false;
 	}
 
 	if(in_rect) {
 		float wheel = ImGui::GetIO().MouseWheel;
 		if(wheel != 0) {
-			m_dist *= (1.0 - wheel * 0.1);
-			if(m_dist < 0.1) m_dist = 0.1;
-			if(m_dist > 50.0) m_dist = 50.0;
+			m_camera.dist *= (1.0 - wheel * 0.1);
+			if(m_camera.dist < 0.1) m_camera.dist = 0.1;
+			if(m_camera.dist > 50.0) m_camera.dist = 50.0;
 		}
 	}
 }
@@ -915,40 +937,40 @@ void WidgetHelixGL::handle_keys()
 	bool ctrl = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
 
 	if(key(ImGuiKey_Keypad1, ImGuiKey_1)) {
-		if(ctrl) { m_yaw = M_PI; m_pitch = 0; }
-		else     { m_yaw = 0;    m_pitch = 0; }
+		if(ctrl) { m_camera.yaw = M_PI; m_camera.pitch = 0; }
+		else     { m_camera.yaw = 0;    m_camera.pitch = 0; }
 	}
 	if(key(ImGuiKey_Keypad3, ImGuiKey_3)) {
-		if(ctrl) { m_yaw = -M_PI/2; m_pitch = 0; }
-		else     { m_yaw =  M_PI/2; m_pitch = 0; }
+		if(ctrl) { m_camera.yaw = -M_PI/2; m_camera.pitch = 0; }
+		else     { m_camera.yaw =  M_PI/2; m_camera.pitch = 0; }
 	}
 	if(key(ImGuiKey_Keypad7, ImGuiKey_7)) {
-		if(ctrl) { m_yaw = 0; m_pitch = -PITCH_LIMIT; }
-		else     { m_yaw = 0; m_pitch =  PITCH_LIMIT; }
+		if(ctrl) { m_camera.yaw = 0; m_camera.pitch = -PITCH_LIMIT; }
+		else     { m_camera.yaw = 0; m_camera.pitch =  PITCH_LIMIT; }
 	}
-	if(key(ImGuiKey_Keypad5, ImGuiKey_5)) { m_ortho = !m_ortho; }
+	if(key(ImGuiKey_Keypad5, ImGuiKey_5)) { m_camera.ortho = !m_camera.ortho; }
 
 	if(ImGui::IsKeyPressed(ImGuiKey_A)) {
-		m_yaw = 0; m_pitch = 0; m_dist = 2.5;
-		m_pan_x = 0; m_pan_y = 0;
-		m_ortho = true;
+		m_camera.yaw = 0; m_camera.pitch = 0; m_camera.dist = 2.5;
+		m_camera.pan_x = 0; m_camera.pan_y = 0;
+		m_camera.ortho = true;
 		m_amplitude = 0.1f;
-		m_surface = true; m_surface_alpha = 0.1f;
-		m_potential_on = true; m_potential_alpha = 0.3f;
-		m_helix_on = true; m_helix_color = 0; m_helix_alpha = 1.0f;
-		m_envelope_on = true; m_envelope = 0; m_envelope_alpha = 0.7f;
-		m_slice_mode = Slice;
+		m_surface.on = true; m_surface.alpha = 0.1f;
+		m_potential.on = true; m_potential.alpha = 0.3f;
+		m_helix.on = true; m_helix.color = 0; m_helix.alpha = 1.0f;
+		m_envelope.on = true; m_envelope.mode = 0; m_envelope.alpha = 0.7f;
+		m_slice.mode = Slice;
 	}
 
-	if(key(ImGuiKey_Keypad4, ImGuiKey_4)) { m_yaw -= M_PI/12; }
-	if(key(ImGuiKey_Keypad6, ImGuiKey_6)) { m_yaw += M_PI/12; }
+	if(key(ImGuiKey_Keypad4, ImGuiKey_4)) { m_camera.yaw -= M_PI/12; }
+	if(key(ImGuiKey_Keypad6, ImGuiKey_6)) { m_camera.yaw += M_PI/12; }
 	if(key(ImGuiKey_Keypad8, ImGuiKey_8)) {
-		m_pitch += M_PI/12;
-		if(m_pitch > PITCH_LIMIT) m_pitch = PITCH_LIMIT;
+		m_camera.pitch += M_PI/12;
+		if(m_camera.pitch > PITCH_LIMIT) m_camera.pitch = PITCH_LIMIT;
 	}
 	if(key(ImGuiKey_Keypad2, ImGuiKey_2)) {
-		m_pitch -= M_PI/12;
-		if(m_pitch < -PITCH_LIMIT) m_pitch = -PITCH_LIMIT;
+		m_camera.pitch -= M_PI/12;
+		if(m_camera.pitch < -PITCH_LIMIT) m_camera.pitch = -PITCH_LIMIT;
 	}
 }
 
