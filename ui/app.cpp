@@ -301,14 +301,15 @@ void App::run()
 			m_experiment.sim_time = 0;
 		}
 
-		// M/N to measure particle 1/2 (random position sample + collapse)
+		// M/N to measure, Shift+M/N to decohere
+		bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 		if(ImGui::IsKeyPressed(ImGuiKey_M)) {
 			for(auto &sim : m_experiment.simulations)
-				sim->measure(0);
+				if(shift) sim->decohere(0); else sim->measure(0);
 		}
 		if(ImGui::IsKeyPressed(ImGuiKey_N)) {
 			for(auto &sim : m_experiment.simulations)
-				sim->measure(1);
+				if(shift) sim->decohere(1); else sim->measure(1);
 		}
 
 		// B to toggle absorbing boundary

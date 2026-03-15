@@ -345,6 +345,31 @@ int Simulation::measure(int axis, double collapse_width)
 }
 
 
+void Simulation::decohere(int axis, double strength)
+{
+	auto *p = psi_front();
+	size_t n = grid.total_points();
+
+	// linear phase ramp: adds a small momentum kick
+	// each press accumulates — progressive kicks break coherence
+	if(strength <= 0) strength = 0.1;
+
+	grid.each([&](size_t idx, const int *coords, const double *pos) {
+		double phi = 0;
+		for(int d = 0; d < grid.rank; d++) {
+			double L = grid.axes[d].max - grid.axes[d].min;
+			phi += strength * M_PI * pos[d] / L;
+		}
+		p[idx] *= std::complex<double>(cos(phi), sin(phi));
+	});
+
+	m_solver->write_psi(p);
+	int back = 1 - front.load();
+	std::copy_n(p, n, psi[back]);
+	front.store(back);
+}
+
+
 void Simulation::step()
 {
 	step_compute();

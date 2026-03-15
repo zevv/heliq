@@ -25,6 +25,7 @@ public:
 	void set_dt(double new_dt);
 	void reset();         // restore initial state, reset time
 	int measure(int axis = -1, double collapse_width = 0);  // measure position, returns grid index
+	void decohere(int axis = -1, double width = 0);          // randomize phase, keep amplitude
 
 	Grid grid{};
 	std::string name{};

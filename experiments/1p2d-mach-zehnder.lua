@@ -19,7 +19,7 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.2e-3 * eV
+local energy = 0.1e-3 * eV
 local p = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
@@ -28,10 +28,10 @@ particle(electron, {
     width = 0.2 * um,
 })
 
-local split_h = energy * 0.82
-local split_w = 0.02 * um
+local split_h = energy * 1.75
+local split_w = 0.01 * um
 local mirror_h = energy * 20
-local mirror_w = 0.02 * um
+local mirror_w = 0.03 * um
 
 -- Beam splitter
 barrier {
@@ -53,3 +53,4 @@ barrier {
     to   = { 2 * um + mirror_w,  2 * um},
     height = mirror_h,
 }
+
