@@ -223,6 +223,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 
 	glClearColor(0.04f, 0.04f, 0.06f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glLineWidth(2.0f);
 
 	mat4 vp = build_camera(r.w, r.h);
 	float mvp[16];
