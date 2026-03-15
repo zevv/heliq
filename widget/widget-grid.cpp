@@ -113,142 +113,8 @@ public:
 		node->read("pan_y", m_pan_y);
 	}
 
-	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override {
-		SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
-		SDL_RenderFillRect(rend, nullptr);
+	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override;
 
-		// controls at the top
-		draw_controls();
-		float ctrl_h = ImGui::GetCursorPosY();
-
-		if(exp.simulations.empty()) {
-			ImGui::Text("No simulation");
-			return;
-		}
-
-		auto &sim = *exp.simulations[0];
-		auto &grid = sim.grid;
-
-		// determine texture dimensions from grid
-		// axis 0 = x = horizontal, axis 1 = y = vertical
-		int tw = (grid.rank >= 1) ? grid.axes[0].points : 1;
-		int th = (grid.rank >= 2) ? grid.axes[1].points : 1;
-
-		// available area below controls
-		float avail_x = (float)r.x;
-		float avail_y = (float)r.y + ctrl_h;
-		float avail_w = (float)r.w;
-		float avail_h = (float)r.h - ctrl_h;
-
-		// handle pan/zoom
-		handle_mouse(r, ctrl_h);
-
-		// compute destination rect with zoom and pan
-		// 1D: stretch to fill height. 2D+: maintain 1:1 aspect
-		float disp_w, disp_h;
-		if(th == 1) {
-			// 1D: fill available area, zoom only affects x
-			disp_w = avail_w * m_zoom;
-			disp_h = avail_h;
-		} else {
-			float tex_aspect = (float)tw / (float)th;
-			float base_scale;
-			if(avail_w / avail_h > tex_aspect)
-				base_scale = avail_h / th;
-			else
-				base_scale = avail_w / tw;
-			float scale = base_scale * m_zoom;
-			disp_w = tw * scale;
-			disp_h = th * scale;
-		}
-		float cx = avail_x + avail_w * 0.5f + m_pan_x;
-		float cy = avail_y + avail_h * 0.5f + m_pan_y;
-
-		m_grid_w = tw;
-		m_grid_h = th;
-		m_dst = {
-			cx - disp_w * 0.5f,
-			cy - disp_h * 0.5f,
-			disp_w,
-			disp_h,
-		};
-		SDL_FRect &dst = m_dst;
-
-		for(int oi = 0; oi < N_OVERLAYS; oi++) {
-			auto &ov = m_overlays[oi];
-			if(ov.source == DataSource::Off) continue;
-			ensure_texture(rend, ov, tw, th);
-			fill_texture(ov, sim, tw, th);
-
-			SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
-			SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
-			SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
-		}
-
-		// draw absorbing boundary zones with cos² gradient
-		if(sim.absorbing_boundary) {
-			float w = (float)sim.absorb_width;
-			int n_strips = (int)(w * tw);
-			if(n_strips < 1) n_strips = 1;
-			float strip_w = dst.w * w / n_strips;
-			SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
-			for(int i = 0; i < n_strips; i++) {
-				float t_lo = cosf(0.5f * M_PI * (i + 1) / (n_strips));
-				float alpha = t_lo * t_lo * 80;
-				SDL_SetRenderDrawColor(rend, 25, 25, 200, (uint8_t)alpha);
-				// left
-				SDL_FRect r_left = { dst.x + i * strip_w, dst.y, strip_w + 1, dst.h };
-				SDL_RenderFillRect(rend, &r_left);
-				// right
-				SDL_FRect r_right = { dst.x + dst.w - (i + 1) * strip_w, dst.y, strip_w + 1, dst.h };
-				SDL_RenderFillRect(rend, &r_right);
-			}
-			if(grid.rank >= 2) {
-				float strip_h = dst.h * w / n_strips;
-				for(int i = 0; i < n_strips; i++) {
-					float t_lo = cosf(0.5f * M_PI * (i + 1) / (n_strips));
-					float alpha = t_lo * t_lo * 80;
-					SDL_SetRenderDrawColor(rend, 25, 25, 200, (uint8_t)alpha);
-					// top (grid y=max is screen top)
-					SDL_FRect r_top = { dst.x, dst.y + i * strip_h, dst.w, strip_h + 1 };
-					SDL_RenderFillRect(rend, &r_top);
-					// bottom
-					SDL_FRect r_bot = { dst.x, dst.y + dst.h - (i + 1) * strip_h, dst.w, strip_h + 1 };
-					SDL_RenderFillRect(rend, &r_bot);
-				}
-			}
-		}
-
-		// draw border around grid
-		SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
-		SDL_RenderRect(rend, &dst);
-
-		// LMB click in grid sets cursor position
-		if(grid.rank >= 2 && ImGui::IsWindowFocused()) {
-			ImVec2 mp = ImGui::GetMousePos();
-			int gx, gy;
-			if(ImGui::IsMouseClicked(ImGuiMouseButton_Left) && screen_to_grid(mp.x, mp.y, gx, gy)) {
-				m_view.cursor[0] = gx;
-				m_view.cursor[1] = gy;
-			}
-		}
-
-		// draw cursor crosshairs
-		if(grid.rank >= 2) {
-			SDL_SetRenderDrawColor(rend, 100, 100, 0, 120);
-			float sx, sy;
-			grid_to_screen(m_view.cursor[0], m_view.cursor[1], sx, sy);
-			SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
-			SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
-		}
-
-		// A: reset view to defaults
-		if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
-			m_zoom = 1.0f;
-			m_pan_x = 0;
-			m_pan_y = 0;
-		}
-	}
 
 private:
 	static constexpr int N_OVERLAYS = 3;
@@ -261,163 +127,317 @@ private:
 	// current display rect (set each frame by do_draw)
 	SDL_FRect m_dst{};
 	int m_grid_w{1}, m_grid_h{1};
+};
 
-	// screen pixel → grid cell
-	bool screen_to_grid(float sx, float sy, int &gx, int &gy) const {
-		if(sx < m_dst.x || sx >= m_dst.x + m_dst.w) return false;
-		if(sy < m_dst.y || sy >= m_dst.y + m_dst.h) return false;
-		gx = (int)((sx - m_dst.x) / m_dst.w * m_grid_w);
-		gy = (int)((1.0f - (sy - m_dst.y) / m_dst.h) * m_grid_h);
-		if(gx < 0) gx = 0;
-		if(gy < 0) gy = 0;
-		if(gx >= m_grid_w) gx = m_grid_w - 1;
-		if(gy >= m_grid_h) gy = m_grid_h - 1;
-		return true;
+
+// --- helper functions ---
+
+// screen pixel → grid cell
+static bool screen_to_grid(const SDL_FRect &dst, int grid_w, int grid_h,
+                            float sx, float sy, int &gx, int &gy)
+{
+	if(sx < dst.x || sx >= dst.x + dst.w) return false;
+	if(sy < dst.y || sy >= dst.y + dst.h) return false;
+	gx = (int)((sx - dst.x) / dst.w * grid_w);
+	gy = (int)((1.0f - (sy - dst.y) / dst.h) * grid_h);
+	if(gx < 0) gx = 0;
+	if(gy < 0) gy = 0;
+	if(gx >= grid_w) gx = grid_w - 1;
+	if(gy >= grid_h) gy = grid_h - 1;
+	return true;
+}
+
+// grid cell → screen pixel (center of cell)
+static void grid_to_screen(const SDL_FRect &dst, int grid_w, int grid_h,
+                            int gx, int gy, float &sx, float &sy)
+{
+	sx = dst.x + ((float)gx + 0.5f) / grid_w * dst.w;
+	sy = dst.y + (1.0f - ((float)gy + 0.5f) / grid_h) * dst.h;
+}
+
+static void handle_mouse(SDL_Rect &r, float ctrl_h, float &zoom, float &pan_x, float &pan_y,
+                         bool &dragging, float &drag_x, float &drag_y)
+{
+	ImVec2 mp = ImGui::GetMousePos();
+	bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
+	               mp.y >= r.y + ctrl_h && mp.y < r.y + r.h;
+	// MMB drag to pan
+	if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
+		dragging = true;
+		drag_x = mp.x;
+		drag_y = mp.y;
 	}
-
-	// grid cell → screen pixel (center of cell)
-	void grid_to_screen(int gx, int gy, float &sx, float &sy) const {
-		sx = m_dst.x + ((float)gx + 0.5f) / m_grid_w * m_dst.w;
-		sy = m_dst.y + (1.0f - ((float)gy + 0.5f) / m_grid_h) * m_dst.h;
+	if(dragging && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+		pan_x += mp.x - drag_x;
+		pan_y += mp.y - drag_y;
+		drag_x = mp.x;
+		drag_y = mp.y;
 	}
+	if(ImGui::IsMouseReleased(ImGuiMouseButton_Middle))
+		dragging = false;
 
-	void handle_mouse(SDL_Rect &r, float ctrl_h) {
-		ImVec2 mp = ImGui::GetMousePos();
-		bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
-		               mp.y >= r.y + ctrl_h && mp.y < r.y + r.h;
-		// MMB drag to pan
-		if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
-			m_dragging = true;
-			m_drag_x = mp.x;
-			m_drag_y = mp.y;
-		}
-		if(m_dragging && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
-			m_pan_x += mp.x - m_drag_x;
-			m_pan_y += mp.y - m_drag_y;
-			m_drag_x = mp.x;
-			m_drag_y = mp.y;
-		}
-		if(ImGui::IsMouseReleased(ImGuiMouseButton_Middle))
-			m_dragging = false;
-
-		// scroll wheel to zoom
-		if(in_rect) {
-			float wheel = ImGui::GetIO().MouseWheel;
-			if(wheel != 0) {
-				float old_zoom = m_zoom;
-				m_zoom *= (1.0f + wheel * 0.1f);
-				if(m_zoom < 0.1f) m_zoom = 0.1f;
-				if(m_zoom > 50.0f) m_zoom = 50.0f;
-				// zoom toward mouse position
-				float zf = m_zoom / old_zoom;
-				float avail_cx = r.x + r.w * 0.5f;
-				float avail_cy = r.y + ctrl_h + (r.h - ctrl_h) * 0.5f;
-				m_pan_x = (m_pan_x + avail_cx - mp.x) * zf + mp.x - avail_cx;
-				m_pan_y = (m_pan_y + avail_cy - mp.y) * zf + mp.y - avail_cy;
-			}
+	// scroll wheel to zoom
+	if(in_rect) {
+		float wheel = ImGui::GetIO().MouseWheel;
+		if(wheel != 0) {
+			float old_zoom = zoom;
+			zoom *= (1.0f + wheel * 0.1f);
+			if(zoom < 0.1f) zoom = 0.1f;
+			if(zoom > 50.0f) zoom = 50.0f;
+			// zoom toward mouse position
+			float zf = zoom / old_zoom;
+			float avail_cx = r.x + r.w * 0.5f;
+			float avail_cy = r.y + ctrl_h + (r.h - ctrl_h) * 0.5f;
+			pan_x = (pan_x + avail_cx - mp.x) * zf + mp.x - avail_cx;
+			pan_y = (pan_y + avail_cy - mp.y) * zf + mp.y - avail_cy;
 		}
 	}
+}
 
-	void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h) {
-		if(ov.tex && ov.tex_w == w && ov.tex_h == h) return;
-		if(ov.tex) SDL_DestroyTexture(ov.tex);
-		ov.tex = SDL_CreateTexture(rend, SDL_PIXELFORMAT_RGBA32,
-			SDL_TEXTUREACCESS_STREAMING, w, h);
-		ov.tex_w = w;
-		ov.tex_h = h;
+static void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h)
+{
+	if(ov.tex && ov.tex_w == w && ov.tex_h == h) return;
+	if(ov.tex) SDL_DestroyTexture(ov.tex);
+	ov.tex = SDL_CreateTexture(rend, SDL_PIXELFORMAT_RGBA32,
+		SDL_TEXTUREACCESS_STREAMING, w, h);
+	ov.tex_w = w;
+	ov.tex_h = h;
+}
+
+static double sample_value(DataSource src, std::complex<double> psi, std::complex<double> pot)
+{
+	switch(src) {
+		case DataSource::PsiSq:    return std::norm(psi);
+		case DataSource::PsiRe:    return psi.real();
+		case DataSource::PsiIm:    return psi.imag();
+		case DataSource::PsiPhase: return std::arg(psi);
+		case DataSource::Potential: return pot.real();
+		default: return 0;
 	}
+}
 
-	void fill_texture(Overlay &ov, Simulation &sim, int tw, int th) {
-		void *pixels;
-		int pitch;
-		if(!SDL_LockTexture(ov.tex, nullptr, &pixels, &pitch)) return;
+static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th)
+{
+	void *pixels;
+	int pitch;
+	if(!SDL_LockTexture(ov.tex, nullptr, &pixels, &pitch)) return;
 
-		auto *psi = sim.psi_front();
-		auto *pot = sim.potential;
-		size_t total = sim.grid.total_points();
+	auto *psi = sim.psi_front();
+	auto *pot = sim.potential;
+	size_t total = sim.grid.total_points();
 
-		// find data range for normalization
-		double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
-		for(size_t i = 0; i < total; i++) {
-			double v = sample_value(ov.source, psi[i], pot[i]);
-			if(v < vmin) vmin = v;
-			if(v > vmax) vmax = v;
-			double a = std::abs(psi[i]);
-			if(a > amp_max) amp_max = a;
-		}
-		double range = vmax - vmin;
-		if(range < 1e-30) range = 1.0;
+	// find data range for normalization
+	double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
+	for(size_t i = 0; i < total; i++) {
+		double v = sample_value(ov.source, psi[i], pot[i]);
+		if(v < vmin) vmin = v;
+		if(v > vmax) vmax = v;
+		double a = std::abs(psi[i]);
+		if(a > amp_max) amp_max = a;
+	}
+	double range = vmax - vmin;
+	if(range < 1e-30) range = 1.0;
 
-		for(int y = 0; y < th; y++) {
-			uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-			for(int x = 0; x < tw; x++) {
-				// axis 0 = x (column), axis 1 = y (row)
+	for(int y = 0; y < th; y++) {
+		uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+		for(int x = 0; x < tw; x++) {
+			// axis 0 = x (column), axis 1 = y (row)
 			// grid linear index: coords[0]*stride[0] + coords[1]*stride[1]
 			// stride[0] = axes[1].points = th, stride[1] = 1
 			size_t idx = (size_t)x * th + (th - 1 - y);
-				if(idx >= total) idx = 0;
-				double v = sample_value(ov.source, psi[idx], pot[idx]);
-				double norm = (v - vmin) / range;
+			if(idx >= total) idx = 0;
+			double v = sample_value(ov.source, psi[idx], pot[idx]);
+			double norm = (v - vmin) / range;
 
-				double amp = std::abs(psi[idx]) / amp_max;
-				int alpha = (int)(255 * pow(fmin(1.0, amp), 1 / ov.gamma));
+			double amp = std::abs(psi[idx]) / amp_max;
+			int alpha = (int)(255 * pow(fmin(1.0, amp), 1.0 / ov.gamma));
 
-				switch(ov.palette) {
-					case Palette::Flame: row[x] = palette_flame(norm, 1 / ov.gamma); break;
-					case Palette::Gray:  row[x] = palette_gray(norm, 1/ ov.gamma); break;
-					case Palette::Rainbow: {
-						uint8_t cr, cg, cb;
-						hsv_to_rgb(fmod(norm, 1.0), 1.0, 1.0, cr, cg, cb);
-						row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
-					} break;
-					case Palette::Zebra: {
-						uint8_t c = (uint8_t)(115 + 115 * sin(norm * 2 * M_PI));
-						row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
-					} break;
-					default: row[x] = 0; break;
-				}
+			switch(ov.palette) {
+				case Palette::Flame: row[x] = palette_flame(norm, 1.0 / ov.gamma); break;
+				case Palette::Gray:  row[x] = palette_gray(norm, 1.0 / ov.gamma); break;
+				case Palette::Rainbow: {
+					uint8_t cr, cg, cb;
+					hsv_to_rgb(fmod(norm, 1.0), 1.0, 1.0, cr, cg, cb);
+					row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
+				} break;
+				case Palette::Zebra: {
+					uint8_t c = (uint8_t)(115 + 115 * sin(norm * 2 * M_PI));
+					row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
+				} break;
+				default: row[x] = 0; break;
 			}
 		}
-
-		SDL_UnlockTexture(ov.tex);
 	}
 
-	double sample_value(DataSource src, std::complex<double> psi, std::complex<double> pot) {
-		switch(src) {
-			case DataSource::PsiSq:    return std::norm(psi);
-			case DataSource::PsiRe:    return psi.real();
-			case DataSource::PsiIm:    return psi.imag();
-			case DataSource::PsiPhase: return std::arg(psi);
-			case DataSource::Potential: return pot.real();
-			default: return 0;
+	SDL_UnlockTexture(ov.tex);
+}
+
+static void draw_controls(Overlay overlays[], int n_overlays)
+{
+	for(int i = 0; i < n_overlays; i++) {
+		auto &ov = overlays[i];
+		ImGui::PushID(i);
+		ImGui::Text("Overlay %d:", i);
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(100);
+		int src = (int)ov.source;
+		if(ImGui::Combo("##src", &src, datasource_names, (int)DataSource::COUNT))
+			ov.source = (DataSource)src;
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(80);
+		int pal = (int)ov.palette;
+		if(ImGui::Combo("##pal", &pal, palette_names, (int)Palette::COUNT))
+			ov.palette = (Palette)pal;
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(60);
+		ImGui::SliderFloat("##alpha", &ov.opacity, 0.0f, 1.0f, "a%.1f");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(60);
+		ImGui::SliderFloat("##gamma", &ov.gamma, 0.5f, 10.0f, "g%.1f");
+		ImGui::PopID();
+	}
+}
+
+
+void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
+{
+	SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
+	SDL_RenderFillRect(rend, nullptr);
+
+	// controls at the top
+	draw_controls(m_overlays, N_OVERLAYS);
+	float ctrl_h = ImGui::GetCursorPosY();
+
+	if(exp.simulations.empty()) {
+		ImGui::Text("No simulation");
+		return;
+	}
+
+	auto &sim = *exp.simulations[0];
+	auto &grid = sim.grid;
+
+	// determine texture dimensions from grid
+	// axis 0 = x = horizontal, axis 1 = y = vertical
+	int tw = (grid.rank >= 1) ? grid.axes[0].points : 1;
+	int th = (grid.rank >= 2) ? grid.axes[1].points : 1;
+
+	// available area below controls
+	float avail_x = (float)r.x;
+	float avail_y = (float)r.y + ctrl_h;
+	float avail_w = (float)r.w;
+	float avail_h = (float)r.h - ctrl_h;
+
+	// handle pan/zoom
+	handle_mouse(r, ctrl_h, m_zoom, m_pan_x, m_pan_y, m_dragging, m_drag_x, m_drag_y);
+
+	// compute destination rect with zoom and pan
+	// 1D: stretch to fill height. 2D+: maintain 1:1 aspect
+	float disp_w, disp_h;
+	if(th == 1) {
+		// 1D: fill available area, zoom only affects x
+		disp_w = avail_w * m_zoom;
+		disp_h = avail_h;
+	} else {
+		float tex_aspect = (float)tw / (float)th;
+		float base_scale;
+		if(avail_w / avail_h > tex_aspect)
+			base_scale = avail_h / th;
+		else
+			base_scale = avail_w / tw;
+		float scale = base_scale * m_zoom;
+		disp_w = tw * scale;
+		disp_h = th * scale;
+	}
+	float cx = avail_x + avail_w * 0.5f + m_pan_x;
+	float cy = avail_y + avail_h * 0.5f + m_pan_y;
+
+	m_grid_w = tw;
+	m_grid_h = th;
+	m_dst = {
+		cx - disp_w * 0.5f,
+		cy - disp_h * 0.5f,
+		disp_w,
+		disp_h,
+	};
+	SDL_FRect &dst = m_dst;
+
+	for(int oi = 0; oi < N_OVERLAYS; oi++) {
+		auto &ov = m_overlays[oi];
+		if(ov.source == DataSource::Off) continue;
+		ensure_texture(rend, ov, tw, th);
+		fill_texture(ov, sim, tw, th);
+
+		SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
+		SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
+		SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
+	}
+
+	// draw absorbing boundary zones with cos² gradient
+	if(sim.absorbing_boundary) {
+		float w = (float)sim.absorb_width;
+		int n_strips = (int)(w * tw);
+		if(n_strips < 1) n_strips = 1;
+		float strip_w = dst.w * w / n_strips;
+		SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
+		for(int i = 0; i < n_strips; i++) {
+			float t_lo = cosf(0.5f * M_PI * (i + 1) / (n_strips));
+			float alpha = t_lo * t_lo * 80;
+			SDL_SetRenderDrawColor(rend, 25, 25, 200, (uint8_t)alpha);
+			// left
+			SDL_FRect r_left = { dst.x + i * strip_w, dst.y, strip_w + 1, dst.h };
+			SDL_RenderFillRect(rend, &r_left);
+			// right
+			SDL_FRect r_right = { dst.x + dst.w - (i + 1) * strip_w, dst.y, strip_w + 1, dst.h };
+			SDL_RenderFillRect(rend, &r_right);
+		}
+		if(grid.rank >= 2) {
+			float strip_h = dst.h * w / n_strips;
+			for(int i = 0; i < n_strips; i++) {
+				float t_lo = cosf(0.5f * M_PI * (i + 1) / (n_strips));
+				float alpha = t_lo * t_lo * 80;
+				SDL_SetRenderDrawColor(rend, 25, 25, 200, (uint8_t)alpha);
+				// top (grid y=max is screen top)
+				SDL_FRect r_top = { dst.x, dst.y + i * strip_h, dst.w, strip_h + 1 };
+				SDL_RenderFillRect(rend, &r_top);
+				// bottom
+				SDL_FRect r_bot = { dst.x, dst.y + dst.h - (i + 1) * strip_h, dst.w, strip_h + 1 };
+				SDL_RenderFillRect(rend, &r_bot);
+			}
 		}
 	}
 
-	void draw_controls() {
-		for(int i = 0; i < N_OVERLAYS; i++) {
-			auto &ov = m_overlays[i];
-			ImGui::PushID(i);
-			ImGui::Text("Overlay %d:", i);
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(100);
-			int src = (int)ov.source;
-			if(ImGui::Combo("##src", &src, datasource_names, (int)DataSource::COUNT))
-				ov.source = (DataSource)src;
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(80);
-			int pal = (int)ov.palette;
-			if(ImGui::Combo("##pal", &pal, palette_names, (int)Palette::COUNT))
-				ov.palette = (Palette)pal;
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(60);
-			ImGui::SliderFloat("##alpha", &ov.opacity, 0.0f, 1.0f, "a%.1f");
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(60);
-			ImGui::SliderFloat("##gamma", &ov.gamma, 0.5f, 10.0f, "g%.1f");
-			ImGui::PopID();
+	// draw border around grid
+	SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
+	SDL_RenderRect(rend, &dst);
+
+	// LMB click in grid sets cursor position
+	if(grid.rank >= 2 && ImGui::IsWindowFocused()) {
+		ImVec2 mp = ImGui::GetMousePos();
+		int gx, gy;
+		if(ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+		   screen_to_grid(m_dst, m_grid_w, m_grid_h, mp.x, mp.y, gx, gy)) {
+			m_view.cursor[0] = gx;
+			m_view.cursor[1] = gy;
 		}
 	}
-};
+
+	// draw cursor crosshairs
+	if(grid.rank >= 2) {
+		SDL_SetRenderDrawColor(rend, 100, 100, 0, 120);
+		float sx, sy;
+		grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[0], m_view.cursor[1], sx, sy);
+		SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
+		SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
+	}
+
+	// A: reset view to defaults
+	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
+		m_zoom = 1.0f;
+		m_pan_x = 0;
+		m_pan_y = 0;
+	}
+}
+
 
 REGISTER_WIDGET(WidgetGrid,
 	.name = "grid",
