@@ -23,40 +23,33 @@ local energy = 0.1e-3 * eV
 local p = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
-    position = { -1 * um, -4 * um },
+    position = { -2 * um, -4 * um },
     momentum = { p, p },
-    width = 0.3 * um,
+    width = 0.2 * um,
 })
 
-local split_h = energy * 0.9
+local split_h = energy * 0.82
 local split_w = 0.02 * um
 local mirror_h = energy * 20
-local mirror_w = 0.15 * um
+local mirror_w = 0.02 * um
 
--- Top splitter
-barrier {
-    from = { -split_w,  1 * um },
-    to   = {  split_w,  5 * um },
-    height = split_h,
-}
-
--- Bottom splitter
+-- Beam splitter
 barrier {
     from = { -split_w, -5 * um },
-    to   = {  split_w, -1 * um },
+    to   = {  split_w,  5 * um },
     height = split_h,
 }
 
 -- left mirror
 barrier {
-    from = { -3 * um - mirror_w, -2 * um},
-    to   = { -3 * um + mirror_w,  2 * um},
+    from = { -2 * um - mirror_w, -2 * um},
+    to   = { -2 * um + mirror_w,  2 * um},
     height = mirror_h,
 }
 
 -- right mirror
 barrier {
-    from = { 3 * um - mirror_w, -2 * um},
-    to   = { 3 * um + mirror_w,  2 * um},
+    from = { 2 * um - mirror_w, -2 * um},
+    to   = { 2 * um + mirror_w,  2 * um},
     height = mirror_h,
 }
