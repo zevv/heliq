@@ -10,20 +10,20 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.062e-3 * eV   -- 0.062 meV, ~8 pts/wavelength at 512
+local energy = 0.01e-3 * eV   -- 0.062 meV, ~8 pts/wavelength at 512
 local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
-    position = { -2 * um },
+    position = { 0 },
     momentum = { momentum },
-    width = 0.2 * um,
+    width = 0.4 * um,
 })
 
-local wall_h = 5 * energy
+local wall_h = 10 * energy
 local wall_w = 0.2 * um
 
 barrier {
-    from = { -wall_w },
-    to   = {  wall_w },
+    from = { 4 * um },
+    to   = { 5 * um },
     height = wall_h,
 }

@@ -17,9 +17,13 @@
 
 static constexpr double PITCH_LIMIT = M_PI * 0.49;
 
-enum class Envelope { Off, Amplitude, ProbDensity, Real, Imaginary, COUNT };
+enum class Envelope { Amplitude, ProbDensity, Real, Imaginary, COUNT };
 
-static const char *envelope_names[] = { "off", "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
+static const char *envelope_names[] = { "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
+
+enum class HelixColor { Gray, Rainbow, Flame, COUNT };
+
+static const char *helix_color_names[] = { "gray", "rainbow", "flame" };
 
 
 static SDL_FPoint project(vec3 ndc, float rx, float ry, float rw, float rh)
@@ -48,9 +52,17 @@ private:
 	double m_dist{2.5};
 	double m_pan_x{0}, m_pan_y{0};
 	bool m_ortho{true};
-	int m_envelope{1};
-	int m_helix_color{1};
 	float m_amplitude{0.1f};
+
+	// visual layers
+	bool m_envelope_on{true};
+	int m_envelope{0};
+	float m_envelope_alpha{0.7f};
+	bool m_helix_on{true};
+	int m_helix_color{0};
+	float m_helix_alpha{1.0f};
+	bool m_surface{true};
+	float m_surface_alpha{0.1f};
 	int m_slice_axis{0};
 	int m_slice_pos[MAX_RANK]{};
 	int m_slice_mode{Slice};
@@ -126,9 +138,15 @@ void WidgetHelix::do_save(ConfigWriter &cfg)
 	cfg.write("pan_x", m_pan_x);
 	cfg.write("pan_y", m_pan_y);
 	cfg.write("ortho", m_ortho);
-	cfg.write("envelope", m_envelope);
-	cfg.write("helix_color", m_helix_color);
 	cfg.write("amplitude", m_amplitude);
+	cfg.write("envelope_on", m_envelope_on ? 1 : 0);
+	cfg.write("envelope", m_envelope);
+	cfg.write("envelope_alpha", m_envelope_alpha);
+	cfg.write("helix_on", m_helix_on ? 1 : 0);
+	cfg.write("helix_color", m_helix_color);
+	cfg.write("helix_alpha", m_helix_alpha);
+	cfg.write("surface", m_surface ? 1 : 0);
+	cfg.write("surface_alpha", m_surface_alpha);
 	cfg.write("slice_axis", m_slice_axis);
 	cfg.write("slice_mode", m_slice_mode);
 	for(int d = 0; d < MAX_RANK; d++) {
@@ -147,9 +165,15 @@ void WidgetHelix::do_load(ConfigReader::Node *node)
 	node->read("pan_x", m_pan_x);
 	node->read("pan_y", m_pan_y);
 	node->read("ortho", m_ortho);
-	node->read("envelope", m_envelope);
-	node->read("helix_color", m_helix_color);
 	node->read("amplitude", m_amplitude);
+	int env_on = m_envelope_on; node->read("envelope_on", env_on); m_envelope_on = env_on;
+	node->read("envelope", m_envelope);
+	node->read("envelope_alpha", m_envelope_alpha);
+	int hx_on = m_helix_on; node->read("helix_on", hx_on); m_helix_on = hx_on;
+	node->read("helix_color", m_helix_color);
+	node->read("helix_alpha", m_helix_alpha);
+	int surf = m_surface; node->read("surface", surf); m_surface = surf;
+	node->read("surface_alpha", m_surface_alpha);
 	node->read("slice_axis", m_slice_axis);
 	node->read("slice_mode", m_slice_mode);
 	for(int d = 0; d < MAX_RANK; d++) {
@@ -194,10 +218,10 @@ void WidgetHelix::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		draw_potentials(rend, sim, n, vp, r);
 		draw_absorb_zones(rend, sim, n, vp, r);
 	}
+	if(m_surface) draw_surface(rend, n, vp, r, pts3d, helix_pts);
 	draw_axis(rend, vp, r);
-	draw_surface(rend, n, vp, r, pts3d, helix_pts);
-	draw_helix(rend, psi, max_amp, n, helix_pts);
-	draw_envelope(rend, psi, max_amp, n, vp, r);
+	if(m_helix_on) draw_helix(rend, psi, max_amp, n, helix_pts);
+	if(m_envelope_on) draw_envelope(rend, psi, max_amp, n, vp, r);
 	draw_cursor(rend, sim, vp, r, n);
 
 	if(ImGui::IsWindowFocused()) handle_keys();
@@ -521,7 +545,7 @@ void WidgetHelix::draw_absorb_zones(SDL_Renderer *rend, const Simulation &sim, i
 void WidgetHelix::draw_surface(SDL_Renderer *rend, int n, const mat4 &vp, SDL_Rect &r,
                                 const std::vector<vec3> &pts3d, const std::vector<SDL_FPoint> &helix_pts)
 {
-	SDL_FColor col = {0.3f, 0.4f, 0.7f, 0.1f};
+	SDL_FColor col = {0.3f, 0.4f, 0.7f, m_surface_alpha};
 	for(int i = 0; i < n - 1; i++) {
 		SDL_FPoint base0 = project(vp.transform({pts3d[i].x, 0, 0}), r.x, r.y, r.w, r.h);
 		SDL_FPoint base1 = project(vp.transform({pts3d[i+1].x, 0, 0}), r.x, r.y, r.w, r.h);
@@ -548,25 +572,30 @@ void WidgetHelix::draw_surface(SDL_Renderer *rend, int n, const mat4 &vp, SDL_Re
 void WidgetHelix::draw_helix(SDL_Renderer *rend, const std::complex<double> *psi,
                               double max_amp, int n, const std::vector<SDL_FPoint> &helix_pts)
 {
-	if(!m_helix_color) return;
 	for(int i = 0; i < n - 1; i++) {
 		double amp = std::abs(psi[i]) / max_amp;
 		uint8_t cr, cg, cb;
-		if(m_helix_color == 1) {
-			cr = cg = cb = (uint8_t)(200 * amp + 40 * (1 - amp));
-		} else if(m_helix_color == 2) {
-			double phase = atan2(psi[i].imag(), psi[i].real());
-			double hue = (phase + M_PI) / (2 * M_PI);
-			hsv_to_rgb(hue, 1.0, 1.0, cr, cg, cb);
-			cr = (uint8_t)(cr * amp + 40 * (1 - amp));
-			cg = (uint8_t)(cg * amp + 40 * (1 - amp));
-			cb = (uint8_t)(cb * amp + 40 * (1 - amp));
-		} else {
-			cr = (uint8_t)(255 * amp + 40 * (1 - amp));
-			cg = (uint8_t)(255 * fmin(1.0, amp * 2.0) * amp + 40 * (1 - amp));
-			cb = (uint8_t)(255 * fmin(1.0, fmax(0.0, amp * 2.0 - 1.0)) * amp + 20 * (1 - amp));
+		switch((HelixColor)m_helix_color) {
+			case HelixColor::Gray:
+				cr = cg = cb = (uint8_t)(200 * amp + 40 * (1 - amp));
+				break;
+			case HelixColor::Rainbow: {
+				double phase = atan2(psi[i].imag(), psi[i].real());
+				double hue = (phase + M_PI) / (2 * M_PI);
+				hsv_to_rgb(hue, 1.0, 1.0, cr, cg, cb);
+				cr = (uint8_t)(cr * amp + 40 * (1 - amp));
+				cg = (uint8_t)(cg * amp + 40 * (1 - amp));
+				cb = (uint8_t)(cb * amp + 40 * (1 - amp));
+				break;
+			}
+			case HelixColor::Flame:
+				cr = (uint8_t)(255 * amp + 40 * (1 - amp));
+				cg = (uint8_t)(255 * fmin(1.0, amp * 2.0) * amp + 40 * (1 - amp));
+				cb = (uint8_t)(255 * fmin(1.0, fmax(0.0, amp * 2.0 - 1.0)) * amp + 20 * (1 - amp));
+				break;
+			default: cr = cg = cb = 128; break;
 		}
-		SDL_SetRenderDrawColor(rend, cr, cg, cb, 255);
+		SDL_SetRenderDrawColor(rend, cr, cg, cb, (uint8_t)(m_helix_alpha * 255));
 		SDL_RenderLine(rend, helix_pts[i].x, helix_pts[i].y,
 		               helix_pts[i+1].x, helix_pts[i+1].y);
 	}
@@ -576,19 +605,19 @@ void WidgetHelix::draw_helix(SDL_Renderer *rend, const std::complex<double> *psi
 void WidgetHelix::draw_envelope(SDL_Renderer *rend, const std::complex<double> *psi,
                                  double max_amp, int n, const mat4 &vp, SDL_Rect &r)
 {
-	if((Envelope)m_envelope == Envelope::Off) return;
-
 	bool rotational = (Envelope)m_envelope == Envelope::Amplitude ||
 	                  (Envelope)m_envelope == Envelope::ProbDensity;
 
 	if(rotational) {
+		uint8_t ghost_a = (uint8_t)(m_envelope_alpha * 30);
+
 		// ghost longitudinal lines rotated around x-axis
 		int n_ghosts = 64;
 		for(int g = 0; g < n_ghosts; g++) {
 			double angle = 2.0 * M_PI * g / n_ghosts;
 			double cy = cos(angle);
 			double cz = sin(angle);
-			SDL_SetRenderDrawColor(rend, 100, 200, 100, 20);
+			SDL_SetRenderDrawColor(rend, 100, 200, 100, ghost_a);
 			for(int i = 0; i < n - 1; i++) {
 				double t0 = (double)i / n;
 				double t1 = (double)(i+1) / n;
@@ -608,7 +637,7 @@ void WidgetHelix::draw_envelope(SDL_Renderer *rend, const std::complex<double> *
 
 		// ghost cross-section circles
 		int circle_segs = 24;
-		SDL_SetRenderDrawColor(rend, 100, 200, 100, 20);
+		SDL_SetRenderDrawColor(rend, 100, 200, 100, ghost_a);
 		for(int i = 0; i < n; i++) {
 			double rad = envelope_value(psi[i], max_amp) * m_amplitude;
 			if(rad < 1e-6) continue;
@@ -629,7 +658,7 @@ void WidgetHelix::draw_envelope(SDL_Renderer *rend, const std::complex<double> *
 
 	// primary envelope line
 	bool on_z = (Envelope)m_envelope == Envelope::Imaginary;
-	SDL_SetRenderDrawColor(rend, 100, 200, 100, 180);
+	SDL_SetRenderDrawColor(rend, 100, 200, 100, (uint8_t)(m_envelope_alpha * 255));
 	for(int i = 0; i < n - 1; i++) {
 		double t0 = (double)i / n;
 		double t1 = (double)(i+1) / n;
@@ -691,29 +720,14 @@ void WidgetHelix::draw_cursor(SDL_Renderer *rend, const Simulation &sim,
 
 void WidgetHelix::draw_controls(const Simulation &sim)
 {
-	static const char *helix_color_names[] = { "off", "gray", "rainbow", "flame" };
 
-	ImGui::Text("Env:");
-	ImGui::SameLine();
-	ImGui::SetNextItemWidth(80);
-	ImGui::Combo("##envelope", &m_envelope, envelope_names, (int)Envelope::COUNT);
-	ImGui::SameLine();
 
-	ImGui::Text("Helix:");
-	ImGui::SameLine();
-	ImGui::SetNextItemWidth(70);
-	ImGui::Combo("##helixcol", &m_helix_color, helix_color_names, 4);
-	ImGui::SameLine();
-
-	ImGui::Text("Amp:");
-	ImGui::SameLine();
+	// non-layer controls: amp, mode, axis
 	ImGui::SetNextItemWidth(60);
-	ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 0.2f, "%.2f");
+	ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 0.2f, "%.3f");
 	ImGui::SameLine();
 
 	if(sim.grid.rank > 1) {
-		ImGui::Text("Axis:");
-		ImGui::SameLine();
 		for(int d = 0; d < sim.grid.rank; d++) {
 			ImGui::SameLine();
 			ImGui::PushID(d);
@@ -730,12 +744,50 @@ void WidgetHelix::draw_controls(const Simulation &sim)
 			m_slice_mode = (m_slice_mode == Momentum) ? Slice : Momentum;
 	}
 
+	// layer table
+	if(ImGui::BeginTable("layers", 4, ImGuiTableFlags_SizingStretchProp)) {
+		ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, 30);
+		ImGui::TableSetupColumn("en", ImGuiTableColumnFlags_WidthFixed, 20);
+		ImGui::TableSetupColumn("alpha", ImGuiTableColumnFlags_WidthFixed, 60);
+		ImGui::TableSetupColumn("cfg", ImGuiTableColumnFlags_WidthFixed, 80);
+
+		// surface
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn(); ImGui::Text("Surf");
+		ImGui::TableNextColumn(); ImGui::Checkbox("##sf_on", &m_surface);
+		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+		ImGui::SliderFloat("##sf_a", &m_surface_alpha, 0.0f, 0.5f, "%.2f");
+		ImGui::TableNextColumn();
+		
+		// helix
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn(); ImGui::Text("Helix");
+		ImGui::TableNextColumn(); ImGui::Checkbox("##hx_on", &m_helix_on);
+		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+		ImGui::SliderFloat("##hx_a", &m_helix_alpha, 0.0f, 1.0f, "%.1f");
+		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+		ImGui::Combo("##hx", &m_helix_color, helix_color_names, (int)HelixColor::COUNT);
+
+		// envelope
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn(); ImGui::Text("Env");
+		ImGui::TableNextColumn(); ImGui::Checkbox("##env_on", &m_envelope_on);
+		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+		ImGui::SliderFloat("##env_a", &m_envelope_alpha, 0.0f, 1.0f, "%.1f");
+		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+		ImGui::Combo("##env", &m_envelope, envelope_names, (int)Envelope::COUNT);
+
+		ImGui::EndTable();
+	}
+
+	// slice cursor sync
 	if(m_slice_mode != Marginal) {
 		for(int d = 0; d < sim.grid.rank; d++)
 			m_slice_pos[d] = m_view.cursor[d];
 		m_view.add_slice(m_slice_axis, m_slice_pos);
 	}
 
+	// cursor readout
 	if(m_cursor_valid) {
 		auto &ax = sim.grid.axes[m_slice_axis];
 		if(m_slice_mode == Momentum) {
@@ -830,8 +882,9 @@ void WidgetHelix::handle_keys()
 		m_pan_x = 0; m_pan_y = 0;
 		m_ortho = true;
 		m_amplitude = 0.1f;
-		m_envelope = 1;
-		m_helix_color = 1;
+		m_envelope_on = true; m_envelope = 0; m_envelope_alpha = 0.7f;
+		m_helix_on = true; m_helix_color = 0; m_helix_alpha = 1.0f;
+		m_surface = true; m_surface_alpha = 0.1f;
 		m_slice_mode = Slice;
 	}
 
