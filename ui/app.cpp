@@ -290,9 +290,11 @@ void App::run()
 		if(ImGui::IsKeyPressed(ImGuiKey_Space))
 			m_experiment.running = !m_experiment.running;
 
-		// / to reverse time direction
-		if(ImGui::IsKeyPressed(ImGuiKey_Slash))
-			m_experiment.timescale = -m_experiment.timescale;
+		// , for reverse, . for forward
+		if(ImGui::IsKeyPressed(ImGuiKey_Comma))
+			m_experiment.timescale = -fabs(m_experiment.timescale);
+		if(ImGui::IsKeyPressed(ImGuiKey_Period))
+			m_experiment.timescale = fabs(m_experiment.timescale);
 
 		// R to reset experiment
 		if(ImGui::IsKeyPressed(ImGuiKey_R)) {

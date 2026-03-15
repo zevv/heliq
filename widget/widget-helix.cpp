@@ -223,7 +223,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 
 	glClearColor(0.04f, 0.04f, 0.06f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glLineWidth(2.0f);
+	//glLineWidth(2.0f);
 
 	mat4 vp = build_camera(r.w, r.h);
 	float mvp[16];
@@ -433,19 +433,35 @@ void WidgetHelixGL::mvp_to_float(const mat4 &m, float *out)
 
 void WidgetHelixGL::gl_draw_axis(const mat4 &vp)
 {
-	// x-axis line
+	float a = m_amplitude;
 	glUseProgram(m_gl.solid_shader());
+	glEnableVertexAttribArray(0);
+
+	// bounding box edges
+	glUniform4f(m_gl.color_loc(), 0.18f, 0.18f, 0.18f, 1.0f);
+	float box[] = {
+		// bottom face (y=-a)
+		-1,-a,-a, 1,-a,-a,  1,-a,-a, 1,-a,a,  1,-a,a, -1,-a,a,  -1,-a,a, -1,-a,-a,
+		// top face (y=a)
+		-1,a,-a, 1,a,-a,  1,a,-a, 1,a,a,  1,a,a, -1,a,a,  -1,a,a, -1,a,-a,
+		// verticals
+		-1,-a,-a, -1,a,-a,  1,-a,-a, 1,a,-a,  1,-a,a, 1,a,a,  -1,-a,a, -1,a,a,
+	};
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, box);
+	glDrawArrays(GL_LINES, 0, 24);
+
+	// x-axis line
 	glUniform4f(m_gl.color_loc(), 0.24f, 0.24f, 0.24f, 1.0f);
 	float axis[] = { -1,0,0, 1,0,0 };
-	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, axis);
 	glDrawArrays(GL_LINES, 0, 2);
 
-	// origin cross
+	// origin cross clamped to bounding box
 	glUniform4f(m_gl.color_loc(), 0.31f, 0.31f, 0.31f, 1.0f);
-	float cross[] = { 0,-10,0, 0,10,0, 0,0,-10, 0,0,10 };
+	float cross[] = { 0,-a,0, 0,a,0, 0,0,-a, 0,0,a };
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, cross);
 	glDrawArrays(GL_LINES, 0, 4);
+
 	glDisableVertexAttribArray(0);
 }
 
@@ -606,59 +622,82 @@ void WidgetHelixGL::gl_draw_envelope(const std::complex<double> *psi, double max
 }
 
 
+// draw a box with per-vertex colors using the vcol shader
+// each vertex has position (3) + color (4) = 7 floats
+// x0_col/x1_col allow gradient along x axis (for fog effect)
+static void gl_draw_box(float x0, float x1, float a,
+                         const float x0_col[4], const float x1_col[4])
+{
+	// 6 faces × 4 verts × 7 floats
+	// x0 verts use x0_col, x1 verts use x1_col
+	// for y/z faces, interpolate between x0_col and x1_col
+	const float *c0 = x0_col, *c1 = x1_col;
+	float verts[] = {
+		// front (z=a)
+		x0,-a,a, c0[0],c0[1],c0[2],c0[3],  x1,-a,a, c1[0],c1[1],c1[2],c1[3],
+		x0, a,a, c0[0],c0[1],c0[2],c0[3],  x1, a,a, c1[0],c1[1],c1[2],c1[3],
+		// back (z=-a)
+		x0,-a,-a, c0[0],c0[1],c0[2],c0[3],  x1,-a,-a, c1[0],c1[1],c1[2],c1[3],
+		x0, a,-a, c0[0],c0[1],c0[2],c0[3],  x1, a,-a, c1[0],c1[1],c1[2],c1[3],
+		// top (y=a)
+		x0,a,-a, c0[0],c0[1],c0[2],c0[3],  x1,a,-a, c1[0],c1[1],c1[2],c1[3],
+		x0,a, a, c0[0],c0[1],c0[2],c0[3],  x1,a, a, c1[0],c1[1],c1[2],c1[3],
+		// bottom (y=-a)
+		x0,-a,-a, c0[0],c0[1],c0[2],c0[3],  x1,-a,-a, c1[0],c1[1],c1[2],c1[3],
+		x0,-a, a, c0[0],c0[1],c0[2],c0[3],  x1,-a, a, c1[0],c1[1],c1[2],c1[3],
+		// left (x=x0)
+		x0,-a,-a, c0[0],c0[1],c0[2],c0[3],  x0,-a,a, c0[0],c0[1],c0[2],c0[3],
+		x0, a,-a, c0[0],c0[1],c0[2],c0[3],  x0, a,a, c0[0],c0[1],c0[2],c0[3],
+		// right (x=x1)
+		x1,-a,-a, c1[0],c1[1],c1[2],c1[3],  x1,-a,a, c1[0],c1[1],c1[2],c1[3],
+		x1, a,-a, c1[0],c1[1],c1[2],c1[3],  x1, a,a, c1[0],c1[1],c1[2],c1[3],
+	};
+	for(int f = 0; f < 6; f++) {
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), verts + f * 28);
+		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), verts + f * 28 + 3);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	}
+}
+
+
 void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 {
 	auto *pot = sim.potential;
+	float a = m_amplitude;
 
-	// find max potential for scaling
+	// find max potential for alpha scaling
 	double v_max = 1e-30;
+	bool any = false;
 	for(int i = 0; i < n; i++) {
 		int coords[MAX_RANK]{};
 		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice_pos[d];
 		coords[m_slice_axis] = i;
 		double v = fabs(pot[sim.grid.linear_index(coords)].real());
 		if(v > v_max) v_max = v;
+		if(v > 0) any = true;
 	}
+	if(!any) return;
 
-	// draw as triangle strip: axis to V(x), scaled to amplitude
-	float scale = m_amplitude / (float)v_max;
-	m_vbuf.resize(n * 2 * 3);
-	bool any = false;
+	float dx = 2.0f / n;
+	glUseProgram(m_gl.vcol_shader());
+	glEnableVertexAttribArray(0);
+	glEnableVertexAttribArray(1);
+
 	for(int i = 0; i < n; i++) {
 		int coords[MAX_RANK]{};
 		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice_pos[d];
 		coords[m_slice_axis] = i;
-		double v = pot[sim.grid.linear_index(coords)].real();
-		float x = -1.0f + 2.0f * i / n;
-		float h = (float)v * scale;
-		m_vbuf[i*6+0] = x; m_vbuf[i*6+1] = -h;  m_vbuf[i*6+2] = 0;
-		m_vbuf[i*6+3] = x; m_vbuf[i*6+4] =  h;  m_vbuf[i*6+5] = 0;
-		if(v != 0) any = true;
+		double v = fabs(pot[sim.grid.linear_index(coords)].real());
+		if(v < 1e-30) continue;
+
+		float alpha = (float)(v / v_max) * m_potential_alpha;
+		float x0 = -1.0f + dx * i;
+		float x1 = x0 + dx;
+		float col[] = { 0.5f, 0.5f, 0.5f, alpha };
+		gl_draw_box(x0, x1, a, col, col);
 	}
 
-	if(!any) return;
-
-	glUseProgram(m_gl.solid_shader());
-	glUniform4f(m_gl.color_loc(), 0.47f, 0.47f, 0.47f, m_potential_alpha);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, m_vbuf.data());
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
-
-	// outline top and bottom edges
-	std::vector<float> outline(n * 2 * 3);
-	for(int i = 0; i < n; i++) {
-		outline[i*3+0] = m_vbuf[i*6+3];         // top
-		outline[i*3+1] = m_vbuf[i*6+4];
-		outline[i*3+2] = m_vbuf[i*6+5];
-		outline[(n+i)*3+0] = m_vbuf[i*6+0];     // bottom
-		outline[(n+i)*3+1] = m_vbuf[i*6+1];
-		outline[(n+i)*3+2] = m_vbuf[i*6+2];
-	}
-	glUniform4f(m_gl.color_loc(), 0.6f, 0.6f, 0.6f, fminf(1.0f, m_potential_alpha * 2.0f));
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, outline.data());
-	glDrawArrays(GL_LINE_STRIP, 0, n);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, outline.data() + n * 3);
-	glDrawArrays(GL_LINE_STRIP, 0, n);
+	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
 }
 
@@ -667,21 +706,24 @@ void WidgetHelixGL::gl_draw_absorb_zones(const Simulation &sim, int n)
 {
 	if(!sim.absorbing_boundary) return;
 	float w = (float)sim.absorb_width;
-	float h = 0.02f;
+	float a = m_amplitude;
+	float xl = -1.0f + 2.0f * w;
+	float xr = 1.0f - 2.0f * w;
+	float peak = 1.00f;
 
-	glUseProgram(m_gl.solid_shader());
-	glUniform4f(m_gl.color_loc(), 0.8f, 0.15f, 0.15f, 0.6f);
-
-	float x_left = -1.0f + 2.0f * w;
-	float left[] = { -1,-h,0, x_left,-h,0, -1,h,0, x_left,h,0 };
+	glUseProgram(m_gl.vcol_shader());
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, left);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glEnableVertexAttribArray(1);
 
-	float x_right = 1.0f - 2.0f * w;
-	float right[] = { x_right,-h,0, 1,-h,0, x_right,h,0, 1,h,0 };
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, right);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	// left: edge opaque, onset transparent
+	float col_edge[] = { 0.1f, 0.1f, 0.8f, peak };
+	float col_zero[] = { 0.1f, 0.1f, 0.8f, 0.0f };
+	gl_draw_box(-1.0f, xl, a, col_edge, col_zero);
+
+	// right: onset transparent, edge opaque
+	gl_draw_box(xr, 1.0f, a, col_zero, col_edge);
+
+	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
 }
 

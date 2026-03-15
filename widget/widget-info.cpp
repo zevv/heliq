@@ -111,7 +111,7 @@ public:
 					ImGui::TableNextColumn();
 					ImGui::SetNextItemWidth(-1);
 					float log_s = log10f(sim.absorb_strength);
-					if(ImGui::SliderFloat("##abs", &log_s, -30.0f, -15.0f, "depth: 1e%.0f")) {
+					if(ImGui::SliderFloat("##abs", &log_s, -25.0f, -20.0f, "depth: 1e%.2f J")) {
 						for(auto &s : exp.simulations) {
 							s->absorb_strength = pow(10.0, log_s);
 							s->recompute_boundary();

@@ -56,7 +56,7 @@ struct Overlay {
 	DataSource source{DataSource::PsiSq};
 	Palette palette{Palette::Flame};
 	float opacity{1.0f};
-	float gamma{0.5f};  // alpha exponent: 1.0=linear, 0.5=sqrt, 0.3=aggressive
+	float gamma{2.0f};  // alpha exponent: 1.0=linear, 0.5=sqrt, 0.3=aggressive
 	SDL_Texture *tex{};
 	int tex_w{};
 	int tex_h{};
@@ -185,24 +185,37 @@ public:
 			SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
 		}
 
-		// draw absorbing boundary zones
+		// draw absorbing boundary zones with cos² gradient
 		if(sim.absorbing_boundary) {
 			float w = (float)sim.absorb_width;
+			int n_strips = (int)(w * tw);
+			if(n_strips < 1) n_strips = 1;
+			float strip_w = dst.w * w / n_strips;
 			SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
-			SDL_SetRenderDrawColor(rend, 200, 40, 40, 40);
-			// left
-			SDL_FRect ab_left = { dst.x, dst.y, dst.w * w, dst.h };
-			SDL_RenderFillRect(rend, &ab_left);
-			// right
-			SDL_FRect ab_right = { dst.x + dst.w * (1.0f - w), dst.y, dst.w * w, dst.h };
-			SDL_RenderFillRect(rend, &ab_right);
+			for(int i = 0; i < n_strips; i++) {
+				float t_lo = cosf(0.5f * M_PI * (i + 1) / (n_strips));
+				float alpha = t_lo * t_lo * 80;
+				SDL_SetRenderDrawColor(rend, 25, 25, 200, (uint8_t)alpha);
+				// left
+				SDL_FRect r_left = { dst.x + i * strip_w, dst.y, strip_w + 1, dst.h };
+				SDL_RenderFillRect(rend, &r_left);
+				// right
+				SDL_FRect r_right = { dst.x + dst.w - (i + 1) * strip_w, dst.y, strip_w + 1, dst.h };
+				SDL_RenderFillRect(rend, &r_right);
+			}
 			if(grid.rank >= 2) {
-				// bottom
-				SDL_FRect ab_bot = { dst.x, dst.y + dst.h * (1.0f - w), dst.w, dst.h * w };
-				SDL_RenderFillRect(rend, &ab_bot);
-				// top
-				SDL_FRect ab_top = { dst.x, dst.y, dst.w, dst.h * w };
-				SDL_RenderFillRect(rend, &ab_top);
+				float strip_h = dst.h * w / n_strips;
+				for(int i = 0; i < n_strips; i++) {
+					float t_lo = cosf(0.5f * M_PI * (i + 1) / (n_strips));
+					float alpha = t_lo * t_lo * 80;
+					SDL_SetRenderDrawColor(rend, 25, 25, 200, (uint8_t)alpha);
+					// top (grid y=max is screen top)
+					SDL_FRect r_top = { dst.x, dst.y + i * strip_h, dst.w, strip_h + 1 };
+					SDL_RenderFillRect(rend, &r_top);
+					// bottom
+					SDL_FRect r_bot = { dst.x, dst.y + dst.h - (i + 1) * strip_h, dst.w, strip_h + 1 };
+					SDL_RenderFillRect(rend, &r_bot);
+				}
 			}
 		}
 
@@ -220,22 +233,13 @@ public:
 			}
 		}
 
-		// draw slice crosshairs from view
+		// draw cursor crosshairs
 		if(grid.rank >= 2) {
-			SDL_SetRenderDrawColor(rend, 100, 100, 100, 120);
-			for(int si = 0; si < m_view.n_slices; si++) {
-				auto &sl = m_view.slices[si];
-				if(!sl.valid) continue;
-				for(int d = 0; d < grid.rank; d++) {
-					if(d == sl.axis) continue;
-					float sx, sy;
-					grid_to_screen(sl.pos[0], sl.pos[1], sx, sy);
-					if(d == 0)
-						SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
-					else if(d == 1)
-						SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
-				}
-			}
+			SDL_SetRenderDrawColor(rend, 100, 100, 0, 120);
+			float sx, sy;
+			grid_to_screen(m_view.cursor[0], m_view.cursor[1], sx, sy);
+			SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
+			SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
 		}
 
 		// A: reset view to defaults
@@ -356,11 +360,11 @@ private:
 				double norm = (v - vmin) / range;
 
 				double amp = std::abs(psi[idx]) / amp_max;
-				int alpha = (int)(255 * pow(fmin(1.0, amp), ov.gamma));
+				int alpha = (int)(255 * pow(fmin(1.0, amp), 1 / ov.gamma));
 
 				switch(ov.palette) {
-					case Palette::Flame: row[x] = palette_flame(norm, ov.gamma); break;
-					case Palette::Gray:  row[x] = palette_gray(norm, ov.gamma); break;
+					case Palette::Flame: row[x] = palette_flame(norm, 1 / ov.gamma); break;
+					case Palette::Gray:  row[x] = palette_gray(norm, 1/ ov.gamma); break;
 					case Palette::Rainbow: {
 						uint8_t cr, cg, cb;
 						hsv_to_rgb(fmod(norm, 1.0), 1.0, 1.0, cr, cg, cb);
@@ -409,7 +413,7 @@ private:
 			ImGui::SliderFloat("##alpha", &ov.opacity, 0.0f, 1.0f, "a%.1f");
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(60);
-			ImGui::SliderFloat("##gamma", &ov.gamma, 0.1f, 2.0f, "g%.1f");
+			ImGui::SliderFloat("##gamma", &ov.gamma, 0.5f, 10.0f, "g%.1f");
 			ImGui::PopID();
 		}
 	}
