@@ -50,7 +50,7 @@ void App::load()
 	if(auto n = cr.find("experiment")) {
 		double ts = m_experiment.timescale;
 		n->read("timescale", ts);
-		m_experiment.timescale = ts;
+		m_experiment.timescale = fabs(ts);
 		if(!m_experiment.simulations.empty()) {
 			double dt = m_experiment.simulations[0]->dt;
 			n->read("dt", dt);

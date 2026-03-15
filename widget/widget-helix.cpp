@@ -33,7 +33,6 @@ public:
 		cfg.write("envelope", m_envelope);
 		cfg.write("helix_color", m_helix_color);
 		cfg.write("amplitude", m_amplitude);
-		cfg.write("stem_density", m_stem_density);
 		cfg.write("slice_axis", m_slice_axis);
 		cfg.write("slice_mode", m_slice_mode);
 		for(int d = 0; d < MAX_RANK; d++) {
@@ -53,7 +52,6 @@ public:
 		node->read("envelope", m_envelope);
 		node->read("helix_color", m_helix_color);
 		node->read("amplitude", m_amplitude);
-		node->read("stem_density", m_stem_density);
 		node->read("slice_axis", m_slice_axis);
 		node->read("slice_mode", m_slice_mode);
 		for(int d = 0; d < MAX_RANK; d++) {
@@ -94,7 +92,7 @@ public:
 
 		if(m_slice_mode != Momentum)
 			draw_potentials(rend, sim, n, vp, r);
-		draw_stems(rend, n, vp, r, pts3d, helix_pts);
+		draw_surface(rend, n, vp, r, pts3d, helix_pts);
 		draw_axis(rend, vp, r);
 		draw_helix(rend, psi, max_amp, n, helix_pts);
 		draw_envelope(rend, psi, max_amp, n, vp, r);
@@ -114,7 +112,6 @@ private:
 	int m_envelope{1};
 	int m_helix_color{1};
 	float m_amplitude{0.1f};
-	int m_stem_density{64};
 	int m_slice_axis{0};
 	int m_slice_pos[MAX_RANK]{};
 	std::vector<std::complex<double>> m_slice;
@@ -366,22 +363,6 @@ private:
 		}
 	}
 
-	void draw_stems(SDL_Renderer *rend, int n, const mat4 &vp, SDL_Rect &r,
-	                const std::vector<vec3> &pts3d, const std::vector<SDL_FPoint> &helix_pts) {
-		int stem_step = (m_stem_density > 0) ? n / m_stem_density : n;
-		if(stem_step < 1) stem_step = 1;
-		SDL_SetRenderDrawColor(rend, 80, 80, 120, 255);
-		for(int i = 0; i < n; i += stem_step) {
-			vec3 base = {pts3d[i].x, 0, 0};
-			vec3 ndc_base = vp.transform(base);
-			SDL_FPoint stem[2] = {
-				project_to_screen(ndc_base, r.x, r.y, r.w, r.h),
-				helix_pts[i],
-			};
-			SDL_RenderLines(rend, stem, 2);
-		}
-	}
-
 	static void hsv_to_rgb(double h, double s, double v, uint8_t &r, uint8_t &g, uint8_t &b) {
 		int i = (int)(h * 6);
 		double f = h * 6 - i;
@@ -400,6 +381,33 @@ private:
 		r = (uint8_t)(rr * 255);
 		g = (uint8_t)(gg * 255);
 		b = (uint8_t)(bb * 255);
+	}
+
+	void draw_surface(SDL_Renderer *rend, int n, const mat4 &vp, SDL_Rect &r,
+	                  const std::vector<vec3> &pts3d, const std::vector<SDL_FPoint> &helix_pts) {
+		// filled surface
+		SDL_FColor col = {0.3f, 0.4f, 0.7f, 0.1f};
+		for(int i = 0; i < n - 1; i++) {
+			SDL_FPoint base0 = project_to_screen(vp.transform({pts3d[i].x, 0, 0}), r.x, r.y, r.w, r.h);
+			SDL_FPoint base1 = project_to_screen(vp.transform({pts3d[i+1].x, 0, 0}), r.x, r.y, r.w, r.h);
+			SDL_Vertex verts[6] = {
+				{{base0.x, base0.y}, col, {0,0}},
+				{{base1.x, base1.y}, col, {0,0}},
+				{{helix_pts[i].x, helix_pts[i].y}, col, {0,0}},
+				{{base1.x, base1.y}, col, {0,0}},
+				{{helix_pts[i].x, helix_pts[i].y}, col, {0,0}},
+				{{helix_pts[i+1].x, helix_pts[i+1].y}, col, {0,0}},
+			};
+			SDL_RenderGeometry(rend, nullptr, verts, 6, nullptr, 0);
+		}
+
+		// stem edges
+		SDL_SetRenderDrawColor(rend, 80, 80, 120, 255);
+		for(int i = 0; i < n; i++) {
+			SDL_FPoint base = project_to_screen(vp.transform({pts3d[i].x, 0, 0}), r.x, r.y, r.w, r.h);
+			SDL_FPoint stem[2] = { base, helix_pts[i] };
+			SDL_RenderLines(rend, stem, 2);
+		}
 	}
 
 	void draw_helix(SDL_Renderer *rend, const std::complex<double> *psi,
@@ -445,32 +453,53 @@ private:
 		bool rotational = (Envelope)m_envelope == Envelope::Amplitude ||
 		                  (Envelope)m_envelope == Envelope::ProbDensity;
 
-		int n_ghosts = rotational ? 64 : 0;
+		if(rotational) {
+			// ghost longitudinal lines rotated around x-axis
+			int n_ghosts = 64;
+			for(int g = 0; g < n_ghosts; g++) {
+				double angle = 2.0 * M_PI * g / n_ghosts;
+				double cy = cos(angle);
+				double cz = sin(angle);
+				SDL_SetRenderDrawColor(rend, 100, 200, 100, 20);
+				for(int i = 0; i < n - 1; i++) {
+					double t0 = (double)i / (n - 1);
+					double t1 = (double)(i+1) / (n - 1);
+					double x0 = -1.0 + 2.0 * t0;
+					double x1 = -1.0 + 2.0 * t1;
+					double a0 = envelope_value(psi[i], max_amp) * m_amplitude;
+					double a1 = envelope_value(psi[i+1], max_amp) * m_amplitude;
+					vec3 p0 = vp.transform({x0, a0 * cy, a0 * cz});
+					vec3 p1 = vp.transform({x1, a1 * cy, a1 * cz});
+					SDL_FPoint sp[2] = {
+						project_to_screen(p0, r.x, r.y, r.w, r.h),
+						project_to_screen(p1, r.x, r.y, r.w, r.h),
+					};
+					SDL_RenderLines(rend, sp, 2);
+				}
+			}
 
-		// draw ghost envelopes rotated around x-axis
-		for(int g = 0; g < n_ghosts; g++) {
-			double angle = 2.0 * M_PI * g / n_ghosts;
-			double cy = cos(angle);
-			double cz = sin(angle);
+			// ghost cross-section circles at every position
+			int circle_segs = 24;
 			SDL_SetRenderDrawColor(rend, 100, 200, 100, 20);
-			for(int i = 0; i < n - 1; i++) {
-				double t0 = (double)i / (n - 1);
-				double t1 = (double)(i+1) / (n - 1);
-				double x0 = -1.0 + 2.0 * t0;
-				double x1 = -1.0 + 2.0 * t1;
-				double a0 = envelope_value(psi[i], max_amp) * m_amplitude;
-				double a1 = envelope_value(psi[i+1], max_amp) * m_amplitude;
-				vec3 p0 = vp.transform({x0, a0 * cy, a0 * cz});
-				vec3 p1 = vp.transform({x1, a1 * cy, a1 * cz});
-				SDL_FPoint sp[2] = {
-					project_to_screen(p0, r.x, r.y, r.w, r.h),
-					project_to_screen(p1, r.x, r.y, r.w, r.h),
-				};
-				SDL_RenderLines(rend, sp, 2);
+			for(int i = 0; i < n; i++) {
+				double rad = envelope_value(psi[i], max_amp) * m_amplitude;
+				if(rad < 1e-6) continue;
+				double x = -1.0 + 2.0 * i / (n - 1);
+				for(int s = 0; s < circle_segs; s++) {
+					double a0 = 2.0 * M_PI * s / circle_segs;
+					double a1 = 2.0 * M_PI * (s + 1) / circle_segs;
+					vec3 p0 = vp.transform({x, rad * cos(a0), rad * sin(a0)});
+					vec3 p1 = vp.transform({x, rad * cos(a1), rad * sin(a1)});
+					SDL_FPoint sp[2] = {
+						project_to_screen(p0, r.x, r.y, r.w, r.h),
+						project_to_screen(p1, r.x, r.y, r.w, r.h),
+					};
+					SDL_RenderLines(rend, sp, 2);
+				}
 			}
 		}
 
-		// draw primary envelope (full alpha)
+		// primary envelope line (full alpha)
 		// Im(psi) projects on Z plane, everything else on Y plane
 		bool on_z = (Envelope)m_envelope == Envelope::Imaginary;
 		SDL_SetRenderDrawColor(rend, 100, 200, 100, 180);
@@ -537,8 +566,8 @@ private:
 		m_cursor_valid = true;
 
 		SDL_FPoint sp = project_to_screen(vp.transform({(double)m_cursor_val, 0, 0}), r.x, r.y, r.w, r.h);
-		SDL_SetRenderDrawColor(rend, 200, 60, 60, 255);
-		draw_circle(rend, sp, 4.0f);
+		SDL_SetRenderDrawColor(rend, 200, 60, 60, 200);
+		SDL_RenderLine(rend, sp.x, (float)r.y, sp.x, (float)(r.y + r.h));
 	}
 
 
@@ -557,12 +586,6 @@ private:
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(70);
 		ImGui::Combo("##helixcol", &m_helix_color, helix_color_names, 4);
-		ImGui::SameLine();
-
-		ImGui::Text("Vectors:");
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(60);
-		ImGui::SliderInt("##stems", &m_stem_density, 0, 512, "%d");
 		ImGui::SameLine();
 
 		ImGui::Text("Amp:");
@@ -699,7 +722,6 @@ private:
 			m_amplitude = 0.1f;
 			m_envelope = 1;
 			m_helix_color = 1;
-			m_stem_density = 64;
 			m_slice_mode = Slice;
 		}
 

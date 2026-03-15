@@ -10,11 +10,14 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.1e-3 * eV
+local energy = 0.002e-3 * eV
 local momentum = math.sqrt(2 * m_electron * energy)
 
+print(momentum)
+
 particle(electron, {
-    position = { -1 * um },
+    position = { 0 },
     momentum = { momentum },
-    width = 0.3 * um,
+    width = 0.05 * um,
 })
+

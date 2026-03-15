@@ -11,7 +11,6 @@ electron = def_particle {
 }
 
 local energy = 0.0002e-3 * eV
-local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
     position = { 0 },
