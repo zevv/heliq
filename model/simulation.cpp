@@ -194,6 +194,18 @@ void Simulation::set_dt(double new_dt)
 }
 
 
+void Simulation::reset()
+{
+	size_t n = grid.total_points();
+	m_solver->write_psi(psi_initial);
+	std::copy_n(psi_initial, n, psi[0]);
+	std::copy_n(psi_initial, n, psi[1]);
+	front.store(0);
+	step_count = 0;
+	sim_time = 0;
+}
+
+
 void Simulation::step()
 {
 	step_compute();

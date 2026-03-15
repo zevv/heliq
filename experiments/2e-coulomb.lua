@@ -3,7 +3,6 @@
 -- Thin barrier along diagonal x₁=x₂ causes partial reflection + tunneling
 -- After scatter: two lobes = entangled superposition of outcomes
 
-dimensions(2)
 
 local L = 5 * um
 

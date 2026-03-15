@@ -23,6 +23,7 @@ public:
 	void flush();         // wait for enqueued compute to finish
 	void sync();          // flush + readback to CPU display buffer
 	void set_dt(double new_dt);
+	void reset();         // restore initial state, reset time
 
 	Grid grid{};
 	std::string name{};

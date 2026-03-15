@@ -284,6 +284,13 @@ void App::run()
 		if(ImGui::IsKeyPressed(ImGuiKey_Slash))
 			m_experiment.timescale = -m_experiment.timescale;
 
+		// R to reset experiment
+		if(ImGui::IsKeyPressed(ImGuiKey_R)) {
+			for(auto &sim : m_experiment.simulations)
+				sim->reset();
+			m_experiment.sim_time = 0;
+		}
+
 		// B to toggle absorbing boundary
 		if(ImGui::IsKeyPressed(ImGuiKey_B)) {
 			for(auto &sim : m_experiment.simulations)

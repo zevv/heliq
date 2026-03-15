@@ -59,11 +59,13 @@ env.k_coulomb  = k_coulomb
 -- API functions
 
 function env.dimensions(n)
+    -- kept for backward compatibility, spatial_dims inferred from domain
     world.spatial_dims = n
 end
 
 function env.domain(axes)
     world.domain = axes
+    world.spatial_dims = #axes
 end
 
 function env.def_particle(spec)
@@ -227,19 +229,8 @@ local function dump()
 end
 
 -- validation
-if not world.spatial_dims then
-    io.stderr:write("error: dimensions() not called\n")
-    return nil
-end
-
 if #world.domain == 0 then
     io.stderr:write("error: domain() not called\n")
-    return nil
-end
-
-if #world.domain ~= world.spatial_dims then
-    io.stderr:write("error: domain has " .. #world.domain
-        .. " axes but dimensions() said " .. world.spatial_dims .. "\n")
     return nil
 end
 

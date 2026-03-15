@@ -1,6 +1,5 @@
 -- Single electron diffracting through a slit in 2D
 
-dimensions(1)
 
 domain {
     { min = -5 * um, max = 5 * um, points = 512 },

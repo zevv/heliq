@@ -110,7 +110,7 @@ private:
 	bool m_ortho{true};
 	int m_envelope{1};
 	int m_helix_color{1};
-	float m_amplitude{1.0f};
+	float m_amplitude{0.2f};
 	int m_stem_density{64};
 	int m_slice_axis{0};
 	int m_slice_pos[MAX_RANK]{};
@@ -462,41 +462,48 @@ private:
 	float m_cursor_val{0};      // normalized [-1,1] position on x-axis
 	bool m_cursor_valid{false};
 
+	// find the x-axis value [-1,1] whose screen X matches a given screen x
+	// binary search handles perspective nonlinearity
+	float screen_x_to_axis(const mat4 &vp, SDL_Rect &r, float sx) {
+		float lo = -1.0f, hi = 1.0f;
+		for(int iter = 0; iter < 20; iter++) {
+			float mid = (lo + hi) * 0.5f;
+			SDL_FPoint sp = project_to_screen(vp.transform({mid, 0, 0}), r.x, r.y, r.w, r.h);
+			if(sp.x < sx) lo = mid; else hi = mid;
+		}
+		return (lo + hi) * 0.5f;
+	}
+
+	// draw a small circle at a screen position
+	void draw_circle(SDL_Renderer *rend, SDL_FPoint center, float radius, int segs = 16) {
+		for(int i = 0; i < segs; i++) {
+			float a0 = 2.0f * M_PI * i / segs;
+			float a1 = 2.0f * M_PI * (i + 1) / segs;
+			SDL_RenderLine(rend, center.x + radius * cosf(a0), center.y + radius * sinf(a0),
+			               center.x + radius * cosf(a1), center.y + radius * sinf(a1));
+		}
+	}
+
 	void draw_cursor(SDL_Renderer *rend, const Simulation &sim,
 	                 const mat4 &vp, SDL_Rect &r, int n) {
 		ImVec2 mp = ImGui::GetMousePos();
 		bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
 		               mp.y >= r.y && mp.y < r.y + r.h;
-
 		if(!in_rect) { m_cursor_valid = false; return; }
 
-		// project x-axis endpoints to screen
+		// check axis is visible on screen
 		SDL_FPoint s_left  = project_to_screen(vp.transform({-1, 0, 0}), r.x, r.y, r.w, r.h);
 		SDL_FPoint s_right = project_to_screen(vp.transform({ 1, 0, 0}), r.x, r.y, r.w, r.h);
+		if(fabs(s_right.x - s_left.x) < 1.0f) { m_cursor_valid = false; return; }
 
-		// interpolate mouse X between axis endpoints
-		float axis_dx = s_right.x - s_left.x;
-		if(fabs(axis_dx) < 1.0f) { m_cursor_valid = false; return; }
-
-		float t = (mp.x - s_left.x) / axis_dx;  // 0..1
-		m_cursor_val = -1.0f + 2.0f * t;
+		m_cursor_val = screen_x_to_axis(vp, r, mp.x);
 		if(m_cursor_val < -1.0f) m_cursor_val = -1.0f;
 		if(m_cursor_val >  1.0f) m_cursor_val =  1.0f;
 		m_cursor_valid = true;
 
-		// draw circle on the axis at cursor position
-		vec3 cursor_pos_3d = {(double)m_cursor_val, 0, 0};
-		SDL_FPoint sp = project_to_screen(vp.transform(cursor_pos_3d), r.x, r.y, r.w, r.h);
-
+		SDL_FPoint sp = project_to_screen(vp.transform({(double)m_cursor_val, 0, 0}), r.x, r.y, r.w, r.h);
 		SDL_SetRenderDrawColor(rend, 200, 60, 60, 255);
-		float cr = 4.0f;
-		int segs = 16;
-		for(int i = 0; i < segs; i++) {
-			float a0 = 2.0f * M_PI * i / segs;
-			float a1 = 2.0f * M_PI * (i + 1) / segs;
-			SDL_RenderLine(rend, sp.x + cr * cosf(a0), sp.y + cr * sinf(a0),
-			               sp.x + cr * cosf(a1), sp.y + cr * sinf(a1));
-		}
+		draw_circle(rend, sp, 4.0f);
 	}
 
 
@@ -654,7 +661,7 @@ private:
 			m_yaw = 0; m_pitch = 0; m_dist = 2.5;
 			m_pan_x = 0; m_pan_y = 0;
 			m_ortho = true;
-			m_amplitude = 1.0f;
+			m_amplitude = 0.2f;
 			m_envelope = 1;
 			m_helix_color = 1;
 			m_stem_density = 64;

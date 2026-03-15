@@ -1,6 +1,5 @@
 -- Single electron moving rightward in 1D
 
-dimensions(1)
 
 domain {
     { min = -5 * um, max = 5 * um, points = 512 },

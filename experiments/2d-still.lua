@@ -1,7 +1,6 @@
 -- Single electron orbiting in a 2D harmonic trap
 -- Coherent state: packet circles without dispersing
 
-dimensions(2)
 
 domain {
     { min = -5 * um, max = 5 * um, points = 512 },

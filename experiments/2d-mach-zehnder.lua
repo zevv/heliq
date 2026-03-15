@@ -3,7 +3,6 @@
 -- Transmitted continues right. Reflected goes back left, hits mirror, returns.
 -- Reflected part hits the splitter again — interference with transmitted part.
 
-dimensions(2)
 
 local L = 5 * um
 
