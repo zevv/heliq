@@ -94,6 +94,8 @@ private:
 	std::vector<std::complex<double>> m_slice_data;
 	std::vector<std::complex<double>> m_fft_buf;
 	std::vector<double> m_marginals[MAX_RANK];  // probability marginals per axis
+	std::vector<std::complex<double>> m_coherent_marginals[MAX_RANK]; // coherent ∑ψ per axis
+	std::vector<double> m_potential_marginal;   // potential marginal for current axis
 	int m_marginal_peak[MAX_RANK]{};            // argmax per axis
 	fftw_plan m_fft_plan{};
 	int m_fft_n{0};
@@ -124,6 +126,7 @@ private:
 	void gl_draw_envelope(const std::complex<double> *psi, double max_amp, int n,
 	                       const mat4 &vp);
 	void gl_draw_potentials(const Simulation &sim, int n);
+	void gl_draw_potential_marginal(const Simulation &sim, int n);
 	void gl_draw_absorb_zones(const Simulation &sim, int n);
 	void gl_draw_cursor();
 
@@ -252,9 +255,14 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	mvp_to_float(vp, mvp);
 	m_gl.set_mvp(mvp);
 
-	if(m_slice.mode == Slice && m_potential.on) {
-		gl_draw_potentials(sim, n);
-		gl_draw_absorb_zones(sim, n);
+	if(m_potential.on) {
+		if(m_slice.mode == Slice) {
+			gl_draw_potentials(sim, n);
+			gl_draw_absorb_zones(sim, n);
+		} else if(m_slice.mode == Marginal) {
+			gl_draw_potential_marginal(sim, n);
+			gl_draw_absorb_zones(sim, n);
+		}
 	}
 	if(m_surface.on) gl_draw_surface(psi, max_amp, n);
 	gl_draw_axis(vp);
@@ -312,13 +320,18 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 		int n1 = sim.grid.axes[1].points;
 		m_marginals[0].assign(n0, 0);
 		m_marginals[1].assign(n1, 0);
+		m_coherent_marginals[0].assign(n0, {0, 0});
+		m_coherent_marginals[1].assign(n1, {0, 0});
 		int s0 = sim.grid.stride[0];  // = n1
 		int s1 = sim.grid.stride[1];  // = 1
 		for(int i = 0; i < n0; i++) {
 			for(int j = 0; j < n1; j++) {
-				double v = std::norm(psi_all[i * s0 + j * s1]);
+				auto psi = psi_all[i * s0 + j * s1];
+				double v = std::norm(psi);
 				m_marginals[0][i] += v;
 				m_marginals[1][j] += v;
+				m_coherent_marginals[0][i] += psi;
+				m_coherent_marginals[1][j] += psi;
 			}
 		}
 		// find global peak position
@@ -333,6 +346,19 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 					m_marginal_peak[0] = i;
 					m_marginal_peak[1] = j;
 				}
+			}
+		}
+
+		// potential marginal for current slice axis
+		int ax = m_slice.axis;
+		int na = sim.grid.axes[ax].points;
+		m_potential_marginal.assign(na, 0);
+		auto *pot = sim.potential;
+		for(int i = 0; i < n0; i++) {
+			for(int j = 0; j < n1; j++) {
+				double v = fabs(pot[i * s0 + j * s1].real());
+				if(ax == 0) m_potential_marginal[i] += v;
+				else        m_potential_marginal[j] += v;
 			}
 		}
 	}
@@ -710,6 +736,41 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice.pos[d];
 		coords[m_slice.axis] = i;
 		double v = fabs(pot[sim.grid.linear_index(coords)].real());
+		if(v < 1e-30) continue;
+
+		float alpha = (float)(v / v_max) * m_potential.alpha;
+		float x0 = -1.0f + dx * i;
+		float x1 = x0 + dx;
+		float col[] = { 0.5f, 0.5f, 0.5f, alpha };
+		gl_draw_box(x0, x1, a, col, col);
+	}
+
+	glDisableVertexAttribArray(1);
+	glDisableVertexAttribArray(0);
+}
+
+
+void WidgetHelixGL::gl_draw_potential_marginal(const Simulation &sim, int n)
+{
+	if(m_potential_marginal.empty()) return;
+
+	float a = m_amplitude;
+
+	double v_max = 1e-30;
+	bool any = false;
+	for(int i = 0; i < n; i++) {
+		if(m_potential_marginal[i] > v_max) v_max = m_potential_marginal[i];
+		if(m_potential_marginal[i] > 0) any = true;
+	}
+	if(!any) return;
+
+	float dx = 2.0f / n;
+	glUseProgram(m_gl.vcol_shader());
+	glEnableVertexAttribArray(0);
+	glEnableVertexAttribArray(1);
+
+	for(int i = 0; i < n; i++) {
+		double v = m_potential_marginal[i];
 		if(v < 1e-30) continue;
 
 		float alpha = (float)(v / v_max) * m_potential.alpha;
