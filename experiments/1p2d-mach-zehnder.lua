@@ -1,8 +1,8 @@
--- Beam splitter and mirror: quantum interference demo.
--- Particle moves right, hits a thin barrier (beam splitter).
--- Transmitted part continues right. Reflected part bounces off a mirror.
--- Reflected part returns and hits the splitter again — self-interference.
--- Enable absorbing boundary (B key) to clean up edge reflections.
+-- Mach-Zehnder interferometer in 2D.
+-- Particle enters at 45°, splits at first beam splitter (x=0, lower half).
+-- Two paths diverge to mirrors at x=±3um, reflect back to second splitter (x=0, upper half).
+-- Interference at the second splitter determines which output the particle takes.
+-- The gap in the splitter separates the two beam-splitting events.
 
 local L = 5 * um
 
@@ -20,8 +20,8 @@ local energy = 0.1e-3 * eV
 local p = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
-    position = { -1 * um, 0 },
-    momentum = { p, 0 },
+    position = { -1 * um, -4 * um },
+    momentum = { p, p },
     width = 0.3 * um,
 })
 
@@ -29,18 +29,35 @@ particle(electron, {
 local split_h = energy * 0.9
 local split_w = 0.02 * um
 
+-- Top splitter
 barrier {
-    from = { 1 * um - split_w, -L },
-    to   = { 1 * um + split_w,  L },
+    from = { -split_w,  1 * um },
+    to   = {  split_w,  5 * um },
     height = split_h,
 }
 
--- mirror: thick wall at x = -3um
-local wall_h = energy * 200
+-- Bottom splitter
+barrier {
+    from = { -split_w, -5 * um },
+    to   = {  split_w, -1 * um },
+    height = split_h,
+}
+
+local wall_h = energy * 20
 local wall_w = 0.15 * um
 
+-- left mirror
+
 barrier {
-    from = { -3 * um - wall_w, -L },
-    to   = { -3 * um + wall_w,  L },
+    from = { -3 * um - wall_w, -2 * um},
+    to   = { -3 * um + wall_w,  2 * um},
     height = wall_h,
+}
+
+-- right mirror
+
+barrier {
+	from = { 3 * um - wall_w, -2 * um},
+	to   = { 3 * um + wall_w,  2 * um},
+	height = wall_h,
 }
