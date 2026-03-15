@@ -275,7 +275,7 @@ private:
 	                  const mat4 &vp, SDL_Rect &r,
 	                  std::vector<SDL_FPoint> &helix_pts, std::vector<vec3> &pts3d) {
 		for(int i = 0; i < n; i++) {
-			double t = (double)i / (n - 1);
+			double t = (double)i / n;
 			double x = -1.0 + 2.0 * t;
 			double y = psi[i].real() / max_amp * m_amplitude;
 			double z = psi[i].imag() / max_amp * m_amplitude;
