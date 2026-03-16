@@ -127,7 +127,7 @@ private:
 	void gl_draw_potentials(const Simulation &sim, int n);
 	void gl_draw_potential_marginal(const Simulation &sim, int n);
 	void gl_draw_absorb_zones(const Simulation &sim, int n);
-
+	void gl_draw_cursor(const Simulation &sim);
 
 	// SDL drawing (overlays on top of GL texture)
 	void draw_controls(const Simulation &sim);
@@ -278,6 +278,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	gl_draw_axis(vp);
 	if(m_helix.on) gl_draw_helix(psi, max_amp, n);
 	if(m_envelope.on) gl_draw_envelope(psi, max_amp, n, vp);
+	gl_draw_cursor(sim);
 
 	m_gl.end(rend);
 
@@ -815,8 +816,43 @@ void WidgetHelixGL::gl_draw_absorb_zones(const Simulation &sim, int n)
 	glDisableVertexAttribArray(0);
 }
 
+void WidgetHelixGL::gl_draw_cursor(const Simulation &sim)
+{
+	int ax = m_slice.axis;
+	int n = sim.grid.axes[ax].points;
+	int ci = m_view.cursor[ax];
+	if(ci < 0 || ci >= n) return;
 
+	// map grid index to world x in [-1, 1]; 1 pixel wide slab
+	float x = (float)ci / (n - 1) * 2.0f - 1.0f;
+	float s = 1.0f / (n - 1);  // half-pixel width
+	float a = m_amplitude;
 
+	glUseProgram(m_gl.solid_shader());
+	glEnableVertexAttribArray(0);
+
+	// filled plane perpendicular to X axis
+	glUniform4f(m_gl.color_loc(), 0.9f, 0.2f, 0.2f, 0.15f);
+	float quad[] = {
+		x, -a, -a,  x, a, -a,  x, a, a,
+		x, -a, -a,  x, a,  a,  x, -a, a,
+	};
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, quad);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+
+	// outline
+	glUniform4f(m_gl.color_loc(), 0.9f, 0.2f, 0.2f, 0.6f);
+	float outline[] = {
+		x, -a, -a,  x, a, -a,
+		x,  a, -a,  x, a,  a,
+		x,  a,  a,  x, -a, a,
+		x, -a,  a,  x, -a, -a,
+	};
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, outline);
+	glDrawArrays(GL_LINES, 0, 8);
+
+	glDisableVertexAttribArray(0);
+}
 
 
 // --- controls (identical to widget-helix.cpp) ---
