@@ -49,8 +49,12 @@ public:
 	// initial state snapshot for reset
 	psi_t *psi_initial{};
 
-	// read access for widgets
-	psi_t *psi_front() { return psi[front.load()]; }
+	// read access for widgets (triggers GPU readback if stale)
+	psi_t *psi_front() {
+		if(m_psi_dirty) { sync(); m_psi_dirty = false; }
+		return psi[front.load()];
+	}
+	void mark_dirty() { m_psi_dirty = true; }
 
 	// absorbing boundary
 	bool absorbing_boundary{false};
@@ -77,6 +81,7 @@ private:
 	void compute_kinetic_phase();
 	void upload_phases();
 
+	bool m_psi_dirty{false};
 	std::unique_ptr<Solver> m_solver{};
 
 	// CPU-side phase arrays (computed here, uploaded to solver)

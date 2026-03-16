@@ -411,6 +411,7 @@ void Simulation::step_compute()
 	m_solver->step();
 	step_count++;
 	sim_time += dt;
+	m_psi_dirty = true;
 }
 
 

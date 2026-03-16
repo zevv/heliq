@@ -74,37 +74,38 @@ __kernel void extract_slice_2d(__global const float2 *psi, __global float2 *out,
     out[ix * ny + iy] = psi[base + ix * stride_x + iy * stride_y];
 }
 
-// compute 2D marginal: out[ix * ny + iy] += |psi[idx]|^2
-// each work item handles one point of the full grid, atomically adds to output
-// (simpler than reduction; works well for large grids with small output)
+// compute 2D marginal: one work item per output pixel
+// each work item sums |psi|^2 over all hidden axes for its (ix, iy)
 __kernel void marginal_2d(__global const float2 *psi, __global float *out,
-                           uint total, uint ax_x_stride, uint ax_y_stride,
-                           uint ax_x_points, uint ax_y_points,
-                           __constant uint *strides, uint rank)
+                           uint total,
+                           uint stride_x, uint stride_y,
+                           uint nx, uint ny,
+                           uint hidden_count,  // product of hidden axis sizes
+                           __constant uint *hidden_strides,  // stride per hidden axis
+                           __constant uint *hidden_sizes,    // size per hidden axis
+                           uint n_hidden)
 {
-    uint idx = get_global_id(0);
-    if(idx >= total) return;
-    float2 v = psi[idx];
-    float prob = v.x * v.x + v.y * v.y;
+    uint ix = get_global_id(0);
+    uint iy = get_global_id(1);
+    if(ix >= nx || iy >= ny) return;
 
-    // decompose linear index to find coords on display axes
-    uint tmp = idx;
-    uint ix = 0, iy = 0;
-    // walk through dims from slowest to fastest
-    for(uint d = 0; d < rank; d++) {
-        uint coord = tmp / strides[d];
-        tmp = tmp % strides[d];
-        if(strides[d] == ax_x_stride) ix = coord;
-        if(strides[d] == ax_y_stride) iy = coord;
+    uint base = ix * stride_x + iy * stride_y;
+    float sum = 0;
+
+    // iterate over all combinations of hidden axes
+    for(uint h = 0; h < hidden_count; h++) {
+        uint offset = base;
+        uint tmp = h;
+        for(uint d = 0; d < n_hidden; d++) {
+            uint coord = tmp % hidden_sizes[d];
+            tmp /= hidden_sizes[d];
+            offset += coord * hidden_strides[d];
+        }
+        float2 v = psi[offset];
+        sum += v.x * v.x + v.y * v.y;
     }
 
-    // atomic float add to output
-    // Note: requires cl_khr_global_int32_base_atomics or OpenCL 2.0+
-    // For float atomics we use atomic_add on int and reinterpret — or just accept races.
-    // Simpler: use global atomic float add if available
-    uint oi = ix * ax_y_points + iy;
-    // volatile float add — not truly atomic but close enough for visualization
-    out[oi] += prob;
+    out[ix * ny + iy] = sum;
 }
 
 // parallel reduction for total probability
@@ -613,38 +614,51 @@ void GpuSolver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *ou
 	size_t out_bytes = nx * ny * sizeof(float);
 	cl_int err;
 
-	// allocate and zero output buffer
+	// allocate output buffer
 	if(!m->d_marginal_out)
 		m->d_marginal_out = clCreateBuffer(m->ctx, CL_MEM_READ_WRITE, out_bytes, nullptr, &err);
-	float zero = 0;
-	clEnqueueFillBuffer(m->queue, m->d_marginal_out, &zero, sizeof(float), 0, out_bytes, 0, nullptr, nullptr);
 
-	// upload strides as constant buffer
-	cl_uint strides[MAX_RANK];
-	for(int d = 0; d < grid.rank; d++)
-		strides[d] = grid.linear_stride(d);
-	if(!m->d_strides)
-		m->d_strides = clCreateBuffer(m->ctx, CL_MEM_READ_ONLY, sizeof(strides), nullptr, &err);
-	clEnqueueWriteBuffer(m->queue, m->d_strides, CL_FALSE, 0, grid.rank * sizeof(cl_uint), strides, 0, nullptr, nullptr);
+	// collect hidden axes info
+	cl_uint hidden_strides[MAX_RANK];
+	cl_uint hidden_sizes[MAX_RANK];
+	cl_uint n_hidden = 0;
+	cl_uint hidden_count = 1;
+	for(int d = 0; d < grid.rank; d++) {
+		if(d == ax_x || d == ax_y) continue;
+		hidden_strides[n_hidden] = grid.linear_stride(d);
+		hidden_sizes[n_hidden] = grid.axes[d].points;
+		hidden_count *= grid.axes[d].points;
+		n_hidden++;
+	}
+
+	// upload hidden axis info as constant buffers
+	cl_mem d_hidden_strides = clCreateBuffer(m->ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+		n_hidden * sizeof(cl_uint), hidden_strides, &err);
+	cl_mem d_hidden_sizes = clCreateBuffer(m->ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+		n_hidden * sizeof(cl_uint), hidden_sizes, &err);
 
 	cl_uint total = (cl_uint)m_total;
-	cl_uint ax_x_stride = grid.linear_stride(ax_x);
-	cl_uint ax_y_stride = grid.linear_stride(ax_y);
-	cl_uint rank = grid.rank;
+	cl_uint stride_x = grid.linear_stride(ax_x);
+	cl_uint stride_y = grid.linear_stride(ax_y);
 
 	clSetKernelArg(m->k_marginal_2d, 0, sizeof(cl_mem), &m->d_psi);
 	clSetKernelArg(m->k_marginal_2d, 1, sizeof(cl_mem), &m->d_marginal_out);
 	clSetKernelArg(m->k_marginal_2d, 2, sizeof(cl_uint), &total);
-	clSetKernelArg(m->k_marginal_2d, 3, sizeof(cl_uint), &ax_x_stride);
-	clSetKernelArg(m->k_marginal_2d, 4, sizeof(cl_uint), &ax_y_stride);
+	clSetKernelArg(m->k_marginal_2d, 3, sizeof(cl_uint), &stride_x);
+	clSetKernelArg(m->k_marginal_2d, 4, sizeof(cl_uint), &stride_y);
 	clSetKernelArg(m->k_marginal_2d, 5, sizeof(cl_uint), &nx);
 	clSetKernelArg(m->k_marginal_2d, 6, sizeof(cl_uint), &ny);
-	clSetKernelArg(m->k_marginal_2d, 7, sizeof(cl_mem), &m->d_strides);
-	clSetKernelArg(m->k_marginal_2d, 8, sizeof(cl_uint), &rank);
+	clSetKernelArg(m->k_marginal_2d, 7, sizeof(cl_uint), &hidden_count);
+	clSetKernelArg(m->k_marginal_2d, 8, sizeof(cl_mem), &d_hidden_strides);
+	clSetKernelArg(m->k_marginal_2d, 9, sizeof(cl_mem), &d_hidden_sizes);
+	clSetKernelArg(m->k_marginal_2d, 10, sizeof(cl_uint), &n_hidden);
 
-	size_t global = ((m_total + m->work_group_size - 1) / m->work_group_size) * m->work_group_size;
-	size_t local = m->work_group_size;
-	clEnqueueNDRangeKernel(m->queue, m->k_marginal_2d, 1, nullptr, &global, &local, 0, nullptr, nullptr);
+	size_t global2d[2] = { ((nx + 15) / 16) * 16, ((ny + 15) / 16) * 16 };
+	size_t local2d[2] = { 16, 16 };
+	clEnqueueNDRangeKernel(m->queue, m->k_marginal_2d, 2, nullptr, global2d, local2d, 0, nullptr, nullptr);
 
 	clEnqueueReadBuffer(m->queue, m->d_marginal_out, CL_TRUE, 0, out_bytes, out, 0, nullptr, nullptr);
+
+	clReleaseMemObject(d_hidden_strides);
+	clReleaseMemObject(d_hidden_sizes);
 }

@@ -35,7 +35,7 @@ local momentum = math.sqrt(2 * m_electron * energy)
 particle(electron, {
     position = { -3 * um, 0 },
     momentum = { momentum, 0 },
-    width = 1.0 * um,
+    width = 0.6 * um,
 })
 
 -- particle B: stationary, sitting near the upper slit
@@ -43,7 +43,7 @@ particle(electron, {
 particle(electron, {
     position = { 0, 1.2 * um },
     momentum = { 0, 0 },
-    width = 0.8 * um,
+    width = 0.6 * um,
 })
 
 -- double slit wall: barrier at x=0 with two gaps
@@ -84,6 +84,6 @@ barrier {
 interaction {
     type = "contact",
     particles = { 1, 2 },
-    strength = energy * 3,
-    width = 0.5 * um,
+    strength = energy * 30,
+    width = 1.0 * um,
 }

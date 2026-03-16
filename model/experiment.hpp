@@ -102,7 +102,7 @@ public:
 				else if(ms > per_sim_ms * 0.9 && batch_size > 1)
 					batch_size = batch_size / 2;
 			}
-			sim->sync();
+			sim->flush();
 			bool behind = forward ? sim->time() < slowest : sim->time() > slowest;
 			if(behind)
 				slowest = sim->time();

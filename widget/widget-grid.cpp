@@ -232,106 +232,41 @@ static double sample_value(DataSource src, psi_t psi, psi_t pot)
 	}
 }
 
+static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_buf, int tw, int th);
+
 static void fill_texture_marginal(Overlay &ov, Simulation &sim, int tw, int th,
                                    int axis_x, int axis_y)
 {
-	void *pixels;
-	int pitch;
-	if(!SDL_LockTexture(ov.tex, nullptr, &pixels, &pitch)) return;
+	// GPU-side marginal: get |psi|^2 summed over hidden axes
+	std::vector<float> marg(tw * th);
+	sim.read_marginal_2d(axis_x, axis_y, marg.data());
 
-	auto *psi = sim.psi_front();
-	auto *pot = sim.potential;
-	size_t total = sim.grid.total_points();
+	// convert marginal |psi|^2 to psi_t with real=sqrt(val) so sample_value works
+	std::vector<psi_t> psi_buf(tw * th);
+	std::vector<psi_t> pot_buf(tw * th, psi_t(0, 0));
+	for(int i = 0; i < tw * th; i++)
+		psi_buf[i] = psi_t(sqrtf(marg[i]), 0);
 
-	// accumulate 2D marginal
-	std::vector<double> marg_val(tw * th, 0);
-	std::vector<double> marg_amp(tw * th, 0);
-
-	int coords[MAX_RANK]{};
-	for(size_t idx = 0; idx < total; idx++) {
-		int ix = coords[axis_x];
-		int iy = coords[axis_y];
-		int mi = ix * th + iy;
-		double v = sample_value(ov.source, psi[idx], pot[idx]);
-		marg_val[mi] += v;
-		marg_amp[mi] += std::abs(psi[idx]);
-
-		for(int d = sim.grid.rank - 1; d >= 0; d--) {
-			if(++coords[d] < sim.grid.axes[d].points) break;
-			coords[d] = 0;
-		}
-	}
-
-	// normalize
-	double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
-	for(int i = 0; i < tw * th; i++) {
-		if(marg_val[i] < vmin) vmin = marg_val[i];
-		if(marg_val[i] > vmax) vmax = marg_val[i];
-		if(marg_amp[i] > amp_max) amp_max = marg_amp[i];
-	}
-	double range = vmax - vmin;
-	if(range < 1e-30) range = 1.0;
-
-	for(int y = 0; y < th; y++) {
-		uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
-		for(int x = 0; x < tw; x++) {
-			int mi = x * th + (th - 1 - y);
-			double v = marg_val[mi];
-			double norm = (v - vmin) / range;
-			double amp = marg_amp[mi] / amp_max;
-			int alpha = (int)(255 * pow(fmin(1.0, amp), 1.0 / ov.gamma));
-
-			switch(ov.palette) {
-				case Palette::Flame: row[x] = palette_flame(norm, 1.0 / ov.gamma); break;
-				case Palette::Gray:  row[x] = palette_gray(norm, 1.0 / ov.gamma); break;
-				case Palette::Rainbow: {
-					uint8_t cr, cg, cb;
-					hsv_to_rgb(fmod(norm, 1.0), 1.0, 1.0, cr, cg, cb);
-					row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
-				} break;
-				case Palette::Zebra: {
-					uint8_t c = (uint8_t)(115 + 115 * sin(norm * 2 * M_PI));
-					row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
-				} break;
-				case Palette::Spatial: {
-					double hue = spatial_hue(x, th - 1 - y, tw, th);
-					uint8_t cr, cg, cb;
-					hsv_to_rgb(hue, 0.8, 1.0, cr, cg, cb);
-					row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
-				} break;
-				default: row[x] = 0; break;
-			}
-		}
-	}
-	SDL_UnlockTexture(ov.tex);
+	render_texture(ov, psi_buf.data(), pot_buf.data(), tw, th);
 }
 
 
-static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th,
-                          const int *cursor, int axis_x, int axis_y)
+// render a 2D psi/pot buffer into an SDL texture overlay
+static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_buf,
+                            int tw, int th)
 {
 	void *pixels;
 	int pitch;
 	if(!SDL_LockTexture(ov.tex, nullptr, &pixels, &pitch)) return;
 
-	auto *psi = sim.psi_front();
-	auto *pot = sim.potential;
-
-	auto psi_slice = sim.grid.slice_view(axis_x, axis_y, cursor, psi);
-	auto pot_slice = sim.grid.slice_view(axis_x, axis_y, cursor, pot);
-
-	// find data range for normalization (scan displayed slice only)
+	// find data range for normalization
 	double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
-	for(int y = 0; y < th; y++) {
-		for(int x = 0; x < tw; x++) {
-			auto &psi_val = psi_slice.at(x, th - 1 - y);
-			auto &pot_val = pot_slice.at(x, th - 1 - y);
-			double v = sample_value(ov.source, psi_val, pot_val);
-			if(v < vmin) vmin = v;
-			if(v > vmax) vmax = v;
-			double a = std::abs(psi_val);
-			if(a > amp_max) amp_max = a;
-		}
+	for(int i = 0; i < tw * th; i++) {
+		double v = sample_value(ov.source, psi_buf[i], pot_buf[i]);
+		if(v < vmin) vmin = v;
+		if(v > vmax) vmax = v;
+		double a = std::abs(psi_buf[i]);
+		if(a > amp_max) amp_max = a;
 	}
 	double range = vmax - vmin;
 	if(range < 1e-30) range = 1.0;
@@ -339,8 +274,8 @@ static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th,
 	for(int y = 0; y < th; y++) {
 		uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
 		for(int x = 0; x < tw; x++) {
-			auto &psi_val = psi_slice.at(x, th - 1 - y);
-			auto &pot_val = pot_slice.at(x, th - 1 - y);
+			auto &psi_val = psi_buf[x * th + (th - 1 - y)];
+			auto &pot_val = pot_buf[x * th + (th - 1 - y)];
 			double v = sample_value(ov.source, psi_val, pot_val);
 			double norm = (v - vmin) / range;
 
@@ -482,10 +417,22 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		auto &ov = m_overlays[oi];
 		if(ov.source == DataSource::Off) continue;
 		ensure_texture(rend, ov, tw, th);
-		if(m_marginal && grid.rank > 2)
+		if(m_marginal && grid.rank > 2) {
 			fill_texture_marginal(ov, sim, tw, th, m_axis_x, m_axis_y);
-		else
-			fill_texture(ov, sim, tw, th, m_view.cursor, m_axis_x, m_axis_y);
+		} else {
+			// GPU-side slice extraction
+			std::vector<psi_t> psi_buf(tw * th);
+			sim.read_slice_2d(m_axis_x, m_axis_y, m_view.cursor, psi_buf.data());
+
+			// potential slice (still CPU-side for now)
+			std::vector<psi_t> pot_buf(tw * th);
+			auto pot_view = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, sim.potential);
+			for(int x = 0; x < tw; x++)
+				for(int y = 0; y < th; y++)
+					pot_buf[x * th + y] = pot_view.at(x, y);
+
+			render_texture(ov, psi_buf.data(), pot_buf.data(), tw, th);
+		}
 
 		SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
 		SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
