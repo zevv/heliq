@@ -22,10 +22,10 @@
 static constexpr double PITCH_LIMIT = M_PI * 0.49;
 
 enum class Envelope { Amplitude, ProbDensity, Real, Imaginary, COUNT };
-enum class HelixColor { Gray, Rainbow, Flame, COUNT };
+enum class HelixColor { Gray, Rainbow, Flame, Spatial, COUNT };
 
 static const char *envelope_names[] = { "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
-static const char *helix_color_names[] = { "gray", "rainbow", "flame" };
+static const char *helix_color_names[] = { "gray", "rainbow", "flame", "spatial" };
 
 
 class WidgetHelixGL : public Widget {
@@ -96,6 +96,12 @@ private:
 	std::vector<std::complex<double>> m_coherent_marginals[MAX_RANK]; // coherent ∑ψ per axis
 	std::vector<double> m_potential_marginal;   // potential marginal for current axis
 	int m_marginal_peak[MAX_RANK]{};            // argmax per axis
+
+	// spatial hue marginals: circular mean of position-hue weighted by |ψ|²
+	struct HueMarginal {
+		std::vector<double> hue;   // [0,1] circular mean hue per bin
+		std::vector<double> sat;   // [0,1] saturation (1 = pure, 0 = mixed)
+	} m_hue_marginals[MAX_RANK];
 	fftw_plan m_fft_plan{};
 	int m_fft_n{0};
 
@@ -355,6 +361,42 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 				m_coherent_marginals[1][j] += psi;
 			}
 		}
+		// spatial hue marginals: circular mean weighted by |ψ|²
+		std::vector<double> hsin0(n0, 0), hcos0(n0, 0);
+		std::vector<double> hsin1(n1, 0), hcos1(n1, 0);
+		for(int i = 0; i < n0; i++) {
+			for(int j = 0; j < n1; j++) {
+				double w = std::norm(psi_all[i * s0 + j * s1]);
+				double cx = (double)i / (n0 - 1) - 0.5;
+				double cy = (double)j / (n1 - 1) - 0.5;
+				double hue = atan2(cy, cx);  // radians, not normalized
+				hsin0[i] += w * sin(hue);
+				hcos0[i] += w * cos(hue);
+				hsin1[j] += w * sin(hue);
+				hcos1[j] += w * cos(hue);
+			}
+		}
+		for(int d = 0; d < 2; d++) {
+			auto &hm = m_hue_marginals[d];
+			int nd = (d == 0) ? n0 : n1;
+			auto &hs = (d == 0) ? hsin0 : hsin1;
+			auto &hc = (d == 0) ? hcos0 : hcos1;
+			auto &mg = m_marginals[d];
+			hm.hue.resize(nd);
+			hm.sat.resize(nd);
+			for(int k = 0; k < nd; k++) {
+				if(mg[k] > 1e-30) {
+					double s = hs[k] / mg[k];
+					double c = hc[k] / mg[k];
+					hm.hue[k] = fmod(atan2(s, c) / (2.0 * M_PI) + 1.0, 1.0);
+					hm.sat[k] = sqrt(s*s + c*c);  // 0=mixed, 1=pure
+				} else {
+					hm.hue[k] = 0;
+					hm.sat[k] = 0;
+				}
+			}
+		}
+
 		// find global peak position
 		double best = -1;
 		m_marginal_peak[0] = n0 / 2;
@@ -596,12 +638,25 @@ void WidgetHelixGL::gl_draw_helix(const std::complex<double> *psi, double max_am
 				cb = (bb/255.0f) * amp + 0.16f * (1 - amp);
 				break;
 			}
-			case HelixColor::Flame:
-				cr = amp + 0.16f * (1 - amp);
-				cg = fminf(1.0f, amp * 2.0f) * amp + 0.16f * (1 - amp);
-				cb = fminf(1.0f, fmaxf(0.0f, amp * 2.0f - 1.0f)) * amp + 0.08f * (1 - amp);
-				break;
-			default: cr = cg = cb = 0.5f; break;
+		case HelixColor::Flame:
+			cr = amp + 0.16f * (1 - amp);
+			cg = fminf(1.0f, amp * 2.0f) * amp + 0.16f * (1 - amp);
+			cb = fminf(1.0f, fmaxf(0.0f, amp * 2.0f - 1.0f)) * amp + 0.08f * (1 - amp);
+			break;
+		case HelixColor::Spatial: {
+			auto &hm = m_hue_marginals[m_slice.axis];
+			if(i < (int)hm.hue.size()) {
+				uint8_t rr, gg, bb;
+				hsv_to_rgb(hm.hue[i], hm.sat[i] * 0.8, 0.2 + 0.8 * amp, rr, gg, bb);
+				cr = rr / 255.0f;
+				cg = gg / 255.0f;
+				cb = bb / 255.0f;
+			} else {
+				cr = cg = cb = 0.5f;
+			}
+			break;
+		}
+		default: cr = cg = cb = 0.5f; break;
 		}
 		m_vbuf[i*7+3] = cr;
 		m_vbuf[i*7+4] = cg;

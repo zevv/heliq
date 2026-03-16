@@ -45,12 +45,20 @@ enum class Palette {
 	Gray,
 	Rainbow,
 	Zebra,
+	Spatial,
 	COUNT
 };
 
 static const char *palette_names[] = {
-	"flame", "gray", "rainbow", "zebra"
+	"flame", "gray", "rainbow", "zebra", "spatial"
 };
+
+// map 2D grid position to hue [0,1] using angle from center
+static double spatial_hue(int x, int y, int tw, int th) {
+	double cx = (double)x / (tw - 1) - 0.5;
+	double cy = (double)y / (th - 1) - 0.5;
+	return fmod(atan2(cy, cx) / (2.0 * M_PI) + 1.0, 1.0);
+}
 
 struct Overlay {
 	DataSource source{DataSource::PsiSq};
@@ -260,11 +268,17 @@ static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th)
 					hsv_to_rgb(fmod(norm, 1.0), 1.0, 1.0, cr, cg, cb);
 					row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
 				} break;
-				case Palette::Zebra: {
-					uint8_t c = (uint8_t)(115 + 115 * sin(norm * 2 * M_PI));
-					row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
-				} break;
-				default: row[x] = 0; break;
+			case Palette::Zebra: {
+				uint8_t c = (uint8_t)(115 + 115 * sin(norm * 2 * M_PI));
+				row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
+			} break;
+			case Palette::Spatial: {
+				double hue = spatial_hue(x, th - 1 - y, tw, th);
+				uint8_t cr, cg, cb;
+				hsv_to_rgb(hue, 0.8, 1.0, cr, cg, cb);
+				row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
+			} break;
+			default: row[x] = 0; break;
 			}
 		}
 	}
