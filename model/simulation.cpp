@@ -13,29 +13,45 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	mode = config.mode;
 	dt = config.dt;
 
-	// assign per-axis mass: in joint mode, each config-space axis
-	// corresponds to one particle's spatial dimension
-	for(int i = 0; i < MAX_RANK; i++)
-		mass[i] = 1.0;
-	if(setup.particles.size() == 1) {
-		// single particle: all axes have same mass
-		for(int i = 0; i < setup.spatial_dims; i++)
-			mass[i] = setup.particles[0].mass;
-	} else {
-		// multi-particle joint: each axis maps to a particle
-		// for N 1D particles, axis i = particle i
-		for(int i = 0; i < (int)setup.particles.size() && i < MAX_RANK; i++)
-			mass[i] = setup.particles[i].mass;
-	}
+	// build config space mapping
+	int np = (int)setup.particles.size();
+	int ndomain = (int)setup.spatial_dims;  // number of domain axes from lua
+	cs.n_particles = np;
+	cs.spatial_dims = (np > 1) ? ndomain / np : ndomain;
 
 	// build grid from setup domain
-	grid.rank = setup.spatial_dims;
+	grid.rank = ndomain;
 	for(int i = 0; i < grid.rank; i++) {
 		grid.axes[i] = setup.domain[i];
 		if(config.resolution > 0)
 			grid.axes[i].points = config.resolution;
 	}
 	grid.compute_strides();
+
+	// assign per-axis mass using config space mapping
+	for(int i = 0; i < MAX_RANK; i++) mass[i] = 1.0;
+	for(int p = 0; p < np; p++) {
+		for(int d = 0; d < cs.spatial_dims; d++) {
+			int ax = cs.axis(p, d);
+			if(ax < grid.rank)
+				mass[ax] = setup.particles[p].mass;
+		}
+	}
+
+	// generate axis labels
+	static const char *dim_names[] = {"x", "y", "z"};
+	for(int p = 0; p < np; p++) {
+		for(int d = 0; d < cs.spatial_dims && d < 3; d++) {
+			int ax = cs.axis(p, d);
+			if(ax >= grid.rank) break;
+			if(np == 1)
+				snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "%s", dim_names[d]);
+			else if(cs.spatial_dims == 1)
+				snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "P%d", p+1);
+			else
+				snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "P%d.%s", p+1, dim_names[d]);
+		}
+	}
 
 	size_t n = grid.total_points();
 	size_t bytes = n * sizeof(std::complex<double>);
@@ -58,6 +74,17 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	// sample potentials and wavefunction into CPU arrays
 	sample_potential(setup);
 	sample_wavefunction(setup);
+
+	// compute spatial aliasing diagnostic: k / k_nyquist per axis
+	for(int d = 0; d < grid.rank; d++) {
+		int pi = cs.particle_of(d);
+		int di = cs.dim_of(d);
+		double p_val = (pi < (int)setup.particles.size())
+			? fabs(setup.particles[pi].momentum[di]) : 0;
+		double k = p_val / hbar;
+		double k_nyq = M_PI / grid.axes[d].dx();
+		k_nyquist_ratio[d] = k / k_nyq;
+	}
 
 	// precompute phase factors
 	precompute_phases();
@@ -451,22 +478,23 @@ void Simulation::sample_potential(const Setup &setup)
 
 		// two-body interactions in configuration space
 		for(auto &inter : setup.interactions) {
-			int a = inter.particle_a;
-			int b = inter.particle_b;
-			if(a >= grid.rank || b >= grid.rank) continue;
+			int pa = inter.particle_a;
+			int pb = inter.particle_b;
+			if(pa >= cs.n_particles || pb >= cs.n_particles) continue;
+
+			double dist2 = cs.distance_sq(pa, pb, pos);
 
 			switch(inter.type) {
 				case Interaction::Coulomb: {
-					double q_a = setup.particles[a].charge;
-					double q_b = setup.particles[b].charge;
-					double dx = pos[a] - pos[b];
-					double r = sqrt(dx * dx + inter.softening * inter.softening);
+					double q_a = setup.particles[pa].charge;
+					double q_b = setup.particles[pb].charge;
+					double r = sqrt(dist2 + inter.softening * inter.softening);
 					v += k_coulomb * q_a * q_b / r;
 					break;
 				}
 				case Interaction::Contact: {
-					double dx = fabs(pos[a] - pos[b]);
-					if(dx < inter.width)
+					double dist = sqrt(dist2);
+					if(dist < inter.width)
 						v += inter.strength;
 					break;
 				}
@@ -482,36 +510,25 @@ void Simulation::sample_wavefunction(const Setup &setup)
 {
 	if(setup.particles.empty()) return;
 
-	size_t n_particles = setup.particles.size();
 	double norm = 0;
 
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
 		// product state: ψ(x₁,x₂,...) = ψ₁(x₁) · ψ₂(x₂) · ...
-		// for single particle: all grid dims map to that particle
-		// for multi-particle joint: each dim maps to one particle
+		// each particle contributes a Gaussian × plane wave across its axes
 		std::complex<double> val(1.0, 0.0);
 
-		if(n_particles == 1) {
-			auto &p = setup.particles[0];
+		for(int p = 0; p < cs.n_particles; p++) {
+			auto &part = setup.particles[p];
 			double envelope = 0;
 			double phase = 0;
-			for(int d = 0; d < grid.rank; d++) {
-				double dx = pos[d] - p.position[d];
-				envelope += dx * dx / (4.0 * p.width * p.width);
-				phase += p.momentum[d] * pos[d] / hbar;
+			for(int d = 0; d < cs.spatial_dims; d++) {
+				int ax = cs.axis(p, d);
+				double dx = pos[ax] - part.position[d];
+				envelope += dx * dx / (4.0 * part.width * part.width);
+				phase += part.momentum[d] * pos[ax] / hbar;
 			}
 			double amp = exp(-envelope);
-			val = amp * std::complex<double>(cos(phase), sin(phase));
-		} else {
-			// each axis d corresponds to particle d (1D per particle)
-			for(int d = 0; d < grid.rank && d < (int)n_particles; d++) {
-				auto &p = setup.particles[d];
-				double dx = pos[d] - p.position[0];
-				double envelope = dx * dx / (4.0 * p.width * p.width);
-				double phase = p.momentum[0] * pos[d] / hbar;
-				double amp = exp(-envelope);
-				val *= amp * std::complex<double>(cos(phase), sin(phase));
-			}
+			val *= amp * std::complex<double>(cos(phase), sin(phase));
 		}
 
 		psi[0][idx] = val;

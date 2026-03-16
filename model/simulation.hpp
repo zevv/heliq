@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "grid.hpp"
+#include "configspace.hpp"
 #include "setup.hpp"
 #include "solver.hpp"
 
@@ -28,6 +29,7 @@ public:
 	void decohere(int axis = -1, double width = 0);          // randomize phase, keep amplitude
 
 	Grid grid{};
+	ConfigSpace cs{};
 	std::string name{};
 	SimMode mode{SimMode::Joint};
 	double dt{};
@@ -60,6 +62,7 @@ public:
 	// diagnostics
 	double max_potential_phase{};  // max |V*dt/(2*hbar)| in radians
 	double max_kinetic_phase{};    // max |hbar*k^2/(2m)*dt| in radians
+	double k_nyquist_ratio[MAX_RANK]{};  // per-axis: initial k / k_nyquist (>0.5 = trouble)
 	double total_probability();    // should be ~1.0
 
 private:

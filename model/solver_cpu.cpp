@@ -2,11 +2,30 @@
 #include <fftw3.h>
 #include <algorithm>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <thread>
+#include <sys/stat.h>
 
 #include "solver_cpu.hpp"
 
 static bool fftw_threads_initialized = false;
+
+static void wisdom_path(char *buf, size_t len)
+{
+	const char *cache = getenv("XDG_CACHE_HOME");
+	const char *home = getenv("HOME");
+	if(cache)
+		snprintf(buf, len, "%s/heliq", cache);
+	else if(home)
+		snprintf(buf, len, "%s/.cache/heliq", home);
+	else
+		snprintf(buf, len, "./.heliq-cache");
+	mkdir(buf, 0755);
+	size_t n = strlen(buf);
+	snprintf(buf + n, len - n, "/fftw_wisdom");
+}
 
 CpuSolver::CpuSolver(const Grid &grid)
 	: Solver(grid.total_points())
@@ -16,6 +35,12 @@ CpuSolver::CpuSolver(const Grid &grid)
 		fftw_plan_with_nthreads(std::thread::hardware_concurrency());
 		fftw_threads_initialized = true;
 	}
+
+	// load wisdom
+	char wpath[512];
+	wisdom_path(wpath, sizeof(wpath));
+	if(fftw_import_wisdom_from_filename(wpath))
+		fprintf(stderr, "fftw: loaded wisdom from %s\n", wpath);
 
 	m_rank = grid.rank;
 	for(int i = 0; i < grid.rank; i++)
@@ -40,6 +65,10 @@ CpuSolver::CpuSolver(const Grid &grid)
 	m_fft_inverse = fftw_plan_dft(m_rank, m_dims,
 		(fftw_complex *)m_psi, (fftw_complex *)m_psi,
 		FFTW_BACKWARD, FFTW_MEASURE);
+
+	// save wisdom (includes new plans)
+	if(fftw_export_wisdom_to_filename(wpath))
+		fprintf(stderr, "fftw: saved wisdom to %s\n", wpath);
 }
 
 

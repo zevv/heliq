@@ -100,6 +100,8 @@ public:
 		cfg.write("zoom", m_zoom);
 		cfg.write("pan_x", m_pan_x);
 		cfg.write("pan_y", m_pan_y);
+		cfg.write("axis_x", m_axis_x);
+		cfg.write("axis_y", m_axis_y);
 	}
 
 	void do_load(ConfigReader::Node *node) override {
@@ -119,6 +121,8 @@ public:
 		node->read("zoom", m_zoom);
 		node->read("pan_x", m_pan_x);
 		node->read("pan_y", m_pan_y);
+		node->read("axis_x", m_axis_x);
+		node->read("axis_y", m_axis_y);
 	}
 
 	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override;
@@ -127,6 +131,7 @@ public:
 private:
 	static constexpr int N_OVERLAYS = 3;
 	Overlay m_overlays[N_OVERLAYS]{};
+	int m_axis_x{0}, m_axis_y{1};  // which axes to display
 	float m_zoom{1.0f};
 	float m_pan_x{0}, m_pan_y{0};
 	bool m_dragging{false};
@@ -224,7 +229,8 @@ static double sample_value(DataSource src, std::complex<double> psi, std::comple
 	}
 }
 
-static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th)
+static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th,
+                          const int *cursor, int axis_x, int axis_y)
 {
 	void *pixels;
 	int pitch;
@@ -234,14 +240,27 @@ static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th)
 	auto *pot = sim.potential;
 	size_t total = sim.grid.total_points();
 
-	// find data range for normalization
+	// base offset for all non-display axes: fix at cursor position
+	size_t base_offset = 0;
+	for(int d = 0; d < sim.grid.rank; d++) {
+		if(d == axis_x || d == axis_y) continue;
+		base_offset += (size_t)cursor[d] * sim.grid.stride[d];
+	}
+	size_t sx = sim.grid.stride[axis_x];
+	size_t sy = sim.grid.stride[axis_y];
+
+	// find data range for normalization (scan displayed slice only)
 	double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
-	for(size_t i = 0; i < total; i++) {
-		double v = sample_value(ov.source, psi[i], pot[i]);
-		if(v < vmin) vmin = v;
-		if(v > vmax) vmax = v;
-		double a = std::abs(psi[i]);
-		if(a > amp_max) amp_max = a;
+	for(int y = 0; y < th; y++) {
+		for(int x = 0; x < tw; x++) {
+			size_t idx = base_offset + (size_t)x * sx + (size_t)(th - 1 - y) * sy;
+			if(idx >= total) idx = 0;
+			double v = sample_value(ov.source, psi[idx], pot[idx]);
+			if(v < vmin) vmin = v;
+			if(v > vmax) vmax = v;
+			double a = std::abs(psi[idx]);
+			if(a > amp_max) amp_max = a;
+		}
 	}
 	double range = vmax - vmin;
 	if(range < 1e-30) range = 1.0;
@@ -249,10 +268,7 @@ static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th)
 	for(int y = 0; y < th; y++) {
 		uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
 		for(int x = 0; x < tw; x++) {
-			// axis 0 = x (column), axis 1 = y (row)
-			// grid linear index: coords[0]*stride[0] + coords[1]*stride[1]
-			// stride[0] = axes[1].points = th, stride[1] = 1
-			size_t idx = (size_t)x * th + (th - 1 - y);
+			size_t idx = base_offset + (size_t)x * sx + (size_t)(th - 1 - y) * sy;
 			if(idx >= total) idx = 0;
 			double v = sample_value(ov.source, psi[idx], pot[idx]);
 			double norm = (v - vmin) / range;
@@ -320,6 +336,14 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 
 	// controls at the top
 	draw_controls(m_overlays, N_OVERLAYS);
+
+	if(!exp.simulations.empty() && exp.simulations[0]->grid.rank > 2) {
+		auto &g = exp.simulations[0]->grid;
+		ImGui::AxisCombo("##ax_x", &m_axis_x, g);
+		ImGui::SameLine();
+		ImGui::AxisCombo("##ax_y", &m_axis_y, g);
+	}
+
 	float ctrl_h = ImGui::GetCursorPosY();
 
 	if(exp.simulations.empty()) {
@@ -330,10 +354,14 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	auto &sim = *exp.simulations[0];
 	auto &grid = sim.grid;
 
-	// determine texture dimensions from grid
-	// axis 0 = x = horizontal, axis 1 = y = vertical
-	int tw = (grid.rank >= 1) ? grid.axes[0].points : 1;
-	int th = (grid.rank >= 2) ? grid.axes[1].points : 1;
+	// clamp axis selection
+	if(m_axis_x >= grid.rank) m_axis_x = 0;
+	if(m_axis_y >= grid.rank) m_axis_y = grid.rank > 1 ? 1 : 0;
+	if(m_axis_x == m_axis_y && grid.rank > 1) m_axis_y = (m_axis_x + 1) % grid.rank;
+
+	// determine texture dimensions from selected axes
+	int tw = grid.axes[m_axis_x].points;
+	int th = (grid.rank >= 2) ? grid.axes[m_axis_y].points : 1;
 
 	// available area below controls
 	float avail_x = (float)r.x;
@@ -379,7 +407,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		auto &ov = m_overlays[oi];
 		if(ov.source == DataSource::Off) continue;
 		ensure_texture(rend, ov, tw, th);
-		fill_texture(ov, sim, tw, th);
+		fill_texture(ov, sim, tw, th, m_view.cursor, m_axis_x, m_axis_y);
 
 		SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
 		SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
@@ -424,13 +452,13 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
 	SDL_RenderRect(rend, &dst);
 
-	// hover in grid updates cursor position
+	// hover in grid updates cursor position on selected axes
 	if(grid.rank >= 2 && ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 		ImVec2 mp = ImGui::GetMousePos();
 		int gx, gy;
 		if(screen_to_grid(m_dst, m_grid_w, m_grid_h, mp.x, mp.y, gx, gy)) {
-			m_view.cursor[0] = gx;
-			m_view.cursor[1] = gy;
+			m_view.cursor[m_axis_x] = gx;
+			m_view.cursor[m_axis_y] = gy;
 		}
 	}
 
@@ -438,7 +466,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	if(grid.rank >= 2) {
 		SDL_SetRenderDrawColor(rend, 230, 50, 50, 50);
 		float sx, sy;
-		grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[0], m_view.cursor[1], sx, sy);
+		grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[m_axis_x], m_view.cursor[m_axis_y], sx, sy);
 		SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
 		SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
 	}
@@ -448,6 +476,69 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		m_zoom = 1.0f;
 		m_pan_x = 0;
 		m_pan_y = 0;
+	}
+
+	// D: dump displayed slice to dump.txt
+	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D)) {
+		auto *psi = sim.psi_front();
+		auto *pot = sim.potential;
+		size_t total = sim.grid.total_points();
+
+		size_t base = 0;
+		for(int d = 0; d < grid.rank; d++) {
+			if(d == m_axis_x || d == m_axis_y) continue;
+			base += (size_t)m_view.cursor[d] * grid.stride[d];
+		}
+		size_t sx_s = grid.stride[m_axis_x];
+		size_t sy_s = grid.stride[m_axis_y];
+
+		int sx = (tw + 255) / 256;
+		int sy_d = (th + 127) / 128;
+		int ox = tw / sx;
+		int oy = th / sy_d;
+
+		double max_val = 1e-30;
+		for(int iy = 0; iy < th; iy++)
+			for(int ix = 0; ix < tw; ix++) {
+				size_t idx = base + ix * sx_s + iy * sy_s;
+				if(idx < total) {
+					double v = std::norm(psi[idx]);
+					if(v > max_val) max_val = v;
+				}
+			}
+
+		FILE *f = fopen("dump.txt", "w");
+		const char *lx = grid.axes[m_axis_x].label[0] ? grid.axes[m_axis_x].label : "?";
+		const char *ly = grid.axes[m_axis_y].label[0] ? grid.axes[m_axis_y].label : "?";
+		fprintf(f, "# t=%.4e  axes=%s/%s  %dx%d  max=%.4e\n", sim.time(), lx, ly, ox, oy, max_val);
+		for(int d = 0; d < grid.rank; d++) {
+			if(d == m_axis_x || d == m_axis_y) continue;
+			const char *l = grid.axes[d].label[0] ? grid.axes[d].label : "?";
+			fprintf(f, "# %s=%d\n", l, m_view.cursor[d]);
+		}
+		fprintf(f, "# |psi|^2 (potential shown as ||):\n");
+		const char *shades = "_.:-=o+*#%@";
+		int nshades = 11;
+		for(int iy = oy - 1; iy >= 0; iy--) {
+			for(int ix = 0; ix < ox; ix++) {
+				int gx = ix * sx + sx/2;
+				int gy = iy * sy_d + sy_d/2;
+				size_t idx = base + gx * sx_s + gy * sy_s;
+				if(idx >= total) { fputc('?', f); continue; }
+				if(pot[idx].real() > 0)
+					fputc('|', f);
+				else {
+					double v = pow(std::norm(psi[idx]) / max_val, 0.15);
+					int si = (int)(v * (nshades - 1));
+					if(si >= nshades) si = nshades - 1;
+					if(si < 0) si = 0;
+					fputc(shades[si], f);
+				}
+			}
+			fputc('\n', f);
+		}
+		fclose(f);
+		fprintf(stderr, "dumped %s/%s to dump.txt (%dx%d)\n", lx, ly, ox, oy);
 	}
 }
 

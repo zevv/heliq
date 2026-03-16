@@ -84,6 +84,18 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			ImGui::SameLine();
 			ImGui::TextColored(col_k, "K %.2f", kp);
 
+			// spatial aliasing: k / k_nyquist per axis
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::Text("Grid");
+			ImGui::TableNextColumn();
+			for(int d = 0; d < sim.grid.rank; d++) {
+				double kr = sim.k_nyquist_ratio[d];
+				ImVec4 col_kr = (kr < 0.3) ? col_ok : (kr < 0.5) ? col_warn : col_bad;
+				if(d > 0) ImGui::SameLine();
+				ImGui::TextColored(col_kr, "%d:%.0f%%", d, kr * 100);
+			}
+
 			// probability + absorb
 			double prob = sim.total_probability();
 			ImVec4 col_prob = (fabs(prob - 1.0) < 0.01) ? col_ok :

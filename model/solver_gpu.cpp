@@ -156,7 +156,7 @@ GpuSolver::GpuSolver(const Grid &grid)
 	m->d_kinetic_phase    = clCreateBuffer(m->ctx, CL_MEM_READ_ONLY, buf_bytes, nullptr, &err);
 	check_cl(err, "alloc d_kinetic_phase");
 
-	// setup VkFFT
+	// setup VkFFT (supports up to 3D; rank > 3 handled by CPU fallback in solver.cpp)
 	m->fft_config = {};
 	m->fft_config.FFTdim = grid.rank;
 	for(int i = 0; i < grid.rank; i++)
@@ -230,15 +230,14 @@ void GpuSolver::step()
 
 	// 2. FFT forward
 	VkFFTResult r1 = VkFFTAppend(&m->fft_app, -1, &lp);
-	if(r1 != VKFFT_SUCCESS) fprintf(stderr, "VkFFT forward failed: %d\n", r1);
+	if(r1 != VKFFT_SUCCESS) fprintf(stderr, "VkFFT forward failed: %d\n", (int)r1);
 
 	// 3. full-step kinetic
 	run_phase_multiply(m, m->d_kinetic_phase);
 
-	// 4. FFT inverse (VkFFT normalizes with normalize=1)
+	// 4. FFT inverse
 	VkFFTResult r2 = VkFFTAppend(&m->fft_app, 1, &lp);
-	if(r2 != VKFFT_SUCCESS) fprintf(stderr, "VkFFT inverse failed: %d\n", r2);
-
+	if(r2 != VKFFT_SUCCESS) fprintf(stderr, "VkFFT inverse failed: %d\n", (int)r2);
 	// 5. half-step potential
 	run_phase_multiply(m, m->d_potential_phase);
 }

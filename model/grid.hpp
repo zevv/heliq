@@ -10,6 +10,7 @@ struct Axis {
 	double min{};          // meters
 	double max{};          // meters
 	bool spatial{true};    // false for internal dof (spin)
+	char label[8]{};       // e.g. "P1.x", "x"
 
 	double dx() const { return (max - min) / points; }
 };

@@ -996,13 +996,8 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 	ImGui::SameLine();
 
 	if(sim.grid.rank > 1) {
-		for(int d = 0; d < sim.grid.rank; d++) {
-			ImGui::SameLine();
-			ImGui::PushID(d);
-			char label[8]; snprintf(label, sizeof(label), "%d", d);
-			ImGui::RadioButton(label, &m_slice.axis, d);
-			ImGui::PopID();
-		}
+		ImGui::SameLine();
+		ImGui::AxisCombo("##slice_ax", &m_slice.axis, sim.grid);
 		ImGui::SameLine();
 		static const char *mode_names[] = { "Slice", "Marginal", "Momentum" };
 		if(ImGui::Button(mode_names[m_slice.mode]))

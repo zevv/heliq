@@ -7,6 +7,7 @@
 
 #include "misc.hpp"
 #include "style.hpp"
+#include "grid.hpp"
 
 
 double hirestime()
@@ -88,7 +89,28 @@ bool IsMouseInRect(SDL_Rect const &rect)
 	return (mp.x >= rect.x) && (mp.x < rect.x + rect.w) &&
 	       (mp.y >= rect.y) && (mp.y < rect.y + rect.h);
 }
-    
+
+bool AxisCombo(const char* label, int* axis, const Grid& grid)
+{
+	const char *preview = (*axis >= 0 && *axis < grid.rank && grid.axes[*axis].label[0])
+		? grid.axes[*axis].label : "?";
+	bool changed = false;
+	ImGui::SetNextItemWidth(60);
+	if(ImGui::BeginCombo(label, preview, ImGuiComboFlags_NoArrowButton)) {
+		for(int d = 0; d < grid.rank; d++) {
+			const char *lbl = grid.axes[d].label[0] ? grid.axes[d].label : nullptr;
+			char fb[8]; snprintf(fb, sizeof(fb), "%d", d);
+			bool selected = (*axis == d);
+			if(ImGui::Selectable(lbl ? lbl : fb, selected))
+				{ *axis = d; changed = true; }
+			if(selected) ImGui::SetItemDefaultFocus();
+		}
+		ImGui::EndCombo();
+	}
+	return changed;
+}
+
+
 void TextShadow(const char* fmt, ...)
 {
 	va_list args;
