@@ -27,14 +27,24 @@ void App::config_fname(char *buf, size_t buflen)
 	const char *path = getenv("XDG_CONFIG_HOME");
 	const char *home = getenv("HOME");
 	if(path) {
-		snprintf(dir, sizeof(dir), "%s/quantum", path);
+		snprintf(dir, sizeof(dir), "%s/heliq", path);
 	} else if(home) {
-		snprintf(dir, sizeof(dir), "%s/.config/quantum", home);
+		snprintf(dir, sizeof(dir), "%s/.config/heliq", home);
 	} else {
-		snprintf(dir, sizeof(dir), "./.quantum");
+		snprintf(dir, sizeof(dir), "./.heliq");
 	}
 	mkdir(dir, 0755);
-	snprintf(buf, buflen, "%s/%s", dir, m_session_name);
+
+	// derive session name from script basename (without extension)
+	const char *base = m_script.c_str();
+	const char *slash = strrchr(base, '/');
+	if(slash) base = slash + 1;
+	char name[64];
+	snprintf(name, sizeof(name), "%s", base);
+	char *dot = strrchr(name, '.');
+	if(dot) *dot = '\0';
+
+	snprintf(buf, buflen, "%s/%s", dir, name);
 }
 
 

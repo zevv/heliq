@@ -22,10 +22,10 @@
 static constexpr double PITCH_LIMIT = M_PI * 0.49;
 
 enum class Envelope { Amplitude, ProbDensity, Real, Imaginary, COUNT };
-enum class HelixColor { Gray, Rainbow, Flame, Spatial, COUNT };
+enum class HelixColor { Default, Gray, Rainbow, Flame, Spatial, COUNT };
 
 static const char *envelope_names[] = { "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
-static const char *helix_color_names[] = { "gray", "rainbow", "flame", "spatial" };
+static const char *helix_color_names[] = { "default", "gray", "rainbow", "flame", "spatial" };
 
 
 class WidgetHelixGL : public Widget {
@@ -55,6 +55,7 @@ private:
 		bool on{true};
 		int mode{0};
 		float alpha{0.7f};
+		int color{0};  // HelixColor
 	} m_envelope;
 
 	struct {
@@ -66,6 +67,7 @@ private:
 	struct {
 		bool on{true};
 		float alpha{0.1f};
+		int color{0};  // HelixColor
 	} m_surface;
 
 	struct {
@@ -134,6 +136,7 @@ private:
 	void gl_draw_potential_marginal(const Simulation &sim, int n);
 	void gl_draw_absorb_zones(const Simulation &sim, int n);
 	void gl_draw_cursor(const Simulation &sim);
+	std::tuple<float,float,float> color_for_vert(int color_mode, int idx, float amp, const std::complex<double> *psi, float def_r, float def_g, float def_b);
 
 	// SDL drawing (overlays on top of GL texture)
 	void draw_controls(const Simulation &sim);
@@ -170,11 +173,13 @@ void WidgetHelixGL::do_save(ConfigWriter &cfg)
 	cfg.write("envelope_on", m_envelope.on ? 1 : 0);
 	cfg.write("envelope", m_envelope.mode);
 	cfg.write("envelope_alpha", m_envelope.alpha);
+	cfg.write("envelope_color", m_envelope.color);
 	cfg.write("helix_on", m_helix.on ? 1 : 0);
 	cfg.write("helix_color", m_helix.color);
 	cfg.write("helix_alpha", m_helix.alpha);
 	cfg.write("surface", m_surface.on ? 1 : 0);
 	cfg.write("surface_alpha", m_surface.alpha);
+	cfg.write("surface_color", m_surface.color);
 	cfg.write("potential_on", m_potential.on ? 1 : 0);
 	cfg.write("potential_alpha", m_potential.alpha);
 	cfg.write("slice_axis", m_slice.axis);
@@ -201,11 +206,13 @@ void WidgetHelixGL::do_load(ConfigReader::Node *node)
 	int env_on = m_envelope.on; node->read("envelope_on", env_on); m_envelope.on = env_on;
 	node->read("envelope", m_envelope.mode);
 	node->read("envelope_alpha", m_envelope.alpha);
+	node->read("envelope_color", m_envelope.color);
 	int hx_on = m_helix.on; node->read("helix_on", hx_on); m_helix.on = hx_on;
 	node->read("helix_color", m_helix.color);
 	node->read("helix_alpha", m_helix.alpha);
 	int surf = m_surface.on; node->read("surface", surf); m_surface.on = surf;
 	node->read("surface_alpha", m_surface.alpha);
+	node->read("surface_color", m_surface.color);
 	int pot_on = m_potential.on; node->read("potential_on", pot_on); m_potential.on = pot_on;
 	node->read("potential_alpha", m_potential.alpha);
 	node->read("slice_axis", m_slice.axis);
@@ -577,34 +584,95 @@ void WidgetHelixGL::gl_draw_axis(const mat4 &vp)
 }
 
 
+// shared color lookup for helix/surface/envelope
+// def_r/g/b are the "Default" color at full amplitude
+std::tuple<float,float,float> WidgetHelixGL::color_for_vert(
+	int color_mode, int idx, float amp,
+	const std::complex<double> *psi,
+	float def_r, float def_g, float def_b)
+{
+	switch((HelixColor)color_mode) {
+	case HelixColor::Rainbow: {
+		double phase = atan2(psi[idx].imag(), psi[idx].real());
+		double hue = (phase + M_PI) / (2 * M_PI);
+		uint8_t rr, gg, bb;
+		hsv_to_rgb(hue, 1.0, 0.2 + 0.8 * amp, rr, gg, bb);
+		return {rr/255.0f, gg/255.0f, bb/255.0f};
+	}
+	case HelixColor::Flame:
+		return {
+			amp + 0.16f * (1 - amp),
+			fminf(1.0f, amp * 2.0f) * amp + 0.16f * (1 - amp),
+			fminf(1.0f, fmaxf(0.0f, amp * 2.0f - 1.0f)) * amp + 0.08f * (1 - amp)
+		};
+	case HelixColor::Spatial: {
+		auto &hm = m_hue_marginals[m_slice.axis];
+		if(idx < (int)hm.hue.size()) {
+			uint8_t rr, gg, bb;
+			hsv_to_rgb(hm.hue[idx], hm.sat[idx] * 0.8, 0.2 + 0.8 * amp, rr, gg, bb);
+			return {rr/255.0f, gg/255.0f, bb/255.0f};
+		}
+		return {0.5f, 0.5f, 0.5f};
+	}
+	case HelixColor::Gray:
+		return {
+			0.78f * amp + 0.16f * (1 - amp),
+			0.78f * amp + 0.16f * (1 - amp),
+			0.78f * amp + 0.16f * (1 - amp)
+		};
+	default: // Default
+		return {
+			def_r * amp + 0.16f * (1 - amp),
+			def_g * amp + 0.16f * (1 - amp),
+			def_b * amp + 0.16f * (1 - amp)
+		};
+	}
+}
+
+
 void WidgetHelixGL::gl_draw_surface(const std::complex<double> *psi, double max_amp, int n)
 {
-	// triangle strip: base[i], helix[i], base[i+1], helix[i+1]...
-	m_vbuf.resize(n * 2 * 3);  // 2 verts per point, 3 floats each
+	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, 0.3f, 0.4f, 0.7f); };
+	// triangle strip with per-vertex color: base[i], helix[i], ...
+
+	// 7 floats per vert: pos(3) + col(4)
+	m_vbuf.resize(n * 2 * 7);
 	for(int i = 0; i < n; i++) {
 		float t = (float)i / n;
 		float x = -1.0f + 2.0f * t;
 		float y = (float)(psi[i].real() / max_amp * m_amplitude);
 		float z = (float)(psi[i].imag() / max_amp * m_amplitude);
-		m_vbuf[i*6+0] = x; m_vbuf[i*6+1] = 0; m_vbuf[i*6+2] = 0;    // base
-		m_vbuf[i*6+3] = x; m_vbuf[i*6+4] = y; m_vbuf[i*6+5] = z;    // helix
+		float amp = (float)(std::abs(psi[i]) / max_amp);
+		auto [cr, cg, cb] = col(i, amp);
+		float alpha = m_surface.alpha;
+
+		// base vertex (on x-axis, dimmer)
+		m_vbuf[i*14+0] = x; m_vbuf[i*14+1] = 0; m_vbuf[i*14+2] = 0;
+		m_vbuf[i*14+3] = cr*0.5f; m_vbuf[i*14+4] = cg*0.5f; m_vbuf[i*14+5] = cb*0.5f; m_vbuf[i*14+6] = alpha;
+		// helix vertex
+		m_vbuf[i*14+7] = x; m_vbuf[i*14+8] = y; m_vbuf[i*14+9] = z;
+		m_vbuf[i*14+10] = cr; m_vbuf[i*14+11] = cg; m_vbuf[i*14+12] = cb; m_vbuf[i*14+13] = alpha;
 	}
 
-	glUseProgram(m_gl.solid_shader());
-	glUniform4f(m_gl.color_loc(), 0.3f, 0.4f, 0.7f, m_surface.alpha);
+	int stride = 7 * sizeof(float);
+	glUseProgram(m_gl.vcol_shader());
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, m_vbuf.data());
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, m_vbuf.data());
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, m_vbuf.data() + 3);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
 
-	// stem lines
-	std::vector<float> stems(n * 6);
+	// stem lines — draw brighter than the surface fill
+	// temporarily boost alpha in the vertex data
 	for(int i = 0; i < n; i++) {
-		stems[i*6+0] = m_vbuf[i*6+0]; stems[i*6+1] = 0; stems[i*6+2] = 0;
-		stems[i*6+3] = m_vbuf[i*6+3]; stems[i*6+4] = m_vbuf[i*6+4]; stems[i*6+5] = m_vbuf[i*6+5];
+		m_vbuf[i*14+6]  = m_surface.alpha * 3.0f;  // base
+		m_vbuf[i*14+13] = m_surface.alpha * 3.0f;  // tip
 	}
-	glUniform4f(m_gl.color_loc(), 0.31f, 0.31f, 0.47f, 1.0f);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, stems.data());
-	glDrawArrays(GL_LINES, 0, (int)stems.size() / 3);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, m_vbuf.data());
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, m_vbuf.data() + 3);
+	glDrawArrays(GL_LINES, 0, n * 2);
+
+	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
 }
 
@@ -623,41 +691,7 @@ void WidgetHelixGL::gl_draw_helix(const std::complex<double> *psi, double max_am
 		m_vbuf[i*7+2] = z;
 
 		float amp = (float)(std::abs(psi[i]) / max_amp);
-		float cr, cg, cb;
-		switch((HelixColor)m_helix.color) {
-			case HelixColor::Gray:
-				cr = cg = cb = 0.78f * amp + 0.16f * (1 - amp);
-				break;
-			case HelixColor::Rainbow: {
-				double phase = atan2(psi[i].imag(), psi[i].real());
-				double hue = (phase + M_PI) / (2 * M_PI);
-				uint8_t rr, gg, bb;
-				hsv_to_rgb(hue, 1.0, 1.0, rr, gg, bb);
-				cr = (rr/255.0f) * amp + 0.16f * (1 - amp);
-				cg = (gg/255.0f) * amp + 0.16f * (1 - amp);
-				cb = (bb/255.0f) * amp + 0.16f * (1 - amp);
-				break;
-			}
-		case HelixColor::Flame:
-			cr = amp + 0.16f * (1 - amp);
-			cg = fminf(1.0f, amp * 2.0f) * amp + 0.16f * (1 - amp);
-			cb = fminf(1.0f, fmaxf(0.0f, amp * 2.0f - 1.0f)) * amp + 0.08f * (1 - amp);
-			break;
-		case HelixColor::Spatial: {
-			auto &hm = m_hue_marginals[m_slice.axis];
-			if(i < (int)hm.hue.size()) {
-				uint8_t rr, gg, bb;
-				hsv_to_rgb(hm.hue[i], hm.sat[i] * 0.8, 0.2 + 0.8 * amp, rr, gg, bb);
-				cr = rr / 255.0f;
-				cg = gg / 255.0f;
-				cb = bb / 255.0f;
-			} else {
-				cr = cg = cb = 0.5f;
-			}
-			break;
-		}
-		default: cr = cg = cb = 0.5f; break;
-		}
+		auto [cr, cg, cb] = color_for_vert(m_helix.color, i, amp, psi, 0.78f, 0.78f, 0.78f);
 		m_vbuf[i*7+3] = cr;
 		m_vbuf[i*7+4] = cg;
 		m_vbuf[i*7+5] = cb;
@@ -682,66 +716,91 @@ void WidgetHelixGL::gl_draw_envelope(const std::complex<double> *psi, double max
 	                  (Envelope)m_envelope.mode == Envelope::ProbDensity;
 
 	if(rotational) {
-		// ghost longitudinal lines
+		// ghost longitudinal lines with per-vertex color
 		float ghost_a = m_envelope.alpha * 0.12f;
-		glUseProgram(m_gl.solid_shader());
 		int n_ghosts = 64;
-		m_vbuf.resize(n * 3);
+		m_vbuf.resize(n * 7);
+		glUseProgram(m_gl.vcol_shader());
+		glEnableVertexAttribArray(0);
+		glEnableVertexAttribArray(1);
 		for(int g = 0; g < n_ghosts; g++) {
 			float angle = 2.0f * M_PI * g / n_ghosts;
 			float cy = cosf(angle), cz = sinf(angle);
-			glUniform4f(m_gl.color_loc(), 0.39f, 0.78f, 0.39f, ghost_a);
 			for(int i = 0; i < n; i++) {
 				float t = (float)i / n;
 				float x = -1.0f + 2.0f * t;
 				float a = (float)(envelope_value(psi[i], max_amp) * m_amplitude);
-				m_vbuf[i*3+0] = x;
-				m_vbuf[i*3+1] = a * cy;
-				m_vbuf[i*3+2] = a * cz;
+				float amp = (float)(std::abs(psi[i]) / max_amp);
+				auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, 0.39f, 0.78f, 0.39f);
+				m_vbuf[i*7+0] = x;
+				m_vbuf[i*7+1] = a * cy;
+				m_vbuf[i*7+2] = a * cz;
+				m_vbuf[i*7+3] = cr;
+				m_vbuf[i*7+4] = cg;
+				m_vbuf[i*7+5] = cb;
+				m_vbuf[i*7+6] = ghost_a;
 			}
-			glEnableVertexAttribArray(0);
-			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, m_vbuf.data());
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data());
+			glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data() + 3);
 			glDrawArrays(GL_LINE_STRIP, 0, n);
-			glDisableVertexAttribArray(0);
 		}
+		glDisableVertexAttribArray(1);
+		glDisableVertexAttribArray(0);
 
-		// ghost cross-section circles
+		// ghost cross-section circles — use color at that x position
 		int circle_segs = 24;
-		std::vector<float> circle(circle_segs * 3);
+		std::vector<float> circle(circle_segs * 7);
+		glUseProgram(m_gl.vcol_shader());
+		glEnableVertexAttribArray(0);
+		glEnableVertexAttribArray(1);
 		for(int i = 0; i < n; i += 4) {
 			float rad = (float)(envelope_value(psi[i], max_amp) * m_amplitude);
 			if(rad < 1e-6f) continue;
 			float x = -1.0f + 2.0f * i / n;
+			float amp = (float)(std::abs(psi[i]) / max_amp);
+			auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, 0.39f, 0.78f, 0.39f);
 			for(int s = 0; s < circle_segs; s++) {
 				float a = 2.0f * M_PI * s / circle_segs;
-				circle[s*3+0] = x;
-				circle[s*3+1] = rad * cosf(a);
-				circle[s*3+2] = rad * sinf(a);
+				circle[s*7+0] = x;
+				circle[s*7+1] = rad * cosf(a);
+				circle[s*7+2] = rad * sinf(a);
+				circle[s*7+3] = cr;
+				circle[s*7+4] = cg;
+				circle[s*7+5] = cb;
+				circle[s*7+6] = ghost_a;
 			}
-			glUniform4f(m_gl.color_loc(), 0.39f, 0.78f, 0.39f, ghost_a);
-			glEnableVertexAttribArray(0);
-			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, circle.data());
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), circle.data());
+			glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), circle.data() + 3);
 			glDrawArrays(GL_LINE_LOOP, 0, circle_segs);
-			glDisableVertexAttribArray(0);
 		}
+		glDisableVertexAttribArray(1);
+		glDisableVertexAttribArray(0);
 	}
 
-	// primary envelope line
+	// primary envelope line with per-vertex color
 	bool on_z = (Envelope)m_envelope.mode == Envelope::Imaginary;
-	glUseProgram(m_gl.solid_shader());
-	glUniform4f(m_gl.color_loc(), 0.39f, 0.78f, 0.39f, m_envelope.alpha);
-	m_vbuf.resize(n * 3);
+	m_vbuf.resize(n * 7);
 	for(int i = 0; i < n; i++) {
 		float t = (float)i / n;
 		float x = -1.0f + 2.0f * t;
 		float a = (float)(envelope_value(psi[i], max_amp) * m_amplitude);
-		m_vbuf[i*3+0] = x;
-		m_vbuf[i*3+1] = on_z ? 0 : a;
-		m_vbuf[i*3+2] = on_z ? a : 0;
+		float amp = (float)(std::abs(psi[i]) / max_amp);
+		auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, 0.39f, 0.78f, 0.39f);
+		m_vbuf[i*7+0] = x;
+		m_vbuf[i*7+1] = on_z ? 0 : a;
+		m_vbuf[i*7+2] = on_z ? a : 0;
+		m_vbuf[i*7+3] = cr;
+		m_vbuf[i*7+4] = cg;
+		m_vbuf[i*7+5] = cb;
+		m_vbuf[i*7+6] = m_envelope.alpha;
 	}
+	glUseProgram(m_gl.vcol_shader());
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, m_vbuf.data());
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data());
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data() + 3);
 	glDrawArrays(GL_LINE_STRIP, 0, n);
+	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
 }
 
@@ -959,11 +1018,12 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 			m_slice.mode = (m_slice.mode == Momentum) ? Slice : Momentum;
 	}
 
-	if(ImGui::BeginTable("layers", 4, ImGuiTableFlags_SizingStretchProp)) {
+	if(ImGui::BeginTable("layers", 5, ImGuiTableFlags_SizingStretchProp)) {
 		ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, 30);
 		ImGui::TableSetupColumn("en", ImGuiTableColumnFlags_WidthFixed, 20);
 		ImGui::TableSetupColumn("alpha", ImGuiTableColumnFlags_WidthFixed, 60);
 		ImGui::TableSetupColumn("cfg", ImGuiTableColumnFlags_WidthFixed, 80);
+		ImGui::TableSetupColumn("col", ImGuiTableColumnFlags_WidthFixed, 80);
 
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn(); ImGui::Text("Surf");
@@ -971,12 +1031,15 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
 		ImGui::SliderFloat("##sf_a", &m_surface.alpha, 0.0f, 0.5f, "%.2f");
 		ImGui::TableNextColumn();
+		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+		ImGui::Combo("##sf_c", &m_surface.color, helix_color_names, (int)HelixColor::COUNT);
 
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn(); ImGui::Text("Helix");
 		ImGui::TableNextColumn(); ImGui::Checkbox("##hx_on", &m_helix.on);
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
 		ImGui::SliderFloat("##hx_a", &m_helix.alpha, 0.0f, 1.0f, "%.1f");
+		ImGui::TableNextColumn();
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
 		ImGui::Combo("##hx", &m_helix.color, helix_color_names, (int)HelixColor::COUNT);
 
@@ -987,12 +1050,15 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 		ImGui::SliderFloat("##env_a", &m_envelope.alpha, 0.0f, 1.0f, "%.1f");
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
 		ImGui::Combo("##env", &m_envelope.mode, envelope_names, (int)Envelope::COUNT);
+		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+		ImGui::Combo("##env_c", &m_envelope.color, helix_color_names, (int)HelixColor::COUNT);
 
 		ImGui::TableNextRow();
 		ImGui::TableNextColumn(); ImGui::Text("Pot");
 		ImGui::TableNextColumn(); ImGui::Checkbox("##pot_on", &m_potential.on);
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
 		ImGui::SliderFloat("##pot_a", &m_potential.alpha, 0.0f, 1.0f, "%.1f");
+		ImGui::TableNextColumn();
 		ImGui::TableNextColumn();
 
 		ImGui::EndTable();
