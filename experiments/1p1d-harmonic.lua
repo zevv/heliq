@@ -11,7 +11,7 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local sigma = 0.2 * um
+local sigma = 0.4 * um
 local k = hbar * hbar / (m_electron * sigma^4)
 
 particle(electron, {

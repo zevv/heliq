@@ -11,13 +11,13 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.02e-3 * eV
+local energy = 0.01e-3 * eV
 local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
     position = { 0 },
     momentum = { momentum },
-    width = 0.05 * um,
+    width = 0.4 * um,
 })
 
 absorbing_boundary {

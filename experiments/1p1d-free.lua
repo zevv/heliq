@@ -16,5 +16,5 @@ electron = def_particle {
 particle(electron, {
     position = { 0 },
     momentum = { 0 },
-    width = 0.3 * um,
+    width = 0.4 * um,
 })
