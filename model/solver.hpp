@@ -24,14 +24,14 @@ public:
 	virtual void flush() {}
 
 	// copy current psi to CPU buffer (for visualization)
-	virtual void read_psi(std::complex<double> *out) const = 0;
+	virtual void read_psi(psi_t *out) const = 0;
 
 	// upload psi from CPU buffer (for reset / init)
-	virtual void write_psi(const std::complex<double> *in) = 0;
+	virtual void write_psi(const psi_t *in) = 0;
 
 	// upload new phase arrays (after dt change)
-	virtual void set_phases(const std::complex<double> *potential_phase,
-	                        const std::complex<double> *kinetic_phase) = 0;
+	virtual void set_phases(const psi_t *potential_phase,
+	                        const psi_t *kinetic_phase) = 0;
 
 	// grid point count
 	size_t total_points() const { return m_total; }

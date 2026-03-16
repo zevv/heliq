@@ -12,10 +12,10 @@ public:
 
 	void step() override;
 	void flush() override;
-	void read_psi(std::complex<double> *out) const override;
-	void write_psi(const std::complex<double> *in) override;
-	void set_phases(const std::complex<double> *potential_phase,
-	                const std::complex<double> *kinetic_phase) override;
+	void read_psi(psi_t *out) const override;
+	void write_psi(const psi_t *in) override;
+	void set_phases(const psi_t *potential_phase,
+	                const psi_t *kinetic_phase) override;
 
 	// returns true if an OpenCL GPU device is available
 	static bool available();

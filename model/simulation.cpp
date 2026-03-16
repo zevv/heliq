@@ -54,22 +54,14 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	}
 
 	size_t n = grid.total_points();
-	size_t bytes = n * sizeof(std::complex<double>);
 
 	// CPU-side arrays for widget display and setup data
-	psi[0]          = (std::complex<double> *)fftw_malloc(bytes);
-	psi[1]          = (std::complex<double> *)fftw_malloc(bytes);
-	potential       = (std::complex<double> *)fftw_malloc(bytes);
-	psi_initial     = (std::complex<double> *)fftw_malloc(bytes);
-	m_potential_phase = (std::complex<double> *)fftw_malloc(bytes);
-	m_kinetic_phase   = (std::complex<double> *)fftw_malloc(bytes);
-
-	std::fill_n(psi[0],            n, std::complex<double>(0));
-	std::fill_n(psi[1],            n, std::complex<double>(0));
-	std::fill_n(potential,         n, std::complex<double>(0));
-	std::fill_n(psi_initial,       n, std::complex<double>(0));
-	std::fill_n(m_potential_phase,  n, std::complex<double>(0));
-	std::fill_n(m_kinetic_phase,    n, std::complex<double>(0));
+	psi[0]            = new psi_t[n]();
+	psi[1]            = new psi_t[n]();
+	potential         = new psi_t[n]();
+	psi_initial       = new psi_t[n]();
+	m_potential_phase = new psi_t[n]();
+	m_kinetic_phase   = new psi_t[n]();
 
 	// sample potentials and wavefunction into CPU arrays
 	sample_potential(setup);
@@ -138,7 +130,7 @@ void Simulation::compute_potential_phase()
 		}
 
 		double amp = exp(decay);
-		m_potential_phase[idx] = amp * std::complex<double>(cos(phase), sin(phase));
+		m_potential_phase[idx] = psi_t(amp * cos(phase), amp * sin(phase));
 		if(fabs(phase) > max_potential_phase) max_potential_phase = fabs(phase);
 	});
 }
@@ -156,7 +148,7 @@ void Simulation::compute_kinetic_phase()
 			double ki = (coords[d] < ni/2) ? coords[d] * dk : (coords[d] - ni) * dk;
 			phase += hbar * ki * ki * dt / (2.0 * mass[d]);
 		}
-		m_kinetic_phase[idx] = std::complex<double>(cos(-phase), sin(-phase));
+		m_kinetic_phase[idx] = psi_t(cos(-phase), sin(-phase));
 		if(fabs(phase) > max_kinetic_phase) max_kinetic_phase = fabs(phase);
 	});
 }
@@ -395,7 +387,7 @@ void Simulation::decohere(int axis, double strength)
 			double L = grid.axes[d].max - grid.axes[d].min;
 			phi += strength * M_PI * pos[d] / L;
 		}
-		p[idx] *= std::complex<double>(cos(phi), sin(phi));
+		p[idx] *= psi_t(cos(phi), sin(phi));
 	});
 
 	m_solver->write_psi(p);
@@ -449,7 +441,7 @@ static const double k_coulomb = 8.9875517873681764e9;  // N·m²/C²
 void Simulation::sample_potential(const Setup &setup)
 {
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
-		std::complex<double> v(0, 0);
+		psi_t v(0, 0);
 		for(auto &pot : setup.potentials) {
 			switch(pot.type) {
 				case Potential::Barrier:
@@ -471,7 +463,7 @@ void Simulation::sample_potential(const Setup &setup)
 				}
 				case Potential::Absorbing:
 					if(inside_bounds(pos, pot.from, pot.to, grid.rank))
-						v += std::complex<double>(0, pot.height);
+						v += psi_t(0, pot.height);
 					break;
 			}
 		}
@@ -515,7 +507,7 @@ void Simulation::sample_wavefunction(const Setup &setup)
 	grid.each([&](size_t idx, const int *coords, const double *pos) {
 		// product state: ψ(x₁,x₂,...) = ψ₁(x₁) · ψ₂(x₂) · ...
 		// each particle contributes a Gaussian × plane wave across its axes
-		std::complex<double> val(1.0, 0.0);
+		psi_t val(1.0f, 0.0f);
 
 		for(int p = 0; p < cs.n_particles; p++) {
 			auto &part = setup.particles[p];
@@ -528,7 +520,7 @@ void Simulation::sample_wavefunction(const Setup &setup)
 				phase += part.momentum[d] * pos[ax] / hbar;
 			}
 			double amp = exp(-envelope);
-			val *= amp * std::complex<double>(cos(phase), sin(phase));
+			val *= psi_t(amp * cos(phase), amp * sin(phase));
 		}
 
 		psi[0][idx] = val;
@@ -554,10 +546,10 @@ Simulation::~Simulation()
 {
 	// solver destroyed via unique_ptr before we free arrays
 	m_solver.reset();
-	fftw_free(psi[0]);
-	fftw_free(psi[1]);
-	fftw_free(potential);
-	fftw_free(psi_initial);
-	fftw_free(m_potential_phase);
-	fftw_free(m_kinetic_phase);
+	delete[] psi[0];
+	delete[] psi[1];
+	delete[] potential;
+	delete[] psi_initial;
+	delete[] m_potential_phase;
+	delete[] m_kinetic_phase;
 }

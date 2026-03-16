@@ -220,7 +220,7 @@ static void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h)
 	ov.tex_h = h;
 }
 
-static double sample_value(DataSource src, std::complex<double> psi, std::complex<double> pot)
+static double sample_value(DataSource src, psi_t psi, psi_t pot)
 {
 	switch(src) {
 		case DataSource::PsiSq:    return std::norm(psi);

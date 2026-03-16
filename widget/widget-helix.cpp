@@ -92,10 +92,10 @@ private:
 	} m_input;
 
 	// data
-	std::vector<std::complex<double>> m_slice_data;
-	std::vector<std::complex<double>> m_fft_buf;
+	std::vector<psi_t> m_slice_data;
+	std::vector<psi_t> m_fft_buf;
 	std::vector<double> m_marginals[MAX_RANK];  // probability marginals per axis
-	std::vector<std::complex<double>> m_coherent_marginals[MAX_RANK]; // coherent ∑ψ per axis
+	std::vector<psi_t> m_coherent_marginals[MAX_RANK]; // coherent ∑ψ per axis
 	std::vector<double> m_potential_marginal;   // potential marginal for current axis
 	int m_marginal_peak[MAX_RANK]{};            // argmax per axis
 
@@ -104,7 +104,7 @@ private:
 		std::vector<double> hue;   // [0,1] circular mean hue per bin
 		std::vector<double> sat;   // [0,1] saturation (1 = pure, 0 = mixed)
 	} m_hue_marginals[MAX_RANK];
-	fftw_plan m_fft_plan{};
+	fftwf_plan m_fft_plan{};
 	int m_fft_n{0};
 
 	// GL
@@ -113,14 +113,14 @@ private:
 
 	// data extraction (same as widget-helix.cpp)
 	void clamp_slice_positions(const Simulation &sim);
-	void extract_data(const Simulation &sim, const std::complex<double> *psi_all, int n);
-	void extract_slice(const Simulation &sim, const std::complex<double> *psi_all, int n);
-	void extract_marginal(const Simulation &sim, const std::complex<double> *psi_all, int n);
-	void extract_momentum(const Simulation &sim, const std::complex<double> *psi_all, int n);
-	void compute_marginals(const Simulation &sim, const std::complex<double> *psi_all);
-	double compute_max_amp(const Simulation &sim, const std::complex<double> *psi,
-	                       const std::complex<double> *psi_all, int n);
-	double envelope_value(std::complex<double> psi, double max_amp);
+	void extract_data(const Simulation &sim, const psi_t *psi_all, int n);
+	void extract_slice(const Simulation &sim, const psi_t *psi_all, int n);
+	void extract_marginal(const Simulation &sim, const psi_t *psi_all, int n);
+	void extract_momentum(const Simulation &sim, const psi_t *psi_all, int n);
+	void compute_marginals(const Simulation &sim, const psi_t *psi_all);
+	double compute_max_amp(const Simulation &sim, const psi_t *psi,
+	                       const psi_t *psi_all, int n);
+	double envelope_value(psi_t psi, double max_amp);
 
 	// camera
 	mat4 build_camera(int w, int h);
@@ -128,15 +128,15 @@ private:
 
 	// GL drawing
 	void gl_draw_axis(const mat4 &vp);
-	void gl_draw_surface(const std::complex<double> *psi, double max_amp, int n);
-	void gl_draw_helix(const std::complex<double> *psi, double max_amp, int n);
-	void gl_draw_envelope(const std::complex<double> *psi, double max_amp, int n,
+	void gl_draw_surface(const psi_t *psi, double max_amp, int n);
+	void gl_draw_helix(const psi_t *psi, double max_amp, int n);
+	void gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 	                       const mat4 &vp);
 	void gl_draw_potentials(const Simulation &sim, int n);
 	void gl_draw_potential_marginal(const Simulation &sim, int n);
 	void gl_draw_absorb_zones(const Simulation &sim, int n);
 	void gl_draw_cursor(const Simulation &sim);
-	std::tuple<float,float,float> color_for_vert(int color_mode, int idx, float amp, const std::complex<double> *psi, float def_r, float def_g, float def_b);
+	std::tuple<float,float,float> color_for_vert(int color_mode, int idx, float amp, const psi_t *psi, float def_r, float def_g, float def_b);
 
 	// SDL drawing (overlays on top of GL texture)
 	void draw_controls(const Simulation &sim);
@@ -157,7 +157,7 @@ WidgetHelixGL::WidgetHelixGL(Widget::Info &info)
 
 WidgetHelixGL::~WidgetHelixGL()
 {
-	if(m_fft_plan) fftw_destroy_plan(m_fft_plan);
+	if(m_fft_plan) fftwf_destroy_plan(m_fft_plan);
 }
 
 
@@ -346,7 +346,7 @@ void WidgetHelixGL::clamp_slice_positions(const Simulation &sim)
 	}
 }
 
-void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<double> *psi_all)
+void WidgetHelixGL::compute_marginals(const Simulation &sim, const psi_t *psi_all)
 {
 	// generic path for any rank: compute marginal for each axis
 	if(sim.grid.rank > 2) {
@@ -468,24 +468,24 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 }
 
 
-void WidgetHelixGL::extract_slice(const Simulation &sim, const std::complex<double> *psi_all, int n)
+void WidgetHelixGL::extract_slice(const Simulation &sim, const psi_t *psi_all, int n)
 {
 	auto view = sim.grid.axis_view(m_slice.axis, m_slice.pos, psi_all);
 	for(int i = 0; i < n; i++)
 		m_slice_data[i] = view[i];
 }
 
-void WidgetHelixGL::extract_marginal(const Simulation &sim, const std::complex<double> *psi_all, int n)
+void WidgetHelixGL::extract_marginal(const Simulation &sim, const psi_t *psi_all, int n)
 {
 	double dv = 1.0;
 	for(int d = 0; d < sim.grid.rank; d++)
 		if(d != m_slice.axis) dv *= sim.grid.axes[d].dx();
 	auto &marg = m_marginals[m_slice.axis];
 	for(int i = 0; i < n; i++)
-		m_slice_data[i] = std::complex<double>(sqrt(marg[i] * dv), 0);
+		m_slice_data[i] = psi_t(sqrt(marg[i] * dv), 0);
 }
 
-void WidgetHelixGL::extract_momentum(const Simulation &sim, const std::complex<double> *psi_all, int n)
+void WidgetHelixGL::extract_momentum(const Simulation &sim, const psi_t *psi_all, int n)
 {
 	if(sim.grid.rank == 1)
 		for(int i = 0; i < n; i++) m_slice_data[i] = psi_all[i];
@@ -493,19 +493,19 @@ void WidgetHelixGL::extract_momentum(const Simulation &sim, const std::complex<d
 		extract_slice(sim, psi_all, n);
 
 	if(m_fft_n != n) {
-		if(m_fft_plan) fftw_destroy_plan(m_fft_plan);
+		if(m_fft_plan) fftwf_destroy_plan(m_fft_plan);
 		m_fft_buf.resize(n);
-		m_fft_plan = fftw_plan_dft_1d(n,
-			(fftw_complex *)m_slice_data.data(), (fftw_complex *)m_fft_buf.data(),
+		m_fft_plan = fftwf_plan_dft_1d(n,
+			(fftwf_complex *)m_slice_data.data(), (fftwf_complex *)m_fft_buf.data(),
 			FFTW_FORWARD, FFTW_ESTIMATE);
 		m_fft_n = n;
 	}
-	fftw_execute_dft(m_fft_plan,
-		(fftw_complex *)m_slice_data.data(), (fftw_complex *)m_fft_buf.data());
+	fftwf_execute_dft(m_fft_plan,
+		(fftwf_complex *)m_slice_data.data(), (fftwf_complex *)m_fft_buf.data());
 	for(int i = 0; i < n; i++) m_slice_data[i] = m_fft_buf[(i + n/2) % n];
 }
 
-void WidgetHelixGL::extract_data(const Simulation &sim, const std::complex<double> *psi_all, int n)
+void WidgetHelixGL::extract_data(const Simulation &sim, const psi_t *psi_all, int n)
 {
 	m_slice_data.resize(n);
 	switch(m_slice.mode) {
@@ -519,8 +519,8 @@ void WidgetHelixGL::extract_data(const Simulation &sim, const std::complex<doubl
 	}
 }
 
-double WidgetHelixGL::compute_max_amp(const Simulation &sim, const std::complex<double> *psi,
-                                       const std::complex<double> *psi_all, int n)
+double WidgetHelixGL::compute_max_amp(const Simulation &sim, const psi_t *psi,
+                                       const psi_t *psi_all, int n)
 {
 	double max_amp = 1e-30;
 	if(m_slice.mode != Slice || m_slice.normalize) {
@@ -538,7 +538,7 @@ double WidgetHelixGL::compute_max_amp(const Simulation &sim, const std::complex<
 	return max_amp;
 }
 
-double WidgetHelixGL::envelope_value(std::complex<double> psi, double max_amp)
+double WidgetHelixGL::envelope_value(psi_t psi, double max_amp)
 {
 	switch((Envelope)m_envelope.mode) {
 		case Envelope::Amplitude:   return std::abs(psi) / max_amp;
@@ -618,7 +618,7 @@ void WidgetHelixGL::gl_draw_axis(const mat4 &vp)
 // def_r/g/b are the "Default" color at full amplitude
 std::tuple<float,float,float> WidgetHelixGL::color_for_vert(
 	int color_mode, int idx, float amp,
-	const std::complex<double> *psi,
+	const psi_t *psi,
 	float def_r, float def_g, float def_b)
 {
 	switch((HelixColor)color_mode) {
@@ -660,7 +660,7 @@ std::tuple<float,float,float> WidgetHelixGL::color_for_vert(
 }
 
 
-void WidgetHelixGL::gl_draw_surface(const std::complex<double> *psi, double max_amp, int n)
+void WidgetHelixGL::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 {
 	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, 0.3f, 0.4f, 0.7f); };
 	// triangle strip with per-vertex color: base[i], helix[i], ...
@@ -707,7 +707,7 @@ void WidgetHelixGL::gl_draw_surface(const std::complex<double> *psi, double max_
 }
 
 
-void WidgetHelixGL::gl_draw_helix(const std::complex<double> *psi, double max_amp, int n)
+void WidgetHelixGL::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 {
 	// per-vertex colored line strip: 3 pos + 4 color per vertex
 	m_vbuf.resize(n * 7);
@@ -739,7 +739,7 @@ void WidgetHelixGL::gl_draw_helix(const std::complex<double> *psi, double max_am
 }
 
 
-void WidgetHelixGL::gl_draw_envelope(const std::complex<double> *psi, double max_amp, int n,
+void WidgetHelixGL::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
                                       const mat4 &vp)
 {
 	bool rotational = (Envelope)m_envelope.mode == Envelope::Amplitude ||

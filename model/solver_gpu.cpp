@@ -408,53 +408,27 @@ void GpuSolver::step()
 }
 
 
-// Convert complex<double> array to interleaved float pairs
-static void double_to_float(const std::complex<double> *in, float *out, size_t n)
+void GpuSolver::read_psi(psi_t *out) const
 {
-	for(size_t i = 0; i < n; i++) {
-		out[i * 2]     = (float)in[i].real();
-		out[i * 2 + 1] = (float)in[i].imag();
-	}
-}
-
-// Convert interleaved float pairs to complex<double>
-static void float_to_double(const float *in, std::complex<double> *out, size_t n)
-{
-	for(size_t i = 0; i < n; i++) {
-		out[i] = std::complex<double>(in[i * 2], in[i * 2 + 1]);
-	}
+	// psi_t is complex<float> = float2, same layout as GPU buffer
+	size_t buf_bytes = m_total * sizeof(psi_t);
+	clEnqueueReadBuffer(m->queue, m->d_psi, CL_TRUE, 0, buf_bytes, out, 0, nullptr, nullptr);
 }
 
 
-void GpuSolver::read_psi(std::complex<double> *out) const
+void GpuSolver::write_psi(const psi_t *in)
 {
-	size_t buf_bytes = m_total * 2 * sizeof(float);
-	std::vector<float> tmp(m_total * 2);
-	clEnqueueReadBuffer(m->queue, m->d_psi, CL_TRUE, 0, buf_bytes, tmp.data(), 0, nullptr, nullptr);
-	float_to_double(tmp.data(), out, m_total);
+	size_t buf_bytes = m_total * sizeof(psi_t);
+	clEnqueueWriteBuffer(m->queue, m->d_psi, CL_TRUE, 0, buf_bytes, in, 0, nullptr, nullptr);
 }
 
 
-void GpuSolver::write_psi(const std::complex<double> *in)
+void GpuSolver::set_phases(const psi_t *potential_phase,
+                            const psi_t *kinetic_phase)
 {
-	size_t buf_bytes = m_total * 2 * sizeof(float);
-	std::vector<float> tmp(m_total * 2);
-	double_to_float(in, tmp.data(), m_total);
-	clEnqueueWriteBuffer(m->queue, m->d_psi, CL_TRUE, 0, buf_bytes, tmp.data(), 0, nullptr, nullptr);
-}
-
-
-void GpuSolver::set_phases(const std::complex<double> *potential_phase,
-                            const std::complex<double> *kinetic_phase)
-{
-	size_t buf_bytes = m_total * 2 * sizeof(float);
-	std::vector<float> tmp(m_total * 2);
-
-	double_to_float(potential_phase, tmp.data(), m_total);
-	clEnqueueWriteBuffer(m->queue, m->d_potential_phase, CL_TRUE, 0, buf_bytes, tmp.data(), 0, nullptr, nullptr);
-
-	double_to_float(kinetic_phase, tmp.data(), m_total);
-	clEnqueueWriteBuffer(m->queue, m->d_kinetic_phase, CL_TRUE, 0, buf_bytes, tmp.data(), 0, nullptr, nullptr);
+	size_t buf_bytes = m_total * sizeof(psi_t);
+	clEnqueueWriteBuffer(m->queue, m->d_potential_phase, CL_TRUE, 0, buf_bytes, potential_phase, 0, nullptr, nullptr);
+	clEnqueueWriteBuffer(m->queue, m->d_kinetic_phase, CL_TRUE, 0, buf_bytes, kinetic_phase, 0, nullptr, nullptr);
 
 	// for 4D decomposition: pre-transpose kinetic phase
 	if(m->fft_decomposed) {
@@ -463,7 +437,6 @@ void GpuSolver::set_phases(const std::complex<double> *potential_phase,
 			m->d_kinetic_phase_t = clCreateBuffer(m->ctx, CL_MEM_READ_ONLY, buf_bytes, nullptr, &err);
 			check_cl(err, "alloc d_kinetic_phase_t");
 		}
-		// upload to d_kinetic_phase first, then transpose to d_kinetic_phase_t
 		run_transpose(m, m->k_transpose_fwd, m->d_kinetic_phase, m->d_kinetic_phase_t);
 		clFinish(m->queue);
 	}

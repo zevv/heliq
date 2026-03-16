@@ -51,7 +51,7 @@ CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 CXXFLAGS += -DVKFFT_BACKEND=3
 CXXFLAGS += $(PKG_CFLAGS)
 
-LIBS += -ldl -latomic -lfftw3_threads -lpthread -lOpenCL -lEGL -lGLESv2 $(PKG_LIBS)
+LIBS += -ldl -latomic -lfftw3f_threads -lfftw3f -lpthread -lOpenCL -lEGL -lGLESv2 $(PKG_LIBS)
 
 ifdef clang
 CXX=clang++
@@ -105,7 +105,7 @@ TEST_OBJS = $(TEST_SRC:.cpp=.o)
 TEST_DEPS = $(TEST_OBJS:.o=.d)
 TEST_BIN = test_quantum
 TEST_PKG = lua5.4 fftw3
-TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs) -lfftw3_threads -lpthread -lOpenCL
+TEST_LIBS = $(shell pkg-config $(TEST_PKG) --libs) -lfftw3f_threads -lfftw3f -lpthread -lOpenCL
 
 
 $(BIN): $(OBJS)

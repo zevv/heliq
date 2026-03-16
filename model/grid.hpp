@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <complex>
 
+// wavefunction and potential data type — float32 throughout
+// (GPU operates in float32; no precision benefit from double on readback)
+using psi_t = std::complex<float>;
+
 constexpr int MAX_RANK = 8;
 
 struct Axis {

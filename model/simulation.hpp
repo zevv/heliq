@@ -40,17 +40,17 @@ public:
 	double time() const { return sim_time; }
 
 	// CPU-side wavefunction double buffer (for widget reads)
-	std::complex<double> *psi[2]{};
+	psi_t *psi[2]{};
 	std::atomic<int> front{0};
 
 	// potential (CPU-side, for widget display)
-	std::complex<double> *potential{};
+	psi_t *potential{};
 
 	// initial state snapshot for reset
-	std::complex<double> *psi_initial{};
+	psi_t *psi_initial{};
 
 	// read access for widgets
-	std::complex<double> *psi_front() { return psi[front.load()]; }
+	psi_t *psi_front() { return psi[front.load()]; }
 
 	// absorbing boundary
 	bool absorbing_boundary{false};
@@ -76,6 +76,6 @@ private:
 	std::unique_ptr<Solver> m_solver{};
 
 	// CPU-side phase arrays (computed here, uploaded to solver)
-	std::complex<double> *m_potential_phase{};
-	std::complex<double> *m_kinetic_phase{};
+	psi_t *m_potential_phase{};
+	psi_t *m_kinetic_phase{};
 };
