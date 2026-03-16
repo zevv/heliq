@@ -410,12 +410,11 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
 	SDL_RenderRect(rend, &dst);
 
-	// LMB click in grid sets cursor position
-	if(grid.rank >= 2 && ImGui::IsWindowFocused()) {
+	// hover in grid updates cursor position
+	if(grid.rank >= 2 && ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 		ImVec2 mp = ImGui::GetMousePos();
 		int gx, gy;
-		if(ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
-		   screen_to_grid(m_dst, m_grid_w, m_grid_h, mp.x, mp.y, gx, gy)) {
+		if(screen_to_grid(m_dst, m_grid_w, m_grid_h, mp.x, mp.y, gx, gy)) {
 			m_view.cursor[0] = gx;
 			m_view.cursor[1] = gy;
 		}
@@ -423,7 +422,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 
 	// draw cursor crosshairs
 	if(grid.rank >= 2) {
-		SDL_SetRenderDrawColor(rend, 255, 0, 255, 50);
+		SDL_SetRenderDrawColor(rend, 230, 50, 50, 50);
 		float sx, sy;
 		grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[0], m_view.cursor[1], sx, sy);
 		SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);

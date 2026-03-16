@@ -289,6 +289,21 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	SDL_FRect dst = { (float)r.x, (float)r.y, (float)r.w, (float)r.h };
 	SDL_RenderTexture(rend, m_gl.texture(), nullptr, &dst);
 
+	// hover cursor: mouse screen X → grid index on current axis
+	if(ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+		vec3 p_left  = vp.transform({-1, 0, 0});
+		vec3 p_right = vp.transform({ 1, 0, 0});
+		float sl = (1.0f + (float)p_left.x)  * 0.5f * r.w + r.x;
+		float sr = (1.0f + (float)p_right.x) * 0.5f * r.w + r.x;
+		float mx = ImGui::GetMousePos().x;
+		if(fabs(sr - sl) > 1.0f) {
+			float t = (mx - sl) / (sr - sl);
+			int ci = (int)(t * (n - 1) + 0.5f);
+			if(ci >= 0 && ci < n)
+				m_view.cursor[m_slice.axis] = ci;
+		}
+	}
+
 	if(ImGui::IsWindowFocused()) handle_keys();
 	draw_controls(sim);
 
