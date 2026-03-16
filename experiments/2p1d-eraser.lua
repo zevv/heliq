@@ -45,8 +45,8 @@ particle(electron, {
 
 -- beam splitter at x_A=0: must span all of x_B in config space
 barrier {
-    from = { -0.02 * um, -L },
-    to   = {  0.02 * um,  L },
+    from = { -0.5 * um + -0.02 * um, -L },
+    to   = { -0.5 * um +  0.02 * um,  L },
     height = energy * 1.1,
 }
 
@@ -60,6 +60,7 @@ interaction {
     width = 0.2 * um,
 }
 
-absorbing_boundary {
-    width = 0.07,
-}
+-- no absorbing boundary: domain walls act as mirrors for A
+-- absorbing_boundary {
+--     width = 0.07,
+-- }
