@@ -86,8 +86,7 @@ private:
 	struct {
 		bool orbiting{false}, panning{false};
 		float drag_x{}, drag_y{};
-		float cursor_val{0};
-		bool cursor_valid{false};
+
 	} m_input;
 
 	// data
@@ -128,7 +127,7 @@ private:
 	void gl_draw_potentials(const Simulation &sim, int n);
 	void gl_draw_potential_marginal(const Simulation &sim, int n);
 	void gl_draw_absorb_zones(const Simulation &sim, int n);
-	void gl_draw_cursor();
+
 
 	// SDL drawing (overlays on top of GL texture)
 	void draw_controls(const Simulation &sim);
@@ -136,7 +135,7 @@ private:
 	// input
 	void handle_mouse(SDL_Rect &r);
 	void handle_keys();
-	float screen_x_to_axis(const mat4 &vp, int w, int h, float sx);
+
 };
 
 
@@ -216,6 +215,17 @@ void WidgetHelixGL::do_load(ConfigReader::Node *node)
 
 void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 {
+	// sync camera from shared view when locked
+	if(m_view.lock) {
+		m_camera.yaw = m_view.camera.yaw;
+		m_camera.pitch = m_view.camera.pitch;
+		m_camera.dist = m_view.camera.dist;
+		m_camera.pan_x = m_view.camera.pan_x;
+		m_camera.pan_y = m_view.camera.pan_y;
+		m_camera.ortho = m_view.camera.ortho;
+		m_amplitude = m_view.amplitude;
+	}
+
 	if(!m_gl.valid()) m_gl.init(rend);
 	if(!m_gl.valid()) {
 		ImGui::Text("GL not available");
@@ -268,7 +278,6 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	gl_draw_axis(vp);
 	if(m_helix.on) gl_draw_helix(psi, max_amp, n);
 	if(m_envelope.on) gl_draw_envelope(psi, max_amp, n, vp);
-	gl_draw_cursor();
 
 	m_gl.end(rend);
 
@@ -279,23 +288,19 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	SDL_FRect dst = { (float)r.x, (float)r.y, (float)r.w, (float)r.h };
 	SDL_RenderTexture(rend, m_gl.texture(), nullptr, &dst);
 
-	// cursor detection (needs screen coords)
-	{
-		ImVec2 mp = ImGui::GetMousePos();
-		bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
-		               mp.y >= r.y && mp.y < r.y + r.h;
-		if(in_rect) {
-			m_input.cursor_val = screen_x_to_axis(vp, r.w, r.h, mp.x - r.x);
-			if(m_input.cursor_val < -1.0f) m_input.cursor_val = -1.0f;
-			if(m_input.cursor_val >  1.0f) m_input.cursor_val =  1.0f;
-			m_input.cursor_valid = true;
-		} else {
-			m_input.cursor_valid = false;
-		}
-	}
-
 	if(ImGui::IsWindowFocused()) handle_keys();
 	draw_controls(sim);
+
+	// sync camera back to shared view when locked
+	if(m_view.lock) {
+		m_view.camera.yaw = m_camera.yaw;
+		m_view.camera.pitch = m_camera.pitch;
+		m_view.camera.dist = m_camera.dist;
+		m_view.camera.pan_x = m_camera.pan_x;
+		m_view.camera.pan_y = m_camera.pan_y;
+		m_view.camera.ortho = m_camera.ortho;
+		m_view.amplitude = m_amplitude;
+	}
 }
 
 
@@ -464,7 +469,7 @@ mat4 WidgetHelixGL::build_camera(int w, int h)
 	mat4 view = mat4::look_at(eye, center, {0, 1, 0});
 	double aspect = (double)w / h;
 	mat4 proj = m_camera.ortho
-		? mat4::ortho(m_camera.dist * 0.5, aspect, 0.001, 1000.0)
+		? mat4::ortho(m_camera.dist * 0.5, aspect, -100.0, 100.0)
 		: mat4::perspective(0.8, aspect, 0.001, 1000.0);
 	return proj * view;
 }
@@ -811,38 +816,7 @@ void WidgetHelixGL::gl_draw_absorb_zones(const Simulation &sim, int n)
 }
 
 
-void WidgetHelixGL::gl_draw_cursor()
-{
-	if(!m_input.cursor_valid) return;
 
-	// vertical line at cursor position, in clip space
-	// we need to draw in NDC, so temporarily set identity MVP
-	float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
-	glUseProgram(m_gl.solid_shader());
-	glUniformMatrix4fv(m_gl.mvp_loc(), 1, GL_FALSE, identity);
-	glUniform4f(m_gl.color_loc(), 0.78f, 0.24f, 0.24f, 0.78f);
-
-	float x = m_input.cursor_val;  // already in [-1,1] which is NDC
-	float line[] = { x, -1, 0, x, 1, 0 };
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, line);
-	glDrawArrays(GL_LINES, 0, 2);
-	glDisableVertexAttribArray(0);
-}
-
-
-float WidgetHelixGL::screen_x_to_axis(const mat4 &vp, int w, int h, float sx)
-{
-	// binary search: find world x in [-1,1] that projects to screen x = sx
-	float lo = -1.0f, hi = 1.0f;
-	for(int iter = 0; iter < 20; iter++) {
-		float mid = (lo + hi) * 0.5f;
-		vec3 ndc = vp.transform({mid, 0, 0});
-		float screen_x = (1.0f + (float)ndc.x) * 0.5f * w;
-		if(screen_x < sx) lo = mid; else hi = mid;
-	}
-	return (lo + hi) * 0.5f;
-}
 
 
 // --- controls (identical to widget-helix.cpp) ---
@@ -850,6 +824,8 @@ float WidgetHelixGL::screen_x_to_axis(const mat4 &vp, int w, int h, float sx)
 
 void WidgetHelixGL::draw_controls(const Simulation &sim)
 {
+	ImGui::ToggleButton("L", &m_view.lock);
+	ImGui::SameLine();
 	ImGui::SetNextItemWidth(60);
 	ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 0.2f, "%.3f");
 	ImGui::SameLine();
@@ -930,20 +906,7 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 		m_view.add_slice(m_slice.axis, m_slice.pos);
 	}
 
-	if(m_input.cursor_valid) {
-		auto &ax = sim.grid.axes[m_slice.axis];
-		if(m_slice.mode == Momentum) {
-			double L = ax.max - ax.min;
-			double dk = 2.0 * M_PI / L;
-			int nn = ax.points;
-			double k = m_input.cursor_val * (nn / 2) * dk;
-			double p = k * hbar;
-			ImGui::Text("k=%.2e 1/m  p=%.2e kg·m/s", k, p);
-		} else {
-			double x = ax.min + (m_input.cursor_val * 0.5 + 0.5) * (ax.max - ax.min);
-			ImGui::Text("x=%.2e m", x);
-		}
-	}
+
 }
 
 

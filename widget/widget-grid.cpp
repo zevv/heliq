@@ -423,7 +423,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 
 	// draw cursor crosshairs
 	if(grid.rank >= 2) {
-		SDL_SetRenderDrawColor(rend, 0, 255, 0, 50);
+		SDL_SetRenderDrawColor(rend, 255, 0, 255, 50);
 		float sx, sy;
 		grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[0], m_view.cursor[1], sx, sy);
 		SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);

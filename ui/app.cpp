@@ -61,6 +61,15 @@ void App::load()
 			char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
 			n->read(key, m_view.cursor[d]);
 		}
+		n->read("cam_yaw", m_view.camera.yaw);
+		n->read("cam_pitch", m_view.camera.pitch);
+		n->read("cam_dist", m_view.camera.dist);
+		n->read("cam_pan_x", m_view.camera.pan_x);
+		n->read("cam_pan_y", m_view.camera.pan_y);
+		int ortho = m_view.camera.ortho;
+		n->read("cam_ortho", ortho);
+		m_view.camera.ortho = ortho;
+		n->read("amplitude", m_view.amplitude);
 	}
 }
 
@@ -87,6 +96,13 @@ void App::save()
 		char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
 		cw.write(key, m_view.cursor[d]);
 	}
+	cw.write("cam_yaw", m_view.camera.yaw);
+	cw.write("cam_pitch", m_view.camera.pitch);
+	cw.write("cam_dist", m_view.camera.dist);
+	cw.write("cam_pan_x", m_view.camera.pan_x);
+	cw.write("cam_pan_y", m_view.camera.pan_y);
+	cw.write("cam_ortho", m_view.camera.ortho ? 1 : 0);
+	cw.write("amplitude", m_view.amplitude);
 	cw.pop();
 	cw.close();
 }
