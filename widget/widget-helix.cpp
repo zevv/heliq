@@ -389,11 +389,11 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 		m_marginals[1].assign(n1, 0);
 		m_coherent_marginals[0].assign(n0, {0, 0});
 		m_coherent_marginals[1].assign(n1, {0, 0});
-		int s0 = sim.grid.stride[0];  // = n1
-		int s1 = sim.grid.stride[1];  // = 1
+		int zero_cursor[MAX_RANK]{};
+		auto psi_view = sim.grid.slice_view(0, 1, zero_cursor, psi_all);
 		for(int i = 0; i < n0; i++) {
 			for(int j = 0; j < n1; j++) {
-				auto psi = psi_all[i * s0 + j * s1];
+				auto psi = psi_view.at(i, j);
 				double v = std::norm(psi);
 				m_marginals[0][i] += v;
 				m_marginals[1][j] += v;
@@ -406,10 +406,10 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 		std::vector<double> hsin1(n1, 0), hcos1(n1, 0);
 		for(int i = 0; i < n0; i++) {
 			for(int j = 0; j < n1; j++) {
-				double w = std::norm(psi_all[i * s0 + j * s1]);
+				double w = std::norm(psi_view.at(i, j));
 				double cx = (double)i / (n0 - 1) - 0.5;
 				double cy = (double)j / (n1 - 1) - 0.5;
-				double hue = atan2(cy, cx);  // radians, not normalized
+				double hue = atan2(cy, cx);
 				hsin0[i] += w * sin(hue);
 				hcos0[i] += w * cos(hue);
 				hsin1[j] += w * sin(hue);
@@ -429,7 +429,7 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 					double s = hs[k] / mg[k];
 					double c = hc[k] / mg[k];
 					hm.hue[k] = fmod(atan2(s, c) / (2.0 * M_PI) + 1.0, 1.0);
-					hm.sat[k] = sqrt(s*s + c*c);  // 0=mixed, 1=pure
+					hm.sat[k] = sqrt(s*s + c*c);
 				} else {
 					hm.hue[k] = 0;
 					hm.sat[k] = 0;
@@ -443,7 +443,7 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 		m_marginal_peak[1] = n1 / 2;
 		for(int i = 0; i < n0; i++) {
 			for(int j = 0; j < n1; j++) {
-				double v = std::norm(psi_all[i * s0 + j * s1]);
+				double v = std::norm(psi_view.at(i, j));
 				if(v > best) {
 					best = v;
 					m_marginal_peak[0] = i;
@@ -456,10 +456,10 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 		int ax = m_slice.axis;
 		int na = sim.grid.axes[ax].points;
 		m_potential_marginal.assign(na, 0);
-		auto *pot = sim.potential;
+		auto pot_view = sim.grid.slice_view(0, 1, zero_cursor, sim.potential);
 		for(int i = 0; i < n0; i++) {
 			for(int j = 0; j < n1; j++) {
-				double v = fabs(pot[i * s0 + j * s1].real());
+				double v = fabs(pot_view.at(i, j).real());
 				if(ax == 0) m_potential_marginal[i] += v;
 				else        m_potential_marginal[j] += v;
 			}

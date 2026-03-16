@@ -8,7 +8,8 @@ TEST_CASE("grid 1D") {
 	g.compute_strides();
 
 	CHECK(g.total_points() == 100);
-	CHECK(g.stride[0] == 1);
+	int c0[] = {1};
+	CHECK(g.linear_index(c0) == 1);
 	CHECK(g.axes[0].dx() == doctest::Approx(0.02));
 }
 
@@ -20,11 +21,13 @@ TEST_CASE("grid 2D strides") {
 	g.compute_strides();
 
 	CHECK(g.total_points() == 64 * 128);
-	CHECK(g.stride[0] == 128);
-	CHECK(g.stride[1] == 1);
 
-	int coords[] = {3, 7};
-	CHECK(g.linear_index(coords) == 3 * 128 + 7);
+	int c1[] = {1, 0};
+	CHECK(g.linear_index(c1) == 128);  // stride[0] = 128
+	int c2[] = {0, 1};
+	CHECK(g.linear_index(c2) == 1);    // stride[1] = 1
+	int c3[] = {3, 7};
+	CHECK(g.linear_index(c3) == 3 * 128 + 7);
 }
 
 TEST_CASE("grid each iterates all points") {

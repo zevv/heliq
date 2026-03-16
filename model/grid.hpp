@@ -19,7 +19,9 @@ struct Axis {
 struct Grid {
 	int rank{};
 	Axis axes[MAX_RANK]{};
+private:
 	int stride[MAX_RANK]{};
+public:
 
 	void compute_strides() {
 		stride[rank - 1] = 1;
