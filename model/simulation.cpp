@@ -488,9 +488,9 @@ void Simulation::sample_potential(const Setup &setup)
 					break;
 				}
 				case Interaction::Contact: {
-					double dist = sqrt(dist2);
-					if(dist < inter.width)
-						v += inter.strength;
+					// Gaussian-shaped contact: smooth falloff, no hard wall
+					double w2 = inter.width * inter.width;
+					v += inter.strength * exp(-dist2 / w2);
 					break;
 				}
 			}

@@ -27,8 +27,14 @@ electron = def_particle {
     charge = -e_charge,
 }
 
--- ~1 ueV energy, well within Nyquist at 64 points
-local energy = 1e-6 * eV
+-- heavy "detector" particle — barely moves when kicked, but records the interaction
+detector = def_particle {
+    mass = m_electron * 100,
+    charge = -e_charge,
+}
+
+-- ~3 ueV energy, 44% Nyquist at 64 points
+local energy = 3e-6 * eV
 local momentum = math.sqrt(2 * m_electron * energy)
 
 -- particle A: moving right toward the double slit
@@ -38,10 +44,10 @@ particle(electron, {
     width = 0.6 * um,
 })
 
--- particle B: stationary, sitting near the upper slit
--- close enough to interact when A passes through that slit
-particle(electron, {
-    position = { 0, 1.2 * um },
+-- particle B: heavy detector, near the upper slit
+-- records which-path info in its momentum without blocking A
+particle(detector, {
+    position = { 0, 2.2 * um },
     momentum = { 0, 0 },
     width = 0.6 * um,
 })
@@ -79,11 +85,12 @@ barrier {
     height = energy * 50,
 }
 
--- which-path marker: contact interaction between A and B
--- fires when A is near B (near the upper slit)
+-- which-path marker: Gaussian contact interaction
+-- smooth falloff — A passes through with a phase shift, not a hard block
+-- B (heavy) barely moves but records which-path in its momentum
 interaction {
     type = "contact",
     particles = { 1, 2 },
-    strength = energy * 30,
-    width = 1.0 * um,
+    strength = energy * 40,
+    width = 0.5 * um,
 }
