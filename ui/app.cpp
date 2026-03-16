@@ -118,6 +118,28 @@ void App::save()
 }
 
 
+void App::init_cursor()
+{
+	if(m_experiment.simulations.empty()) return;
+	auto &sim = *m_experiment.simulations[0];
+	auto &setup = m_experiment.setup;
+
+	// set cursor to initial particle positions
+	for(int p = 0; p < sim.cs.n_particles; p++) {
+		for(int d = 0; d < sim.cs.spatial_dims; d++) {
+			int ax = sim.cs.axis(p, d);
+			if(ax >= sim.grid.rank) continue;
+			auto &axis = sim.grid.axes[ax];
+			double pos = (p < (int)setup.particles.size()) ? setup.particles[p].position[d] : 0;
+			int idx = (int)((pos - axis.min) / (axis.max - axis.min) * axis.points);
+			if(idx < 0) idx = 0;
+			if(idx >= axis.points) idx = axis.points - 1;
+			m_view.cursor[ax] = idx;
+		}
+	}
+}
+
+
 void App::init_video()
 {
     float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
@@ -246,6 +268,7 @@ void App::init(int argc, char **argv)
 	// load experiment from script
 	m_script = (argc > 1) ? argv[1] : "experiments/1p1d-barrier.lua";
 	m_experiment.load(m_script);
+	init_cursor();
 
 	m_root_panel = new Panel(Panel::Type::Root);
 	load();
@@ -297,6 +320,7 @@ void App::run()
 		// R to reload experiment
 		if(ImGui::IsKeyPressed(ImGuiKey_R)) {
 			m_experiment.load(m_script);
+			init_cursor();
 		}
 
 		// M/N to measure, Shift+M/N to decohere

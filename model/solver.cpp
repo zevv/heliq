@@ -24,13 +24,10 @@ std::unique_ptr<Solver> Solver::create(const Grid &grid)
 		return std::make_unique<GpuSolver>(grid);
 	}
 
-	// default: prefer GPU (VkFFT supports up to 3D)
-	if(GpuSolver::available() && grid.rank <= 3)
+	// default: prefer GPU (rank > 3 uses transpose decomposition)
+	if(GpuSolver::available())
 		return std::make_unique<GpuSolver>(grid);
 
-	if(grid.rank > 3)
-		fprintf(stderr, "solver: rank %d > 3, using CPU (FFTW)\n", grid.rank);
-	else
-		fprintf(stderr, "solver: using CPU (FFTW)\n");
+	fprintf(stderr, "solver: using CPU (FFTW)\n");
 	return std::make_unique<CpuSolver>(grid);
 }

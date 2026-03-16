@@ -52,7 +52,7 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		ImGui::TableNextColumn();
 		ImGui::SetNextItemWidth(-1);
 		float log_ts = log10f(fabs(exp.timescale));
-		if(ImGui::SliderFloat("##speed", &log_ts, -18.0f, -9.0f, "speed: 1e%.1f x"))
+		if(ImGui::SliderFloat("##speed", &log_ts, -14.0f, -5.0f, "speed: 1e%.1f x"))
 			exp.timescale = (rev ? -1.0 : 1.0) * pow(10.0, log_ts);
 
 		if(!exp.simulations.empty()) {
@@ -64,7 +64,7 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			ImGui::TableNextColumn();
 			ImGui::SetNextItemWidth(-1);
 			float log_dt = log10f(fabs(sim.dt));
-			if(ImGui::SliderFloat("##dt", &log_dt, -18.0f, -11.0f, "step: 1e%.1f s")) {
+			if(ImGui::SliderFloat("##dt", &log_dt, -14.0f, -8.0f, "step: 1e%.1f s")) {
 				double new_dt = (sim.dt < 0 ? -1.0 : 1.0) * pow(10.0, log_dt);
 				for(auto &s : exp.simulations)
 					s->set_dt(new_dt);

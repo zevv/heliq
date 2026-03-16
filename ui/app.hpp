@@ -28,6 +28,7 @@ private:
     void config_fname(char *buf, size_t buflen);
     void load();
     void save();
+    void init_cursor();
 
     Panel *m_root_panel{};
     SDL_Window *m_win{};

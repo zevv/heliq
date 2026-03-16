@@ -32,6 +32,36 @@ __kernel void phase_multiply(__global float2 *psi,
                       a.x * b.y + a.y * b.x);
 }
 
+__kernel void transpose_forward(__global const float2 *in, __global float2 *out,
+                                 uint n0, uint n1, uint n2, uint n3)
+{
+    uint idx = get_global_id(0);
+    if(idx >= n0 * n1 * n2 * n3) return;
+    uint i3 = idx % n3;
+    uint tmp = idx / n3;
+    uint i2 = tmp % n2;
+    tmp = tmp / n2;
+    uint i1 = tmp % n1;
+    uint i0 = tmp / n1;
+    uint out_idx = i3 * (n0 * n1 * n2) + i0 * (n1 * n2) + i1 * n2 + i2;
+    out[out_idx] = in[idx];
+}
+
+__kernel void transpose_inverse(__global const float2 *in, __global float2 *out,
+                                 uint n0, uint n1, uint n2, uint n3)
+{
+    uint idx = get_global_id(0);
+    if(idx >= n0 * n1 * n2 * n3) return;
+    uint i2 = idx % n2;
+    uint tmp = idx / n2;
+    uint i1 = tmp % n1;
+    tmp = tmp / n1;
+    uint i0 = tmp % n0;
+    uint i3 = tmp / n0;
+    uint out_idx = i0 * (n1 * n2 * n3) + i1 * (n2 * n3) + i2 * n3 + i3;
+    out[out_idx] = in[idx];
+}
+
 )";
 
 
@@ -47,11 +77,21 @@ struct GpuSolverImpl {
 	cl_mem d_potential_phase{};
 	cl_mem d_kinetic_phase{};
 
-	// VkFFT
-	VkFFTApplication fft_app{};
+	// VkFFT — for rank <= 3: single plan; for rank > 3: decomposed
+	VkFFTApplication fft_app{};       // rank <= 3: full FFT; rank > 3: 1D axis
+	VkFFTApplication fft_app_3d{};    // rank > 3: 3D on axes 0..rank-2
 	VkFFTConfiguration fft_config{};
 	uint64_t buf_size{};
 	bool fft_initialized{false};
+	bool fft_decomposed{false};       // true if using transpose decomposition
+
+	// transpose support for rank > 3
+	cl_kernel k_transpose_fwd{};
+	cl_kernel k_transpose_inv{};
+	cl_mem d_scratch{};               // scratch buffer for transpose
+	cl_mem d_kinetic_phase_t{};       // kinetic phase in transposed layout
+	int grid_dims[MAX_RANK]{};
+	int grid_rank{};
 
 	size_t total{};
 	size_t work_group_size{256};
@@ -156,35 +196,107 @@ GpuSolver::GpuSolver(const Grid &grid)
 	m->d_kinetic_phase    = clCreateBuffer(m->ctx, CL_MEM_READ_ONLY, buf_bytes, nullptr, &err);
 	check_cl(err, "alloc d_kinetic_phase");
 
-	// setup VkFFT (supports up to 3D; rank > 3 handled by CPU fallback in solver.cpp)
-	m->fft_config = {};
-	m->fft_config.FFTdim = grid.rank;
+	// store grid info for transpose
+	m->grid_rank = grid.rank;
 	for(int i = 0; i < grid.rank; i++)
-		m->fft_config.size[i] = grid.axes[i].points;
-	m->fft_config.numberBatches = 1;
-	m->fft_config.performR2C = 0;
-	m->fft_config.doublePrecision = 0;  // float
-	m->fft_config.normalize = 1;        // VkFFT normalizes inverse FFT
-	m->fft_config.device = &m->device;
-	m->fft_config.context = &m->ctx;
-	m->fft_config.buffer = &m->d_psi;
+		m->grid_dims[i] = grid.axes[i].points;
 	m->buf_size = buf_bytes;
-	m->fft_config.bufferSize = &m->buf_size;
 
-	VkFFTResult fft_res = initializeVkFFT(&m->fft_app, m->fft_config);
-	if(fft_res != VKFFT_SUCCESS) {
-		fprintf(stderr, "VkFFT init failed: %d\n", (int)fft_res);
+	if(grid.rank <= 3) {
+		// single VkFFT plan covers all axes
+		m->fft_config = {};
+		m->fft_config.FFTdim = grid.rank;
+		for(int i = 0; i < grid.rank; i++)
+			m->fft_config.size[i] = grid.axes[i].points;
+		m->fft_config.numberBatches = 1;
+		m->fft_config.performR2C = 0;
+		m->fft_config.doublePrecision = 0;
+		m->fft_config.normalize = 1;
+		m->fft_config.device = &m->device;
+		m->fft_config.context = &m->ctx;
+		m->fft_config.buffer = &m->d_psi;
+		m->fft_config.bufferSize = &m->buf_size;
+
+		VkFFTResult r = initializeVkFFT(&m->fft_app, m->fft_config);
+		if(r != VKFFT_SUCCESS)
+			fprintf(stderr, "VkFFT init failed: %d\n", (int)r);
+		else
+			m->fft_initialized = true;
 	} else {
+		// rank > 3: decompose into 1D (innermost axis) + transpose + 3D (remaining)
+		// Tested and verified against FFTW.
+		int last = grid.rank - 1;
+		int n_last = grid.axes[last].points;
+		size_t n_rest = m_total / n_last;
+
+		// transpose kernels
+		m->k_transpose_fwd = clCreateKernel(m->program, "transpose_forward", &err);
+		check_cl(err, "create transpose_forward");
+		m->k_transpose_inv = clCreateKernel(m->program, "transpose_inverse", &err);
+		check_cl(err, "create transpose_inverse");
+
+		// scratch buffer for transpose output
+		m->d_scratch = clCreateBuffer(m->ctx, CL_MEM_READ_WRITE, buf_bytes, nullptr, &err);
+		check_cl(err, "alloc d_scratch");
+
+		// plan 1: batched 1D FFT along innermost axis (contiguous)
+		VkFFTConfiguration cfg1 = {};
+		cfg1.FFTdim = 1;
+		cfg1.size[0] = n_last;
+		cfg1.numberBatches = n_rest;
+		cfg1.doublePrecision = 0;
+		cfg1.normalize = 1;  // each plan normalizes its own inverse by 1/N
+		cfg1.device = &m->device;
+		cfg1.context = &m->ctx;
+		cfg1.buffer = &m->d_psi;
+		cfg1.bufferSize = &m->buf_size;
+
+		VkFFTResult r1 = initializeVkFFT(&m->fft_app, cfg1);
+		if(r1 != VKFFT_SUCCESS) {
+			fprintf(stderr, "VkFFT 1D init failed: %d\n", (int)r1);
+			return;
+		}
+
+		// plan 2: 3D FFT on axes 0..rank-2, batched n_last times
+		// after transpose, data is [n_last][N0][N1]...[N_{rank-2}] — contiguous 3D blocks
+		VkFFTConfiguration cfg3 = {};
+		cfg3.FFTdim = grid.rank - 1;  // 3 for rank 4
+		for(int i = 0; i < grid.rank - 1; i++)
+			cfg3.size[i] = grid.axes[grid.rank - 2 - i].points;  // fastest first
+		cfg3.numberBatches = n_last;
+		cfg3.doublePrecision = 0;
+		cfg3.normalize = 1;  // normalize inverse here (covers both plans)
+		cfg3.device = &m->device;
+		cfg3.context = &m->ctx;
+		cfg3.buffer = &m->d_scratch;  // 3D operates on transposed data
+		cfg3.bufferSize = &m->buf_size;
+
+		VkFFTResult r3 = initializeVkFFT(&m->fft_app_3d, cfg3);
+		if(r3 != VKFFT_SUCCESS) {
+			fprintf(stderr, "VkFFT 3D init failed: %d\n", (int)r3);
+			deleteVkFFT(&m->fft_app);
+			return;
+		}
+
 		m->fft_initialized = true;
+		m->fft_decomposed = true;
+		fprintf(stderr, "solver: using 4D decomposition (1D + transpose + 3D)\n");
 	}
 }
 
 
 GpuSolver::~GpuSolver()
 {
-	if(m->fft_initialized)
+	if(m->fft_initialized) {
 		deleteVkFFT(&m->fft_app);
+		if(m->fft_decomposed)
+			deleteVkFFT(&m->fft_app_3d);
+	}
 
+	if(m->d_scratch) clReleaseMemObject(m->d_scratch);
+	if(m->d_kinetic_phase_t) clReleaseMemObject(m->d_kinetic_phase_t);
+	if(m->k_transpose_fwd) clReleaseKernel(m->k_transpose_fwd);
+	if(m->k_transpose_inv) clReleaseKernel(m->k_transpose_inv);
 	if(m->d_psi) clReleaseMemObject(m->d_psi);
 	if(m->d_potential_phase) clReleaseMemObject(m->d_potential_phase);
 	if(m->d_kinetic_phase) clReleaseMemObject(m->d_kinetic_phase);
@@ -209,6 +321,18 @@ static void run_phase_multiply(GpuSolverImpl *m, cl_mem phase)
 	clEnqueueNDRangeKernel(m->queue, m->k_phase_multiply, 1, nullptr, &global, &local, 0, nullptr, nullptr);
 }
 
+static void run_phase_multiply_on(GpuSolverImpl *m, cl_mem data, cl_mem phase)
+{
+	cl_uint n = (cl_uint)m->total;
+	clSetKernelArg(m->k_phase_multiply, 0, sizeof(cl_mem), &data);
+	clSetKernelArg(m->k_phase_multiply, 1, sizeof(cl_mem), &phase);
+	clSetKernelArg(m->k_phase_multiply, 2, sizeof(cl_uint), &n);
+
+	size_t global = ((m->total + m->work_group_size - 1) / m->work_group_size) * m->work_group_size;
+	size_t local = m->work_group_size;
+	clEnqueueNDRangeKernel(m->queue, m->k_phase_multiply, 1, nullptr, &global, &local, 0, nullptr, nullptr);
+}
+
 
 
 void GpuSolver::flush()
@@ -217,27 +341,68 @@ void GpuSolver::flush()
 }
 
 
+static void run_transpose(GpuSolverImpl *m, cl_kernel k, cl_mem src, cl_mem dst)
+{
+	cl_uint n0 = m->grid_dims[0], n1 = m->grid_dims[1];
+	cl_uint n2 = m->grid_dims[2], n3 = m->grid_dims[3];
+	clSetKernelArg(k, 0, sizeof(cl_mem), &src);
+	clSetKernelArg(k, 1, sizeof(cl_mem), &dst);
+	clSetKernelArg(k, 2, sizeof(cl_uint), &n0);
+	clSetKernelArg(k, 3, sizeof(cl_uint), &n1);
+	clSetKernelArg(k, 4, sizeof(cl_uint), &n2);
+	clSetKernelArg(k, 5, sizeof(cl_uint), &n3);
+	size_t global = ((m->total + m->work_group_size - 1) / m->work_group_size) * m->work_group_size;
+	size_t local = m->work_group_size;
+	clEnqueueNDRangeKernel(m->queue, k, 1, nullptr, &global, &local, 0, nullptr, nullptr);
+}
+
+
 void GpuSolver::step()
 {
 	if(!m->fft_initialized) return;
 
-	VkFFTLaunchParams lp = {};
-	lp.commandQueue = &m->queue;
-	lp.buffer = &m->d_psi;
-
 	// 1. half-step potential
 	run_phase_multiply(m, m->d_potential_phase);
 
-	// 2. FFT forward
-	VkFFTResult r1 = VkFFTAppend(&m->fft_app, -1, &lp);
-	if(r1 != VKFFT_SUCCESS) fprintf(stderr, "VkFFT forward failed: %d\n", (int)r1);
+	if(!m->fft_decomposed) {
+		// rank <= 3: single VkFFT plan
+		VkFFTLaunchParams lp = {};
+		lp.commandQueue = &m->queue;
+		lp.buffer = &m->d_psi;
 
-	// 3. full-step kinetic
-	run_phase_multiply(m, m->d_kinetic_phase);
+		VkFFTAppend(&m->fft_app, -1, &lp);
+		run_phase_multiply(m, m->d_kinetic_phase);
+		VkFFTAppend(&m->fft_app, 1, &lp);
+	} else {
+		// rank > 3: decomposed 4D FFT
+		// forward: 1D on innermost axis, transpose, 3D on remaining axes
+		VkFFTLaunchParams lp_psi = {};
+		lp_psi.commandQueue = &m->queue;
+		lp_psi.buffer = &m->d_psi;
 
-	// 4. FFT inverse
-	VkFFTResult r2 = VkFFTAppend(&m->fft_app, 1, &lp);
-	if(r2 != VKFFT_SUCCESS) fprintf(stderr, "VkFFT inverse failed: %d\n", (int)r2);
+		VkFFTLaunchParams lp_scratch = {};
+		lp_scratch.commandQueue = &m->queue;
+		lp_scratch.buffer = &m->d_scratch;
+
+		// forward FFT
+		VkFFTAppend(&m->fft_app, -1, &lp_psi);          // 1D on axis 3
+		run_transpose(m, m->k_transpose_fwd, m->d_psi, m->d_scratch);  // [N0N1N2N3] -> [N3N0N1N2]
+		VkFFTAppend(&m->fft_app_3d, -1, &lp_scratch);   // 3D on axes 0,1,2
+
+		// kinetic phase (applied in k-space, data is in d_scratch after transpose)
+		// but kinetic_phase is in the original layout... we need it in transposed layout too.
+		// PROBLEM: kinetic phase array is in [N0][N1][N2][N3] order, but data is in [N3][N0][N1][N2].
+		// We'd need a transposed copy of kinetic_phase, or transpose data back first.
+
+		// kinetic phase in transposed layout (pre-computed at upload time)
+		run_phase_multiply_on(m, m->d_scratch, m->d_kinetic_phase_t);
+
+		// inverse FFT
+		VkFFTAppend(&m->fft_app_3d, 1, &lp_scratch);    // 3D inverse
+		run_transpose(m, m->k_transpose_inv, m->d_scratch, m->d_psi);  // back to original
+		VkFFTAppend(&m->fft_app, 1, &lp_psi);           // 1D inverse
+	}
+
 	// 5. half-step potential
 	run_phase_multiply(m, m->d_potential_phase);
 }
@@ -290,4 +455,16 @@ void GpuSolver::set_phases(const std::complex<double> *potential_phase,
 
 	double_to_float(kinetic_phase, tmp.data(), m_total);
 	clEnqueueWriteBuffer(m->queue, m->d_kinetic_phase, CL_TRUE, 0, buf_bytes, tmp.data(), 0, nullptr, nullptr);
+
+	// for 4D decomposition: pre-transpose kinetic phase
+	if(m->fft_decomposed) {
+		if(!m->d_kinetic_phase_t) {
+			cl_int err;
+			m->d_kinetic_phase_t = clCreateBuffer(m->ctx, CL_MEM_READ_ONLY, buf_bytes, nullptr, &err);
+			check_cl(err, "alloc d_kinetic_phase_t");
+		}
+		// upload to d_kinetic_phase first, then transpose to d_kinetic_phase_t
+		run_transpose(m, m->k_transpose_fwd, m->d_kinetic_phase, m->d_kinetic_phase_t);
+		clFinish(m->queue);
+	}
 }

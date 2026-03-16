@@ -102,6 +102,7 @@ public:
 		cfg.write("pan_y", m_pan_y);
 		cfg.write("axis_x", m_axis_x);
 		cfg.write("axis_y", m_axis_y);
+		cfg.write("marginal", m_marginal ? 1 : 0);
 	}
 
 	void do_load(ConfigReader::Node *node) override {
@@ -123,6 +124,7 @@ public:
 		node->read("pan_y", m_pan_y);
 		node->read("axis_x", m_axis_x);
 		node->read("axis_y", m_axis_y);
+		int marg = 0; node->read("marginal", marg); m_marginal = marg;
 	}
 
 	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override;
@@ -132,6 +134,7 @@ private:
 	static constexpr int N_OVERLAYS = 3;
 	Overlay m_overlays[N_OVERLAYS]{};
 	int m_axis_x{0}, m_axis_y{1};  // which axes to display
+	bool m_marginal{false};         // true = sum over hidden axes
 	float m_zoom{1.0f};
 	float m_pan_x{0}, m_pan_y{0};
 	bool m_dragging{false};
@@ -228,6 +231,81 @@ static double sample_value(DataSource src, std::complex<double> psi, std::comple
 		default: return 0;
 	}
 }
+
+static void fill_texture_marginal(Overlay &ov, Simulation &sim, int tw, int th,
+                                   int axis_x, int axis_y)
+{
+	void *pixels;
+	int pitch;
+	if(!SDL_LockTexture(ov.tex, nullptr, &pixels, &pitch)) return;
+
+	auto *psi = sim.psi_front();
+	auto *pot = sim.potential;
+	size_t total = sim.grid.total_points();
+
+	// accumulate 2D marginal
+	std::vector<double> marg_val(tw * th, 0);
+	std::vector<double> marg_amp(tw * th, 0);
+
+	int coords[MAX_RANK]{};
+	for(size_t idx = 0; idx < total; idx++) {
+		int ix = coords[axis_x];
+		int iy = coords[axis_y];
+		int mi = ix * th + iy;
+		double v = sample_value(ov.source, psi[idx], pot[idx]);
+		marg_val[mi] += v;
+		marg_amp[mi] += std::abs(psi[idx]);
+
+		for(int d = sim.grid.rank - 1; d >= 0; d--) {
+			if(++coords[d] < sim.grid.axes[d].points) break;
+			coords[d] = 0;
+		}
+	}
+
+	// normalize
+	double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
+	for(int i = 0; i < tw * th; i++) {
+		if(marg_val[i] < vmin) vmin = marg_val[i];
+		if(marg_val[i] > vmax) vmax = marg_val[i];
+		if(marg_amp[i] > amp_max) amp_max = marg_amp[i];
+	}
+	double range = vmax - vmin;
+	if(range < 1e-30) range = 1.0;
+
+	for(int y = 0; y < th; y++) {
+		uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
+		for(int x = 0; x < tw; x++) {
+			int mi = x * th + (th - 1 - y);
+			double v = marg_val[mi];
+			double norm = (v - vmin) / range;
+			double amp = marg_amp[mi] / amp_max;
+			int alpha = (int)(255 * pow(fmin(1.0, amp), 1.0 / ov.gamma));
+
+			switch(ov.palette) {
+				case Palette::Flame: row[x] = palette_flame(norm, 1.0 / ov.gamma); break;
+				case Palette::Gray:  row[x] = palette_gray(norm, 1.0 / ov.gamma); break;
+				case Palette::Rainbow: {
+					uint8_t cr, cg, cb;
+					hsv_to_rgb(fmod(norm, 1.0), 1.0, 1.0, cr, cg, cb);
+					row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
+				} break;
+				case Palette::Zebra: {
+					uint8_t c = (uint8_t)(115 + 115 * sin(norm * 2 * M_PI));
+					row[x] = (alpha << 24) | (c << 16) | (c << 8) | c;
+				} break;
+				case Palette::Spatial: {
+					double hue = spatial_hue(x, th - 1 - y, tw, th);
+					uint8_t cr, cg, cb;
+					hsv_to_rgb(hue, 0.8, 1.0, cr, cg, cb);
+					row[x] = (alpha << 24) | (cb << 16) | (cg << 8) | cr;
+				} break;
+				default: row[x] = 0; break;
+			}
+		}
+	}
+	SDL_UnlockTexture(ov.tex);
+}
+
 
 static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th,
                           const int *cursor, int axis_x, int axis_y)
@@ -327,15 +405,19 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
 	SDL_RenderFillRect(rend, nullptr);
 
-	// controls at the top
-	draw_controls(m_overlays, N_OVERLAYS);
-
+	// first row: axis selection and slice/marginal mode
 	if(!exp.simulations.empty() && exp.simulations[0]->grid.rank > 2) {
 		auto &g = exp.simulations[0]->grid;
 		ImGui::AxisCombo("##ax_x", &m_axis_x, g);
 		ImGui::SameLine();
 		ImGui::AxisCombo("##ax_y", &m_axis_y, g);
+		ImGui::SameLine();
+		if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
+			m_marginal = !m_marginal;
 	}
+
+	// overlay controls
+	draw_controls(m_overlays, N_OVERLAYS);
 
 	float ctrl_h = ImGui::GetCursorPosY();
 
@@ -400,7 +482,10 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		auto &ov = m_overlays[oi];
 		if(ov.source == DataSource::Off) continue;
 		ensure_texture(rend, ov, tw, th);
-		fill_texture(ov, sim, tw, th, m_view.cursor, m_axis_x, m_axis_y);
+		if(m_marginal && grid.rank > 2)
+			fill_texture_marginal(ov, sim, tw, th, m_axis_x, m_axis_y);
+		else
+			fill_texture(ov, sim, tw, th, m_view.cursor, m_axis_x, m_axis_y);
 
 		SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
 		SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
