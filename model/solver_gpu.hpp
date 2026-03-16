@@ -17,6 +17,11 @@ public:
 	void set_phases(const psi_t *potential_phase,
 	                const psi_t *kinetic_phase) override;
 
+	double total_probability(const Grid &grid) override;
+	void read_slice_2d(const Grid &grid, int ax_x, int ax_y,
+	                   const int *cursor, psi_t *out) override;
+	void read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out) override;
+
 	// returns true if an OpenCL GPU device is available
 	static bool available();
 

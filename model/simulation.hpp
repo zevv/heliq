@@ -65,6 +65,10 @@ public:
 	double k_nyquist_ratio[MAX_RANK]{};  // per-axis: initial k / k_nyquist (>0.5 = trouble)
 	double total_probability();    // should be ~1.0
 
+	// GPU-side data extraction (avoids full readback)
+	void read_slice_2d(int ax_x, int ax_y, const int *cursor, psi_t *out);
+	void read_marginal_2d(int ax_x, int ax_y, float *out);
+
 private:
 	void sample_potential(const Setup &setup);
 	void sample_wavefunction(const Setup &setup);

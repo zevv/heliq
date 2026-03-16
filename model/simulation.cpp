@@ -169,15 +169,17 @@ void Simulation::upload_phases()
 
 double Simulation::total_probability()
 {
-	double prob = 0;
-	double dv = 1.0;
-	for(int d = 0; d < grid.rank; d++)
-		dv *= grid.axes[d].dx();
-	auto *p = psi_front();
-	size_t n = grid.total_points();
-	for(size_t i = 0; i < n; i++)
-		prob += std::norm(p[i]) * dv;
-	return prob;
+	return m_solver->total_probability(grid);
+}
+
+void Simulation::read_slice_2d(int ax_x, int ax_y, const int *cursor, psi_t *out)
+{
+	m_solver->read_slice_2d(grid, ax_x, ax_y, cursor, out);
+}
+
+void Simulation::read_marginal_2d(int ax_x, int ax_y, float *out)
+{
+	m_solver->read_marginal_2d(grid, ax_x, ax_y, out);
 }
 
 

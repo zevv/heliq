@@ -40,6 +40,9 @@ public:
 		return n;
 	}
 
+	// stride for a single axis (read-only, for solver extraction kernels)
+	int linear_stride(int axis) const { return stride[axis]; }
+
 	size_t linear_index(const int *coords) const {
 		size_t idx = 0;
 		for(int i = 0; i < rank; i++) {

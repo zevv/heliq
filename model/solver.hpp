@@ -33,6 +33,18 @@ public:
 	virtual void set_phases(const psi_t *potential_phase,
 	                        const psi_t *kinetic_phase) = 0;
 
+	// --- GPU-side extraction (avoids full readback) ---
+
+	// total probability (sum |psi|^2 * dx^N), default: read_psi + CPU sum
+	virtual double total_probability(const Grid &grid);
+
+	// extract 2D slice at cursor into out[nx*ny], default: read_psi + CPU extract
+	virtual void read_slice_2d(const Grid &grid, int ax_x, int ax_y,
+	                           const int *cursor, psi_t *out);
+
+	// compute 2D marginal (sum over hidden axes) into out[nx*ny], default: read_psi + CPU sum
+	virtual void read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out);
+
 	// grid point count
 	size_t total_points() const { return m_total; }
 
