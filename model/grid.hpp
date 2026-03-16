@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <complex>
 
 constexpr int MAX_RANK = 8;
 
@@ -66,5 +67,67 @@ struct Grid {
 				coords[d] = 0;
 			}
 		}
+	}
+
+	// --- safe N-dimensional data access ---
+
+	// 1D strided view along one axis, all other axes fixed at cursor
+	template<typename T>
+	struct AxisView {
+		T *base;
+		int n;
+		size_t stride;
+
+		T& operator[](int i) const { return base[i * stride]; }
+
+		struct Iter {
+			T *p; size_t s;
+			T& operator*() const { return *p; }
+			Iter& operator++() { p += s; return *this; }
+			bool operator!=(const Iter &o) const { return p != o.p; }
+		};
+		Iter begin() const { return {base, stride}; }
+		Iter end()   const { return {base + (size_t)n * stride, stride}; }
+	};
+
+	// Get a 1D view along `axis`, other axes fixed at cursor[]
+	template<typename T>
+	AxisView<T> axis_view(int axis, const int *cursor, T *data) const {
+		size_t base = 0;
+		for(int d = 0; d < rank; d++)
+			if(d != axis) base += (size_t)cursor[d] * stride[d];
+		return { data + base, axes[axis].points, (size_t)stride[axis] };
+	}
+
+	// 2D view over two axes, all other axes fixed at cursor
+	template<typename T>
+	struct SliceView2D {
+		T *base;
+		int nx, ny;
+		size_t sx, sy;
+
+		T& at(int x, int y) const { return base[x * sx + y * sy]; }
+
+		// iterate all points in the slice: callback(ix, iy, value&)
+		template<typename F>
+		void each(F &&fn) const {
+			for(int x = 0; x < nx; x++)
+				for(int y = 0; y < ny; y++)
+					fn(x, y, base[x * sx + y * sy]);
+		}
+	};
+
+	// Get a 2D view over (axis_x, axis_y), other axes fixed at cursor[]
+	template<typename T>
+	SliceView2D<T> slice_view(int axis_x, int axis_y, const int *cursor, T *data) const {
+		size_t base = 0;
+		for(int d = 0; d < rank; d++)
+			if(d != axis_x && d != axis_y)
+				base += (size_t)cursor[d] * stride[d];
+		return {
+			data + base,
+			axes[axis_x].points, axes[axis_y].points,
+			(size_t)stride[axis_x], (size_t)stride[axis_y]
+		};
 	}
 };

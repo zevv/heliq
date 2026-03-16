@@ -348,6 +348,39 @@ void WidgetHelixGL::clamp_slice_positions(const Simulation &sim)
 
 void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<double> *psi_all)
 {
+	// generic path for any rank: compute marginal for each axis
+	if(sim.grid.rank > 2) {
+		size_t total = sim.grid.total_points();
+		for(int d = 0; d < sim.grid.rank; d++) {
+			int nd = sim.grid.axes[d].points;
+			m_marginals[d].assign(nd, 0);
+			m_marginal_peak[d] = nd / 2;
+		}
+		int coords[MAX_RANK]{};
+		for(size_t idx = 0; idx < total; idx++) {
+			double v = std::norm(psi_all[idx]);
+			for(int d = 0; d < sim.grid.rank; d++)
+				m_marginals[d][coords[d]] += v;
+			// increment coords (last axis fastest)
+			for(int d = sim.grid.rank - 1; d >= 0; d--) {
+				if(++coords[d] < sim.grid.axes[d].points) break;
+				coords[d] = 0;
+			}
+		}
+		// find peaks
+		for(int d = 0; d < sim.grid.rank; d++) {
+			double best = -1;
+			for(int i = 0; i < (int)m_marginals[d].size(); i++) {
+				if(m_marginals[d][i] > best) {
+					best = m_marginals[d][i];
+					m_marginal_peak[d] = i;
+				}
+			}
+		}
+		// skip spatial hue and potential marginal for rank > 2 for now
+		return;
+	}
+
 	// fast path for rank 2
 	if(sim.grid.rank == 2) {
 		int n0 = sim.grid.axes[0].points;
@@ -437,12 +470,9 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const std::complex<
 
 void WidgetHelixGL::extract_slice(const Simulation &sim, const std::complex<double> *psi_all, int n)
 {
-	for(int i = 0; i < n; i++) {
-		int coords[MAX_RANK]{};
-		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice.pos[d];
-		coords[m_slice.axis] = i;
-		m_slice_data[i] = psi_all[sim.grid.linear_index(coords)];
-	}
+	auto view = sim.grid.axis_view(m_slice.axis, m_slice.pos, psi_all);
+	for(int i = 0; i < n; i++)
+		m_slice_data[i] = view[i];
 }
 
 void WidgetHelixGL::extract_marginal(const Simulation &sim, const std::complex<double> *psi_all, int n)
@@ -848,14 +878,13 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 	auto *pot = sim.potential;
 	float a = m_amplitude;
 
+	auto pot_view = sim.grid.axis_view(m_slice.axis, m_slice.pos, pot);
+
 	// find max potential for alpha scaling
 	double v_max = 1e-30;
 	bool any = false;
 	for(int i = 0; i < n; i++) {
-		int coords[MAX_RANK]{};
-		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice.pos[d];
-		coords[m_slice.axis] = i;
-		double v = fabs(pot[sim.grid.linear_index(coords)].real());
+		double v = fabs(pot_view[i].real());
 		if(v > v_max) v_max = v;
 		if(v > 0) any = true;
 	}
@@ -867,10 +896,7 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 	glEnableVertexAttribArray(1);
 
 	for(int i = 0; i < n; i++) {
-		int coords[MAX_RANK]{};
-		for(int d = 0; d < sim.grid.rank; d++) coords[d] = m_slice.pos[d];
-		coords[m_slice.axis] = i;
-		double v = fabs(pot[sim.grid.linear_index(coords)].real());
+		double v = fabs(pot_view[i].real());
 		if(v < 1e-30) continue;
 
 		float alpha = (float)(v / v_max) * m_potential.alpha;

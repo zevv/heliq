@@ -238,27 +238,20 @@ static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th,
 
 	auto *psi = sim.psi_front();
 	auto *pot = sim.potential;
-	size_t total = sim.grid.total_points();
 
-	// base offset for all non-display axes: fix at cursor position
-	size_t base_offset = 0;
-	for(int d = 0; d < sim.grid.rank; d++) {
-		if(d == axis_x || d == axis_y) continue;
-		base_offset += (size_t)cursor[d] * sim.grid.stride[d];
-	}
-	size_t sx = sim.grid.stride[axis_x];
-	size_t sy = sim.grid.stride[axis_y];
+	auto psi_slice = sim.grid.slice_view(axis_x, axis_y, cursor, psi);
+	auto pot_slice = sim.grid.slice_view(axis_x, axis_y, cursor, pot);
 
 	// find data range for normalization (scan displayed slice only)
 	double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
 	for(int y = 0; y < th; y++) {
 		for(int x = 0; x < tw; x++) {
-			size_t idx = base_offset + (size_t)x * sx + (size_t)(th - 1 - y) * sy;
-			if(idx >= total) idx = 0;
-			double v = sample_value(ov.source, psi[idx], pot[idx]);
+			auto &psi_val = psi_slice.at(x, th - 1 - y);
+			auto &pot_val = pot_slice.at(x, th - 1 - y);
+			double v = sample_value(ov.source, psi_val, pot_val);
 			if(v < vmin) vmin = v;
 			if(v > vmax) vmax = v;
-			double a = std::abs(psi[idx]);
+			double a = std::abs(psi_val);
 			if(a > amp_max) amp_max = a;
 		}
 	}
@@ -268,12 +261,12 @@ static void fill_texture(Overlay &ov, Simulation &sim, int tw, int th,
 	for(int y = 0; y < th; y++) {
 		uint32_t *row = (uint32_t *)((uint8_t *)pixels + y * pitch);
 		for(int x = 0; x < tw; x++) {
-			size_t idx = base_offset + (size_t)x * sx + (size_t)(th - 1 - y) * sy;
-			if(idx >= total) idx = 0;
-			double v = sample_value(ov.source, psi[idx], pot[idx]);
+			auto &psi_val = psi_slice.at(x, th - 1 - y);
+			auto &pot_val = pot_slice.at(x, th - 1 - y);
+			double v = sample_value(ov.source, psi_val, pot_val);
 			double norm = (v - vmin) / range;
 
-			double amp = std::abs(psi[idx]) / amp_max;
+			double amp = std::abs(psi_val) / amp_max;
 			int alpha = (int)(255 * pow(fmin(1.0, amp), 1.0 / ov.gamma));
 
 			switch(ov.palette) {
@@ -482,15 +475,9 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D)) {
 		auto *psi = sim.psi_front();
 		auto *pot = sim.potential;
-		size_t total = sim.grid.total_points();
 
-		size_t base = 0;
-		for(int d = 0; d < grid.rank; d++) {
-			if(d == m_axis_x || d == m_axis_y) continue;
-			base += (size_t)m_view.cursor[d] * grid.stride[d];
-		}
-		size_t sx_s = grid.stride[m_axis_x];
-		size_t sy_s = grid.stride[m_axis_y];
+		auto psi_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, psi);
+		auto pot_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, pot);
 
 		int sx = (tw + 255) / 256;
 		int sy_d = (th + 127) / 128;
@@ -500,11 +487,8 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		double max_val = 1e-30;
 		for(int iy = 0; iy < th; iy++)
 			for(int ix = 0; ix < tw; ix++) {
-				size_t idx = base + ix * sx_s + iy * sy_s;
-				if(idx < total) {
-					double v = std::norm(psi[idx]);
-					if(v > max_val) max_val = v;
-				}
+				double v = std::norm(psi_slice.at(ix, iy));
+				if(v > max_val) max_val = v;
 			}
 
 		FILE *f = fopen("dump.txt", "w");
@@ -523,12 +507,10 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			for(int ix = 0; ix < ox; ix++) {
 				int gx = ix * sx + sx/2;
 				int gy = iy * sy_d + sy_d/2;
-				size_t idx = base + gx * sx_s + gy * sy_s;
-				if(idx >= total) { fputc('?', f); continue; }
-				if(pot[idx].real() > 0)
+				if(pot_slice.at(gx, gy).real() > 0)
 					fputc('|', f);
 				else {
-					double v = pow(std::norm(psi[idx]) / max_val, 0.15);
+					double v = pow(std::norm(psi_slice.at(gx, gy)) / max_val, 0.15);
 					int si = (int)(v * (nshades - 1));
 					if(si >= nshades) si = nshades - 1;
 					if(si < 0) si = 0;
