@@ -38,20 +38,8 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 		}
 	}
 
-	// generate axis labels
-	static const char *dim_names[] = {"x", "y", "z"};
-	for(int p = 0; p < np; p++) {
-		for(int d = 0; d < cs.spatial_dims && d < 3; d++) {
-			int ax = cs.axis(p, d);
-			if(ax >= grid.rank) break;
-			if(np == 1)
-				snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "%s", dim_names[d]);
-			else if(cs.spatial_dims == 1)
-				snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "P%d", p+1);
-			else
-				snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "P%d.%s", p+1, dim_names[d]);
-		}
-	}
+	// generate axis labels from config space mapping
+	cs.label_axes(grid);
 
 	size_t n = grid.total_points();
 

@@ -47,4 +47,21 @@ struct ConfigSpace {
 
 	// total config space rank
 	int rank() const { return n_particles * spatial_dims; }
+
+	// populate grid axis labels from the particle/dimension mapping
+	void label_axes(Grid &grid) const {
+		static const char *dim_names[] = {"x", "y", "z"};
+		for(int p = 0; p < n_particles; p++) {
+			for(int d = 0; d < spatial_dims && d < 3; d++) {
+				int ax = axis(p, d);
+				if(ax >= grid.rank) break;
+				if(n_particles == 1)
+					snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "%s", dim_names[d]);
+				else if(spatial_dims == 1)
+					snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "P%d", p+1);
+				else
+					snprintf(grid.axes[ax].label, sizeof(grid.axes[ax].label), "P%d.%s", p+1, dim_names[d]);
+			}
+		}
+	}
 };

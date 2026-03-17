@@ -82,8 +82,13 @@ public:
 
 	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override;
 
-
 private:
+	void update_overlays(Simulation &sim, SDL_Renderer *rend, int tw, int th);
+	void draw_absorb_boundary(SDL_Renderer *rend, const Simulation &sim, int tw);
+	void draw_cursor(SDL_Renderer *rend, const Grid &grid);
+	void dump_slice(Simulation &sim, int tw, int th);
+	SDL_FRect compute_display_rect(int tw, int th, float avail_x, float avail_y, float avail_w, float avail_h);
+
 	static constexpr int N_OVERLAYS = 3;
 	Overlay m_overlays[N_OVERLAYS]{};
 	int m_axis_x{0}, m_axis_y{1};  // which axes to display
@@ -277,96 +282,18 @@ static void draw_controls(Overlay overlays[], int n_overlays)
 }
 
 
-void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
+void WidgetGrid::update_overlays(Simulation &sim, SDL_Renderer *rend, int tw, int th)
 {
-	SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
-	SDL_RenderFillRect(rend, nullptr);
-
-	// first row: axis selection and slice/marginal mode
-	if(!exp.simulations.empty() && exp.simulations[0]->grid.rank > 2) {
-		auto &g = exp.simulations[0]->grid;
-		ImGui::AxisCombo("##ax_x", &m_axis_x, g);
-		ImGui::SameLine();
-		ImGui::AxisCombo("##ax_y", &m_axis_y, g);
-		ImGui::SameLine();
-		if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
-			m_marginal = !m_marginal;
-	}
-
-	// overlay controls
-	draw_controls(m_overlays, N_OVERLAYS);
-
-	float ctrl_h = ImGui::GetCursorPosY();
-
-	if(exp.simulations.empty()) {
-		ImGui::Text("No simulation");
-		return;
-	}
-
-	auto &sim = *exp.simulations[0];
-	auto &grid = sim.grid;
-
-	// clamp axis selection
-	if(m_axis_x >= grid.rank) m_axis_x = 0;
-	if(m_axis_y >= grid.rank) m_axis_y = grid.rank > 1 ? 1 : 0;
-	if(m_axis_x == m_axis_y && grid.rank > 1) m_axis_y = (m_axis_x + 1) % grid.rank;
-
-	// determine texture dimensions from selected axes
-	int tw = grid.axes[m_axis_x].points;
-	int th = (grid.rank >= 2) ? grid.axes[m_axis_y].points : 1;
-
-	// available area below controls
-	float avail_x = (float)r.x;
-	float avail_y = (float)r.y + ctrl_h;
-	float avail_w = (float)r.w;
-	float avail_h = (float)r.h - ctrl_h;
-
-	// handle pan/zoom
-	handle_mouse(r, ctrl_h, m_zoom, m_pan_x, m_pan_y, m_dragging, m_drag_x, m_drag_y);
-
-	// compute destination rect with zoom and pan
-	// 1D: stretch to fill height. 2D+: maintain 1:1 aspect
-	float disp_w, disp_h;
-	if(th == 1) {
-		// 1D: fill available area, zoom only affects x
-		disp_w = avail_w * m_zoom;
-		disp_h = avail_h;
-	} else {
-		float tex_aspect = (float)tw / (float)th;
-		float base_scale;
-		if(avail_w / avail_h > tex_aspect)
-			base_scale = avail_h / th;
-		else
-			base_scale = avail_w / tw;
-		float scale = base_scale * m_zoom;
-		disp_w = tw * scale;
-		disp_h = th * scale;
-	}
-	float cx = avail_x + avail_w * 0.5f + m_pan_x;
-	float cy = avail_y + avail_h * 0.5f + m_pan_y;
-
-	m_grid_w = tw;
-	m_grid_h = th;
-	m_dst = {
-		cx - disp_w * 0.5f,
-		cy - disp_h * 0.5f,
-		disp_w,
-		disp_h,
-	};
-	SDL_FRect &dst = m_dst;
-
 	for(int oi = 0; oi < N_OVERLAYS; oi++) {
 		auto &ov = m_overlays[oi];
 		if(ov.source == DataSource::Off) continue;
 		ensure_texture(rend, ov, tw, th);
-		if(m_marginal && grid.rank > 2) {
+		if(m_marginal && sim.grid.rank > 2) {
 			fill_texture_marginal(ov, sim, tw, th, m_axis_x, m_axis_y);
 		} else {
-			// GPU-side slice extraction
 			std::vector<psi_t> psi_buf(tw * th);
 			sim.read_slice_2d(m_axis_x, m_axis_y, m_view.cursor, psi_buf.data());
 
-			// potential slice (still CPU-side for now)
 			std::vector<psi_t> pot_buf(tw * th);
 			auto pot_view = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, sim.potential.data());
 			for(int x = 0; x < tw; x++)
@@ -378,49 +305,51 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 
 		SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
 		SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
-		SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
+		SDL_RenderTexture(rend, ov.tex, nullptr, &m_dst);
 	}
+}
 
-	// draw absorbing boundary zones with cos² gradient
-	if(sim.absorbing_boundary) {
-		float w = (float)sim.absorb_width;
-		int n_strips = (int)(w * tw);
-		if(n_strips < 1) n_strips = 1;
-		float strip_w = dst.w * w / n_strips;
-		SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
+
+void WidgetGrid::draw_absorb_boundary(SDL_Renderer *rend, const Simulation &sim, int tw)
+{
+	if(!sim.absorbing_boundary) return;
+
+	float w = (float)sim.absorb_width;
+	int n_strips = (int)(w * tw);
+	if(n_strips < 1) n_strips = 1;
+	SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
+
+	float strip_w = m_dst.w * w / n_strips;
+	for(int i = 0; i < n_strips; i++) {
+		float t = cosf(0.5f * M_PI * (i + 1) / n_strips);
+		uint8_t alpha = (uint8_t)(t * t * 80);
+		SDL_SetRenderDrawColor(rend, 25, 25, 200, alpha);
+		SDL_FRect rl = { m_dst.x + i * strip_w, m_dst.y, strip_w + 1, m_dst.h };
+		SDL_FRect rr = { m_dst.x + m_dst.w - (i + 1) * strip_w, m_dst.y, strip_w + 1, m_dst.h };
+		SDL_RenderFillRect(rend, &rl);
+		SDL_RenderFillRect(rend, &rr);
+	}
+	if(sim.grid.rank >= 2) {
+		float strip_h = m_dst.h * w / n_strips;
 		for(int i = 0; i < n_strips; i++) {
-			float t_lo = cosf(0.5f * M_PI * (i + 1) / (n_strips));
-			float alpha = t_lo * t_lo * 80;
-			SDL_SetRenderDrawColor(rend, 25, 25, 200, (uint8_t)alpha);
-			// left
-			SDL_FRect r_left = { dst.x + i * strip_w, dst.y, strip_w + 1, dst.h };
-			SDL_RenderFillRect(rend, &r_left);
-			// right
-			SDL_FRect r_right = { dst.x + dst.w - (i + 1) * strip_w, dst.y, strip_w + 1, dst.h };
-			SDL_RenderFillRect(rend, &r_right);
-		}
-		if(grid.rank >= 2) {
-			float strip_h = dst.h * w / n_strips;
-			for(int i = 0; i < n_strips; i++) {
-				float t_lo = cosf(0.5f * M_PI * (i + 1) / (n_strips));
-				float alpha = t_lo * t_lo * 80;
-				SDL_SetRenderDrawColor(rend, 25, 25, 200, (uint8_t)alpha);
-				// top (grid y=max is screen top)
-				SDL_FRect r_top = { dst.x, dst.y + i * strip_h, dst.w, strip_h + 1 };
-				SDL_RenderFillRect(rend, &r_top);
-				// bottom
-				SDL_FRect r_bot = { dst.x, dst.y + dst.h - (i + 1) * strip_h, dst.w, strip_h + 1 };
-				SDL_RenderFillRect(rend, &r_bot);
-			}
+			float t = cosf(0.5f * M_PI * (i + 1) / n_strips);
+			uint8_t alpha = (uint8_t)(t * t * 80);
+			SDL_SetRenderDrawColor(rend, 25, 25, 200, alpha);
+			SDL_FRect rt = { m_dst.x, m_dst.y + i * strip_h, m_dst.w, strip_h + 1 };
+			SDL_FRect rb = { m_dst.x, m_dst.y + m_dst.h - (i + 1) * strip_h, m_dst.w, strip_h + 1 };
+			SDL_RenderFillRect(rend, &rt);
+			SDL_RenderFillRect(rend, &rb);
 		}
 	}
+}
 
-	// draw border around grid
-	SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
-	SDL_RenderRect(rend, &dst);
 
-	// hover in grid updates cursor position on selected axes
-	if(grid.rank >= 2 && ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+void WidgetGrid::draw_cursor(SDL_Renderer *rend, const Grid &grid)
+{
+	if(grid.rank < 2) return;
+
+	// update cursor from mouse
+	if(ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 		ImVec2 mp = ImGui::GetMousePos();
 		int gx, gy;
 		if(screen_to_grid(m_dst, m_grid_w, m_grid_h, mp.x, mp.y, gx, gy)) {
@@ -429,73 +358,135 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		}
 	}
 
-	// draw cursor crosshairs
-	if(grid.rank >= 2) {
-		SDL_SetRenderDrawColor(rend, 230, 50, 50, 50);
-		float sx, sy;
-		grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[m_axis_x], m_view.cursor[m_axis_y], sx, sy);
-		SDL_RenderLine(rend, sx, dst.y, sx, dst.y + dst.h);
-		SDL_RenderLine(rend, dst.x, sy, dst.x + dst.w, sy);
+	// draw crosshairs
+	SDL_SetRenderDrawColor(rend, 230, 50, 50, 50);
+	float sx, sy;
+	grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[m_axis_x], m_view.cursor[m_axis_y], sx, sy);
+	SDL_RenderLine(rend, sx, m_dst.y, sx, m_dst.y + m_dst.h);
+	SDL_RenderLine(rend, m_dst.x, sy, m_dst.x + m_dst.w, sy);
+}
+
+
+void WidgetGrid::dump_slice(Simulation &sim, int tw, int th)
+{
+	auto *psi = sim.psi_front();
+	auto *pot = sim.potential.data();
+	auto psi_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, psi);
+	auto pot_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, pot);
+
+	int sx = (tw + 255) / 256;
+	int sy = (th + 127) / 128;
+	int ox = tw / sx, oy = th / sy;
+
+	double max_val = 1e-30;
+	for(int iy = 0; iy < th; iy++)
+		for(int ix = 0; ix < tw; ix++) {
+			double v = std::norm(psi_slice.at(ix, iy));
+			if(v > max_val) max_val = v;
+		}
+
+	const char *lx = sim.grid.axes[m_axis_x].label[0] ? sim.grid.axes[m_axis_x].label : "?";
+	const char *ly = sim.grid.axes[m_axis_y].label[0] ? sim.grid.axes[m_axis_y].label : "?";
+
+	FILE *f = fopen("dump.txt", "w");
+	fprintf(f, "# t=%.4e  axes=%s/%s  %dx%d  max=%.4e\n", sim.time(), lx, ly, ox, oy, max_val);
+	for(int d = 0; d < sim.grid.rank; d++) {
+		if(d == m_axis_x || d == m_axis_y) continue;
+		const char *l = sim.grid.axes[d].label[0] ? sim.grid.axes[d].label : "?";
+		fprintf(f, "# %s=%d\n", l, m_view.cursor[d]);
 	}
 
-	// A: reset view to defaults
+	const char *shades = "_.:-=o+*#%@";
+	int nshades = 11;
+	for(int iy = oy - 1; iy >= 0; iy--) {
+		for(int ix = 0; ix < ox; ix++) {
+			int gx = ix * sx + sx / 2;
+			int gy = iy * sy + sy / 2;
+			if(pot_slice.at(gx, gy).real() > 0) {
+				fputc('|', f);
+			} else {
+				double v = pow(std::norm(psi_slice.at(gx, gy)) / max_val, 0.15);
+				int si = (int)(v * (nshades - 1));
+				si = std::clamp(si, 0, nshades - 1);
+				fputc(shades[si], f);
+			}
+		}
+		fputc('\n', f);
+	}
+	fclose(f);
+	fprintf(stderr, "dumped %s/%s to dump.txt (%dx%d)\n", lx, ly, ox, oy);
+}
+
+
+SDL_FRect WidgetGrid::compute_display_rect(int tw, int th, float avail_x, float avail_y, float avail_w, float avail_h)
+{
+	float disp_w, disp_h;
+	if(th == 1) {
+		disp_w = avail_w * m_zoom;
+		disp_h = avail_h;
+	} else {
+		float tex_aspect = (float)tw / (float)th;
+		float base_scale = (avail_w / avail_h > tex_aspect) ? avail_h / th : avail_w / tw;
+		float scale = base_scale * m_zoom;
+		disp_w = tw * scale;
+		disp_h = th * scale;
+	}
+	float cx = avail_x + avail_w * 0.5f + m_pan_x;
+	float cy = avail_y + avail_h * 0.5f + m_pan_y;
+	return { cx - disp_w * 0.5f, cy - disp_h * 0.5f, disp_w, disp_h };
+}
+
+
+void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
+{
+	SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
+	SDL_RenderFillRect(rend, nullptr);
+
+	// axis selection and slice/marginal mode
+	if(!exp.simulations.empty() && exp.simulations[0]->grid.rank > 2) {
+		auto &g = exp.simulations[0]->grid;
+		ImGui::AxisCombo("##ax_x", &m_axis_x, g);
+		ImGui::SameLine();
+		ImGui::AxisCombo("##ax_y", &m_axis_y, g);
+		ImGui::SameLine();
+		if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
+			m_marginal = !m_marginal;
+	}
+
+	draw_controls(m_overlays, N_OVERLAYS);
+	float ctrl_h = ImGui::GetCursorPosY();
+
+	if(exp.simulations.empty()) { ImGui::Text("No simulation"); return; }
+
+	auto &sim = *exp.simulations[0];
+	auto &grid = sim.grid;
+
+	if(m_axis_x >= grid.rank) m_axis_x = 0;
+	if(m_axis_y >= grid.rank) m_axis_y = grid.rank > 1 ? 1 : 0;
+	if(m_axis_x == m_axis_y && grid.rank > 1) m_axis_y = (m_axis_x + 1) % grid.rank;
+
+	int tw = grid.axes[m_axis_x].points;
+	int th = (grid.rank >= 2) ? grid.axes[m_axis_y].points : 1;
+
+	handle_mouse(r, ctrl_h, m_zoom, m_pan_x, m_pan_y, m_dragging, m_drag_x, m_drag_y);
+
+	m_grid_w = tw;
+	m_grid_h = th;
+	m_dst = compute_display_rect(tw, th, r.x, r.y + ctrl_h, r.w, r.h - ctrl_h);
+
+	update_overlays(sim, rend, tw, th);
+	draw_absorb_boundary(rend, sim, tw);
+
+	SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
+	SDL_RenderRect(rend, &m_dst);
+
+	draw_cursor(rend, grid);
+
 	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
-		m_zoom = 1.0f;
-		m_pan_x = 0;
-		m_pan_y = 0;
+		m_zoom = 1.0f; m_pan_x = 0; m_pan_y = 0;
 	}
-
-	// D: dump displayed slice to dump.txt
-	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D)) {
-		auto *psi = sim.psi_front();
-		auto *pot = sim.potential.data();
-
-		auto psi_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, psi);
-		auto pot_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, pot);
-
-		int sx = (tw + 255) / 256;
-		int sy_d = (th + 127) / 128;
-		int ox = tw / sx;
-		int oy = th / sy_d;
-
-		double max_val = 1e-30;
-		for(int iy = 0; iy < th; iy++)
-			for(int ix = 0; ix < tw; ix++) {
-				double v = std::norm(psi_slice.at(ix, iy));
-				if(v > max_val) max_val = v;
-			}
-
-		FILE *f = fopen("dump.txt", "w");
-		const char *lx = grid.axes[m_axis_x].label[0] ? grid.axes[m_axis_x].label : "?";
-		const char *ly = grid.axes[m_axis_y].label[0] ? grid.axes[m_axis_y].label : "?";
-		fprintf(f, "# t=%.4e  axes=%s/%s  %dx%d  max=%.4e\n", sim.time(), lx, ly, ox, oy, max_val);
-		for(int d = 0; d < grid.rank; d++) {
-			if(d == m_axis_x || d == m_axis_y) continue;
-			const char *l = grid.axes[d].label[0] ? grid.axes[d].label : "?";
-			fprintf(f, "# %s=%d\n", l, m_view.cursor[d]);
-		}
-		fprintf(f, "# |psi|^2 (potential shown as ||):\n");
-		const char *shades = "_.:-=o+*#%@";
-		int nshades = 11;
-		for(int iy = oy - 1; iy >= 0; iy--) {
-			for(int ix = 0; ix < ox; ix++) {
-				int gx = ix * sx + sx/2;
-				int gy = iy * sy_d + sy_d/2;
-				if(pot_slice.at(gx, gy).real() > 0)
-					fputc('|', f);
-				else {
-					double v = pow(std::norm(psi_slice.at(gx, gy)) / max_val, 0.15);
-					int si = (int)(v * (nshades - 1));
-					if(si >= nshades) si = nshades - 1;
-					if(si < 0) si = 0;
-					fputc(shades[si], f);
-				}
-			}
-			fputc('\n', f);
-		}
-		fclose(f);
-		fprintf(stderr, "dumped %s/%s to dump.txt (%dx%d)\n", lx, ly, ox, oy);
-	}
+	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D))
+		dump_slice(sim, tw, th);
 }
 
 
