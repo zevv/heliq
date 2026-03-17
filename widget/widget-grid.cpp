@@ -291,6 +291,10 @@ void WidgetGrid::update_overlays(Simulation &sim, SDL_Renderer *rend, int tw, in
 		ensure_texture(rend, ov, tw, th);
 		if(m_marginal && sim.grid.rank > 2) {
 			fill_texture_marginal(ov, sim, tw, th, m_axis_x, m_axis_y);
+		} else if(sim.grid.rank == 1) {
+			// 1D: psi is small, just read directly
+			auto *psi = sim.psi_front();
+			render_texture(ov, psi, sim.potential.data(), tw, th);
 		} else {
 			std::vector<psi_t> psi_buf(tw * th);
 			sim.read_slice_2d(m_axis_x, m_axis_y, m_view.cursor, psi_buf.data());
