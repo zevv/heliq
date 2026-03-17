@@ -1,16 +1,17 @@
--- 2D Quantum Eraser: double slit with which-path detection
---
--- Two particles in 2D physical space = 4D config space at 64^4
---
--- Particle A moves rightward toward a double slit.
--- Particle B sits near one slit, contact-coupled to A.
--- When A passes through that slit, B gets kicked → which-path info.
--- Interference pattern on the far side of the slits dies.
---
--- Protocol:
---   1. Run as-is: no interference (which-path info in B)
---   2. Reload (R), decohere B before A reaches screen: interference returns
---   3. Reload (R), measure B: A collapses to one-slit pattern
+description("2D Quantum Eraser", [[
+Two particles in 2D physical space — 4D configuration space (64^4).
+
+Particle A moves toward a double slit. Particle B (heavy detector)
+sits near the upper slit. When A passes through that slit, the
+contact interaction kicks B, encoding which-path information.
+
+This is the full quantum eraser setup in 2D. The heavy detector
+records which slit A used without blocking it — a non-destructive
+measurement that still destroys interference.
+
+Note: this experiment uses um scale and ueV energy because the
+64-point resolution per axis requires longer wavelengths to satisfy
+Nyquist. The physics is identical to the nm-scale experiments.]])
 
 local L = 5 * um
 
@@ -57,8 +58,8 @@ particle(detector, {
 -- slit centers at y = +0.8um and y = -0.8um, each 0.6um wide
 local wall_x = 0
 local wall_w = 0.3 * um
-local slit_w = 0.6 * um
-local slit_sep = 1.6 * um   -- center-to-center
+local slit_w = 0.3 * um
+local slit_sep = 1.2 * um   -- center-to-center
 
 -- barrier must span all of B's config space (x_B, y_B)
 -- three wall segments: below bottom slit, between slits, above top slit

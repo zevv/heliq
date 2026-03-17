@@ -248,8 +248,6 @@ void Panel::draw(View &view, Experiment &exp, SDL_Renderer *rend, int x, int y, 
 
 		assert(m_widget);
 
-		m_background_alpha = std::clamp(m_background_alpha, 0.0f, 0.2f);
-
 		// setup window
 		ImGuiWindowFlags flags = 0;
 		flags |= ImGuiWindowFlags_NoCollapse;
@@ -261,15 +259,13 @@ void Panel::draw(View &view, Experiment &exp, SDL_Renderer *rend, int x, int y, 
 
 		ImGui::SetNextWindowPos(ImVec2((float)x, (float)y));
 		ImGui::SetNextWindowSize(ImVec2((float)w, (float)h));
-		ImGui::SetNextWindowBgAlpha(m_background_alpha);
+		ImGui::SetNextWindowBgAlpha(0.0f);
 
 		if(m_has_focus) {
 			ImGui::PushStyleColor(ImGuiCol_Border, (ImU32)Style::color(Style::ColorId::PanelBorder));
 			ImGui::Begin(m_title, nullptr, flags);
 			ImGui::PopStyleColor();
-			m_background_alpha -= 0.03;
 		} else {
-			m_background_alpha += 0.03;
 			ImGui::Begin(m_title, nullptr, flags);
 		}
 

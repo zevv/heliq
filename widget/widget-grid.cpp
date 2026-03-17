@@ -461,6 +461,19 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			m_marginal = !m_marginal;
 	}
 
+	// Measure button — measures both displayed axes
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+	if(ImGui::Button("Measure")) {
+		for(auto &s : exp.simulations) {
+			s->measure(m_axis_x);
+			s->measure(m_axis_y);
+		}
+	}
+	ImGui::PopStyleColor(3);
+	ImGui::SameLine();
+
 	draw_controls(m_overlays, N_OVERLAYS);
 	float ctrl_h = ImGui::GetCursorPosY();
 

@@ -318,7 +318,6 @@ void App::run()
 		// R to reload experiment
 		if(ImGui::IsKeyPressed(ImGuiKey_R)) {
 			m_experiment.load(m_script);
-			init_cursor();
 		}
 
 		// M/N to measure, Shift+M/N to decohere

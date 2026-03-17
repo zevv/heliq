@@ -58,8 +58,9 @@ private:
 		bool on{true};
 		int color{0};
 		float alpha{1.0f};
-		bool thick{false};
 	} m_helix;
+
+	bool m_thick_lines{false};
 
 	struct {
 		bool on{false};
@@ -131,7 +132,7 @@ private:
 	std::tuple<float,float,float> color_for_vert(int color_mode, int idx, float amp, const psi_t *psi, float def_r, float def_g, float def_b);
 
 	// SDL drawing (overlays on top of GL texture)
-	void draw_controls(const Simulation &sim);
+	void draw_controls(Experiment &exp);
 
 
 
@@ -248,7 +249,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 
 	glClearColor(colors::bg_gl.r, colors::bg_gl.g, colors::bg_gl.b, colors::bg_gl.a);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	//glLineWidth(2.0f);
+	glLineWidth(m_thick_lines ? 3.0f : 1.0f);
 
 	mat4 vp = m_camera.build(r.w, r.h);
 	float mvp[16];
@@ -269,6 +270,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	if(m_helix.on) gl_draw_helix(psi, max_amp, n);
 	if(m_envelope.on) gl_draw_envelope(psi, max_amp, n, vp);
 	gl_draw_cursor(sim);
+	glLineWidth(1.0f);
 
 	m_gl.end(rend);
 
@@ -303,12 +305,11 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			m_surface = {};
 			m_envelope = {};
 			m_potential = {};
-			m_slice.mode = Slice;
 		}
 		if(ImGui::IsKeyPressed(ImGuiKey_W))
-			m_helix.thick = !m_helix.thick;
+			m_thick_lines = !m_thick_lines;
 	}
-	draw_controls(sim);
+	draw_controls(exp);
 
 	// sync camera back to shared view when locked
 	if(m_view.lock) {
@@ -424,29 +425,30 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const psi_t *psi_al
 			}
 		}
 
-		// find global peak position
-		double best = -1;
-		m_marginal_peak[0] = n0 / 2;
-		m_marginal_peak[1] = n1 / 2;
-		for(int i = 0; i < n0; i++) {
-			for(int j = 0; j < n1; j++) {
-				double v = std::norm(psi_view.at(i, j));
-				if(v > best) {
-					best = v;
-					m_marginal_peak[0] = i;
-					m_marginal_peak[1] = j;
+		// find marginal peak positions (argmax of each marginal)
+		for(int d = 0; d < 2; d++) {
+			auto &mg = m_marginals[d];
+			int nd = (d == 0) ? n0 : n1;
+			double best = -1;
+			m_marginal_peak[d] = nd / 2;
+			for(int k = 0; k < nd; k++) {
+				if(mg[k] > best) {
+					best = mg[k];
+					m_marginal_peak[d] = k;
 				}
 			}
 		}
 
-		// potential marginal for current slice axis
+		// potential marginal for current slice axis, weighted by |ψ|²
+		// this makes the interaction barrier track the wavefunction position
 		int ax = m_slice.axis;
 		int na = sim.grid.axes[ax].points;
 		m_potential_marginal.assign(na, 0);
 		auto pot_view = sim.grid.slice_view(0, 1, zero_cursor, sim.potential.data());
 		for(int i = 0; i < n0; i++) {
 			for(int j = 0; j < n1; j++) {
-				double v = fabs(pot_view.at(i, j).real());
+				double w = std::norm(psi_view.at(i, j));
+				double v = fabs(pot_view.at(i, j).real()) * w;
 				if(ax == 0) m_potential_marginal[i] += v;
 				else        m_potential_marginal[j] += v;
 			}
@@ -576,7 +578,8 @@ void WidgetHelixGL::gl_draw_axis(const mat4 &vp)
 
 	// origin cross clamped to bounding box
 	glUniform4f(m_gl.color_loc(), colors::gridline_2.r, colors::gridline_2.g, colors::gridline_2.b, colors::gridline_2.a);
-	float cross[] = { 0,-a,0, 0,a,0, 0,0,-a, 0,0,a };
+	float c = 0.25f * a;
+	float cross[] = { 0,-c,0, 0,c,0, 0,0,-c, 0,0,c };
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, cross);
 	glDrawArrays(GL_LINES, 0, 4);
 
@@ -701,11 +704,9 @@ void WidgetHelixGL::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 	glUseProgram(m_gl.vcol_shader());
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
-	glLineWidth(m_helix.thick ? 2.0f : 1.0f);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data());
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data() + 3);
 	glDrawArrays(GL_LINE_STRIP, 0, n);
-	glLineWidth(1.0f);
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
 }
@@ -873,35 +874,37 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
 
+	bool prev_on = false;
 	float prev_alpha = 0;
 	for(int i = 0; i < n; i++) {
 		double v = fabs(pot_view[i].real());
 		float alpha = (v > 1e-30) ? (float)(v / v_max) * m_potential.alpha : 0;
+		bool on = alpha > 1e-4f;
 
-		if(alpha > 1e-4f) {
+		if(on) {
 			float x0 = -1.0f + dx * i;
 			float x1 = x0 + dx;
 			float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
 			gl_draw_box(x0, x1, a, col, col);
 
-			// cap at sharp rising edge
-			float delta = alpha - prev_alpha;
-			if(delta > 0.15f * m_potential.alpha)
+			// cap at rising edge
+			if(!prev_on)
 				gl_draw_cap(x0, a, col);
 		}
 
-		// cap at sharp falling edge (previous cell was high, this is low)
-		if(prev_alpha > 1e-4f && (alpha - prev_alpha) < -0.15f * m_potential.alpha) {
+		// cap at falling edge
+		if(prev_on && !on) {
 			float px1 = -1.0f + dx * i;
 			float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
 			gl_draw_cap(px1, a, pcol);
 		}
 
+		prev_on = on;
 		prev_alpha = alpha;
 	}
 
 	// cap at domain edge if last cell has potential
-	if(prev_alpha > 0.15f * m_potential.alpha) {
+	if(prev_on) {
 		float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
 		gl_draw_cap(1.0f, a, pcol);
 	}
@@ -930,15 +933,38 @@ void WidgetHelixGL::gl_draw_potential_marginal(const Simulation &sim, int n)
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
 
+	float prev_alpha = 0;
+	bool prev_on = false;
 	for(int i = 0; i < n; i++) {
 		double v = m_potential_marginal[i];
-		if(v < 1e-30) continue;
+		float alpha = (v > 1e-30) ? (float)(v / v_max) * m_potential.alpha : 0;
+		bool on = alpha > 1e-4f;
+		float x = -1.0f + dx * i;
 
-		float alpha = (float)(v / v_max) * m_potential.alpha;
-		float x0 = -1.0f + dx * i;
-		float x1 = x0 + dx;
-		float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
-		gl_draw_box(x0, x1, a, col, col);
+		// cap at any significant alpha change (not just on/off)
+		float delta = alpha - prev_alpha;
+		if(on && (!prev_on || delta > 0.05f * m_potential.alpha)) {
+			float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
+			gl_draw_cap(x, a, col);
+		}
+		if((prev_on && !on) || (prev_on && on && delta < -0.05f * m_potential.alpha)) {
+			float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
+			gl_draw_cap(x, a, pcol);
+		}
+
+		if(on) {
+			float x1 = x + dx;
+			float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
+			gl_draw_box(x, x1, a, col, col);
+		}
+
+		prev_on = on;
+		prev_alpha = alpha;
+	}
+
+	if(prev_on) {
+		float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
+		gl_draw_cap(1.0f, a, pcol);
 	}
 
 	glDisableVertexAttribArray(1);
@@ -1013,12 +1039,25 @@ void WidgetHelixGL::gl_draw_cursor(const Simulation &sim)
 // --- controls (identical to widget-helix.cpp) ---
 
 
-void WidgetHelixGL::draw_controls(const Simulation &sim)
+void WidgetHelixGL::draw_controls(Experiment &exp)
 {
+	auto &sim = *exp.simulations[0];
+
 	ImGui::ToggleButton("L", &m_view.lock);
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth(60);
 	ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 0.2f, "%.3f");
+	ImGui::SameLine();
+
+	// Measure button — stands out with accent color
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+	if(ImGui::Button("Measure")) {
+		for(auto &s : exp.simulations)
+			s->measure(m_slice.axis);
+	}
+	ImGui::PopStyleColor(3);
 	ImGui::SameLine();
 
 	if(sim.grid.rank > 1) {
