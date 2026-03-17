@@ -15,12 +15,8 @@ local energy = 0.01e-3 * eV
 local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
-    position = { 0 },
+    position = { -1.5 * um },
     momentum = { momentum },
     width = 0.4 * um,
 })
 
-absorbing_boundary {
-    width = 0.07,
-    strength = 10^-23.3,
-}
