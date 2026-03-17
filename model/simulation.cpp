@@ -466,13 +466,13 @@ void Simulation::sample_potential(const Setup &setup)
 			double dist2 = cs.distance_sq(pa, pb, pos);
 
 			switch(inter.type) {
-				case Interaction::Type::Coulomb: {
-					double q_a = setup.particles[pa].charge;
-					double q_b = setup.particles[pb].charge;
-					double r = sqrt(dist2 + inter.softening * inter.softening);
-					v += k_coulomb * q_a * q_b / r;
-					break;
-				}
+			case Interaction::Type::Coulomb: {
+				double q_a = setup.particles[pa].charge;
+				double q_b = setup.particles[pb].charge;
+				double r = sqrt(dist2 + inter.softening * inter.softening);
+				v += inter.strength * k_coulomb * q_a * q_b / r;
+				break;
+			}
 				case Interaction::Type::Contact: {
 					// Gaussian-shaped contact: smooth falloff, no hard wall
 					double w2 = inter.width * inter.width;

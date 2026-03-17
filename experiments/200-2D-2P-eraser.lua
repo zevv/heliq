@@ -30,7 +30,7 @@ electron = def_particle {
 
 -- heavy "detector" particle — barely moves when kicked, but records the interaction
 detector = def_particle {
-    mass = m_electron * 100,
+    mass = m_electron * 3,
     charge = -e_charge,
 }
 
@@ -86,12 +86,12 @@ barrier {
     height = energy * 50,
 }
 
--- which-path marker: Gaussian contact interaction
--- smooth falloff — A passes through with a phase shift, not a hard block
--- B (heavy) barely moves but records which-path in its momentum
+-- which-path marker: scaled Coulomb interaction
+-- strength < 1 scales down the real Coulomb constant
+-- long-range: upper slit (close to B) kicks harder than lower slit
 interaction {
-    type = "contact",
+    type = "coulomb",
     particles = { 1, 2 },
-    strength = energy * 40,
-    width = 0.5 * um,
+    softening = 0.1 * um,
+    strength = .001,
 }

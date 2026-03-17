@@ -179,7 +179,7 @@ static bool load_interactions(lua_State *L, Setup &setup)
 			lua_pop(L, 1);
 
 			inter.softening = getfield_number(L, -1, "softening");
-			inter.strength  = getfield_number(L, -1, "strength");
+			inter.strength  = getfield_number(L, -1, "strength", 1.0);
 			inter.width     = getfield_number(L, -1, "width");
 
 			setup.interactions.push_back(inter);

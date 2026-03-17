@@ -34,7 +34,7 @@ struct Interaction {
 	int particle_a{};                // 0-indexed particle indices
 	int particle_b{};
 	double softening{};              // meters, regularization for 1/r (Coulomb)
-	double strength{};               // Joules (Contact)
+	double strength{1.0};            // Contact: Joules; Coulomb: multiplier (1.0 = real)
 	double width{};                  // meters, barrier width (Contact)
 };
 
