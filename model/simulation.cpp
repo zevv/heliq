@@ -280,28 +280,12 @@ int Simulation::measure(int axis, double collapse_width)
 		// collapse: multiply psi by Gaussian along measured axis
 		double x_measured = grid.axes[axis].min + result * grid.axes[axis].dx();
 		double sigma2 = collapse_width * collapse_width;
-		double norm = 0;
-
 		grid.each([&](size_t idx, const int *coords, const double *pos) {
 			double dx = pos[axis] - x_measured;
-			double envelope = exp(-dx * dx / (2.0 * sigma2));
-			p[idx] *= envelope;
-			norm += std::norm(p[idx]);
+			p[idx] *= (float)exp(-dx * dx / (2.0 * sigma2));
 		});
-
-		// renormalize
-		dv = 1.0;
-		for(int d = 0; d < grid.rank; d++) dv *= grid.axes[d].dx();
-		norm *= dv;
-		double scale = 1.0 / sqrt(norm);
-		for(size_t i = 0; i < n; i++) p[i] *= scale;
-
-		// upload to solver
-		m_solver->write_psi(p);
-		int back = 1 - front.load();
-		std::copy_n(p, n, psi[back].data());
-		front.store(back);
-
+		normalize_psi();
+		commit_psi();
 		return result;
 
 	} else {
@@ -331,31 +315,16 @@ int Simulation::measure(int axis, double collapse_width)
 		for(int d = 0; d < grid.rank; d++)
 			pos_result[d] = grid.axes[d].min + coords_result[d] * grid.axes[d].dx();
 
-		double norm = 0;
 		grid.each([&](size_t idx, const int *coords, const double *pos) {
 			double r2 = 0;
 			for(int d = 0; d < grid.rank; d++) {
 				double dx = pos[d] - pos_result[d];
 				r2 += dx * dx;
 			}
-			double envelope = exp(-r2 / (2.0 * sigma2));
-			p[idx] *= envelope;
-			norm += std::norm(p[idx]);
+			p[idx] *= (float)exp(-r2 / (2.0 * sigma2));
 		});
-
-		// renormalize
-		double dv = 1.0;
-		for(int d = 0; d < grid.rank; d++) dv *= grid.axes[d].dx();
-		norm *= dv;
-		double scale = 1.0 / sqrt(norm);
-		for(size_t i = 0; i < n; i++) p[i] *= scale;
-
-		// upload
-		m_solver->write_psi(p);
-		int back = 1 - front.load();
-		std::copy_n(p, n, psi[back].data());
-		front.store(back);
-
+		normalize_psi();
+		commit_psi();
 		return result;
 	}
 }
@@ -380,6 +349,35 @@ void Simulation::decohere(int axis, double strength)
 		p[idx] *= psi_t(cos(phi), sin(phi));
 	});
 
+	commit_psi();
+}
+
+
+// Renormalize the front psi buffer to total probability = 1
+void Simulation::normalize_psi()
+{
+	auto *p = psi_front();
+	size_t n = grid.total_points();
+	double norm = 0;
+	for(size_t i = 0; i < n; i++)
+		norm += std::norm(p[i]);
+	double dv = 1.0;
+	for(int d = 0; d < grid.rank; d++)
+		dv *= grid.axes[d].dx();
+	norm *= dv;
+	if(norm > 1e-30) {
+		float scale = (float)(1.0 / sqrt(norm));
+		for(size_t i = 0; i < n; i++)
+			p[i] *= scale;
+	}
+}
+
+
+// Push modified CPU psi buffer to solver and swap display buffers
+void Simulation::commit_psi()
+{
+	auto *p = psi_front();
+	size_t n = grid.total_points();
 	m_solver->write_psi(p);
 	int back = 1 - front.load();
 	std::copy_n(p, n, psi[back].data());

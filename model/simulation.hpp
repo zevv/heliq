@@ -56,6 +56,8 @@ public:
 		return psi[front.load()].data();
 	}
 	void mark_dirty() { m_psi_dirty = true; }
+	void normalize_psi();  // renormalize front psi to probability 1
+	void commit_psi();     // push modified CPU psi to solver, swap display buffers
 
 	// absorbing boundary
 	bool absorbing_boundary{false};
