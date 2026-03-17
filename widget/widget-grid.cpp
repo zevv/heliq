@@ -8,6 +8,7 @@
 #include "experiment.hpp"
 #include "config.hpp"
 #include "misc.hpp"
+#include "colors.hpp"
 
 // color palettes: value [0..1] -> RGBA
 // alpha carries intensity, color is always full brightness
@@ -323,7 +324,7 @@ void WidgetGrid::draw_absorb_boundary(SDL_Renderer *rend, const Simulation &sim,
 	for(int i = 0; i < n_strips; i++) {
 		float t = cosf(0.5f * M_PI * (i + 1) / n_strips);
 		uint8_t alpha = (uint8_t)(t * t * 80);
-		SDL_SetRenderDrawColor(rend, 25, 25, 200, alpha);
+		SDL_SetRenderDrawColor(rend, colors::absorb.r, colors::absorb.g, colors::absorb.b, alpha);
 		SDL_FRect rl = { m_dst.x + i * strip_w, m_dst.y, strip_w + 1, m_dst.h };
 		SDL_FRect rr = { m_dst.x + m_dst.w - (i + 1) * strip_w, m_dst.y, strip_w + 1, m_dst.h };
 		SDL_RenderFillRect(rend, &rl);
@@ -334,7 +335,7 @@ void WidgetGrid::draw_absorb_boundary(SDL_Renderer *rend, const Simulation &sim,
 		for(int i = 0; i < n_strips; i++) {
 			float t = cosf(0.5f * M_PI * (i + 1) / n_strips);
 			uint8_t alpha = (uint8_t)(t * t * 80);
-			SDL_SetRenderDrawColor(rend, 25, 25, 200, alpha);
+			SDL_SetRenderDrawColor(rend, colors::absorb.r, colors::absorb.g, colors::absorb.b, alpha);
 			SDL_FRect rt = { m_dst.x, m_dst.y + i * strip_h, m_dst.w, strip_h + 1 };
 			SDL_FRect rb = { m_dst.x, m_dst.y + m_dst.h - (i + 1) * strip_h, m_dst.w, strip_h + 1 };
 			SDL_RenderFillRect(rend, &rt);
@@ -359,7 +360,7 @@ void WidgetGrid::draw_cursor(SDL_Renderer *rend, const Grid &grid)
 	}
 
 	// draw crosshairs
-	SDL_SetRenderDrawColor(rend, 230, 50, 50, 50);
+	SDL_SetRenderDrawColor(rend, colors::cursor_cross.r, colors::cursor_cross.g, colors::cursor_cross.b, colors::cursor_cross.a);
 	float sx, sy;
 	grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[m_axis_x], m_view.cursor[m_axis_y], sx, sy);
 	SDL_RenderLine(rend, sx, m_dst.y, sx, m_dst.y + m_dst.h);
@@ -439,7 +440,7 @@ SDL_FRect WidgetGrid::compute_display_rect(int tw, int th, float avail_x, float 
 
 void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 {
-	SDL_SetRenderDrawColor(rend, 10, 10, 15, 255);
+	SDL_SetRenderDrawColor(rend, colors::bg_grid.r, colors::bg_grid.g, colors::bg_grid.b, colors::bg_grid.a);
 	SDL_RenderFillRect(rend, nullptr);
 
 	// axis selection and slice/marginal mode
@@ -477,7 +478,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	update_overlays(sim, rend, tw, th);
 	draw_absorb_boundary(rend, sim, tw);
 
-	SDL_SetRenderDrawColor(rend, 80, 80, 80, 255);
+	SDL_SetRenderDrawColor(rend, colors::grid_border.r, colors::grid_border.g, colors::grid_border.b, colors::grid_border.a);
 	SDL_RenderRect(rend, &m_dst);
 
 	draw_cursor(rend, grid);

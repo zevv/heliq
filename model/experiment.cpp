@@ -65,8 +65,7 @@ void Experiment::advance(double wall_dt, double budget_ms)
 	for(auto &sim : simulations) {
 		auto t0 = std::chrono::steady_clock::now();
 		while(!reached(sim->time())) {
-			int batch = batch_size;
-			for(int i = 0; i < batch && !reached(sim->time()); i++)
+			for(int i = 0; i < batch_size && !reached(sim->time()); i++)
 				sim->step_compute();
 			sim->flush();
 
@@ -74,13 +73,17 @@ void Experiment::advance(double wall_dt, double budget_ms)
 			double ms = std::chrono::duration<double, std::milli>(elapsed).count();
 			if(ms > per_sim_ms)
 				break;
-
-			if(ms < per_sim_ms * 0.5 && batch_size < 1024)
-				batch_size = batch_size * 2;
-			else if(ms > per_sim_ms * 0.9 && batch_size > 1)
-				batch_size = batch_size / 2;
 		}
 		sim->flush();
+
+		// adapt batch size based on how this frame went
+		auto elapsed = std::chrono::steady_clock::now() - t0;
+		double ms = std::chrono::duration<double, std::milli>(elapsed).count();
+		if(ms < per_sim_ms * 0.5 && batch_size < 1024)
+			batch_size *= 2;
+		else if(ms > per_sim_ms * 0.9 && batch_size > 1)
+			batch_size /= 2;
+
 		bool behind = forward ? sim->time() < slowest : sim->time() > slowest;
 		if(behind)
 			slowest = sim->time();

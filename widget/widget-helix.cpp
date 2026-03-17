@@ -18,6 +18,7 @@
 #include "constants.hpp"
 #include "misc.hpp"
 #include "glview.hpp"
+#include "colors.hpp"
 
 #include "camera3d.hpp"
 
@@ -242,7 +243,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	m_gl.resize(r.w, r.h);
 	m_gl.begin(rend);
 
-	glClearColor(0.04f, 0.04f, 0.06f, 1.0f);
+	glClearColor(colors::bg_gl.r, colors::bg_gl.g, colors::bg_gl.b, colors::bg_gl.a);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	//glLineWidth(2.0f);
 
@@ -547,7 +548,7 @@ void WidgetHelixGL::gl_draw_axis(const mat4 &vp)
 	glEnableVertexAttribArray(0);
 
 	// bounding box edges
-	glUniform4f(m_gl.color_loc(), 0.18f, 0.18f, 0.18f, 1.0f);
+	glUniform4f(m_gl.color_loc(), colors::gridline_0.r, colors::gridline_0.g, colors::gridline_0.b, colors::gridline_0.a);
 	float box[] = {
 		// bottom face (y=-a)
 		-1,-a,-a, 1,-a,-a,  1,-a,-a, 1,-a,a,  1,-a,a, -1,-a,a,  -1,-a,a, -1,-a,-a,
@@ -560,13 +561,13 @@ void WidgetHelixGL::gl_draw_axis(const mat4 &vp)
 	glDrawArrays(GL_LINES, 0, 24);
 
 	// x-axis line
-	glUniform4f(m_gl.color_loc(), 0.24f, 0.24f, 0.24f, 1.0f);
+	glUniform4f(m_gl.color_loc(), colors::gridline_1.r, colors::gridline_1.g, colors::gridline_1.b, colors::gridline_1.a);
 	float axis[] = { -1,0,0, 1,0,0 };
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, axis);
 	glDrawArrays(GL_LINES, 0, 2);
 
 	// origin cross clamped to bounding box
-	glUniform4f(m_gl.color_loc(), 0.31f, 0.31f, 0.31f, 1.0f);
+	glUniform4f(m_gl.color_loc(), colors::gridline_2.r, colors::gridline_2.g, colors::gridline_2.b, colors::gridline_2.a);
 	float cross[] = { 0,-a,0, 0,a,0, 0,0,-a, 0,0,a };
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, cross);
 	glDrawArrays(GL_LINES, 0, 4);
@@ -623,7 +624,7 @@ std::tuple<float,float,float> WidgetHelixGL::color_for_vert(
 
 void WidgetHelixGL::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 {
-	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, 0.3f, 0.4f, 0.7f); };
+	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, colors::surface_default.r, colors::surface_default.g, colors::surface_default.b); };
 	// triangle strip with per-vertex color: base[i], helix[i], ...
 
 	// 7 floats per vert: pos(3) + col(4)
@@ -682,7 +683,7 @@ void WidgetHelixGL::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 		m_vbuf[i*7+2] = z;
 
 		float amp = (float)(std::abs(psi[i]) / max_amp);
-		auto [cr, cg, cb] = color_for_vert(m_helix.color, i, amp, psi, 0.78f, 0.78f, 0.78f);
+		auto [cr, cg, cb] = color_for_vert(m_helix.color, i, amp, psi, colors::helix_default.r, colors::helix_default.g, colors::helix_default.b);
 		m_vbuf[i*7+3] = cr;
 		m_vbuf[i*7+4] = cg;
 		m_vbuf[i*7+5] = cb;
@@ -722,7 +723,7 @@ void WidgetHelixGL::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 				float x = -1.0f + 2.0f * t;
 				float a = (float)(envelope_value(psi[i], max_amp) * m_amplitude);
 				float amp = (float)(std::abs(psi[i]) / max_amp);
-				auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, 0.39f, 0.78f, 0.39f);
+				auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, colors::envelope_default.r, colors::envelope_default.g, colors::envelope_default.b);
 				m_vbuf[i*7+0] = x;
 				m_vbuf[i*7+1] = a * cy;
 				m_vbuf[i*7+2] = a * cz;
@@ -749,7 +750,7 @@ void WidgetHelixGL::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 			if(rad < 1e-6f) continue;
 			float x = -1.0f + 2.0f * i / n;
 			float amp = (float)(std::abs(psi[i]) / max_amp);
-			auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, 0.39f, 0.78f, 0.39f);
+			auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, colors::envelope_default.r, colors::envelope_default.g, colors::envelope_default.b);
 			for(int s = 0; s < circle_segs; s++) {
 				float a = 2.0f * M_PI * s / circle_segs;
 				circle[s*7+0] = x;
@@ -776,7 +777,7 @@ void WidgetHelixGL::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 		float x = -1.0f + 2.0f * t;
 		float a = (float)(envelope_value(psi[i], max_amp) * m_amplitude);
 		float amp = (float)(std::abs(psi[i]) / max_amp);
-		auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, 0.39f, 0.78f, 0.39f);
+		auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, colors::envelope_default.r, colors::envelope_default.g, colors::envelope_default.b);
 		m_vbuf[i*7+0] = x;
 		m_vbuf[i*7+1] = on_z ? 0 : a;
 		m_vbuf[i*7+2] = on_z ? a : 0;
@@ -863,7 +864,7 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 		float alpha = (float)(v / v_max) * m_potential.alpha;
 		float x0 = -1.0f + dx * i;
 		float x1 = x0 + dx;
-		float col[] = { 0.5f, 0.5f, 0.5f, alpha };
+		float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
 		gl_draw_box(x0, x1, a, col, col);
 	}
 
@@ -898,7 +899,7 @@ void WidgetHelixGL::gl_draw_potential_marginal(const Simulation &sim, int n)
 		float alpha = (float)(v / v_max) * m_potential.alpha;
 		float x0 = -1.0f + dx * i;
 		float x1 = x0 + dx;
-		float col[] = { 0.5f, 0.5f, 0.5f, alpha };
+		float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
 		gl_draw_box(x0, x1, a, col, col);
 	}
 
@@ -921,8 +922,8 @@ void WidgetHelixGL::gl_draw_absorb_zones(const Simulation &sim, int n)
 	glEnableVertexAttribArray(1);
 
 	// left: edge opaque, onset transparent
-	float col_edge[] = { 0.1f, 0.1f, 0.8f, peak };
-	float col_zero[] = { 0.1f, 0.1f, 0.8f, 0.0f };
+	float col_edge[] = { colors::absorb_gl_edge.r, colors::absorb_gl_edge.g, colors::absorb_gl_edge.b, peak };
+	float col_zero[] = { colors::absorb_gl_zero.r, colors::absorb_gl_zero.g, colors::absorb_gl_zero.b, colors::absorb_gl_zero.a };
 	gl_draw_box(-1.0f, xl, a, col_edge, col_zero);
 
 	// right: onset transparent, edge opaque
@@ -948,7 +949,7 @@ void WidgetHelixGL::gl_draw_cursor(const Simulation &sim)
 	glEnableVertexAttribArray(0);
 
 	// filled plane perpendicular to X axis
-	glUniform4f(m_gl.color_loc(), 0.9f, 0.2f, 0.2f, 0.15f);
+	glUniform4f(m_gl.color_loc(), colors::cursor_fill.r, colors::cursor_fill.g, colors::cursor_fill.b, colors::cursor_fill.a);
 	float quad[] = {
 		x, -a, -a,  x, a, -a,  x, a, a,
 		x, -a, -a,  x, a,  a,  x, -a, a,
@@ -957,7 +958,7 @@ void WidgetHelixGL::gl_draw_cursor(const Simulation &sim)
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 
 	// outline
-	glUniform4f(m_gl.color_loc(), 0.9f, 0.2f, 0.2f, 0.6f);
+	glUniform4f(m_gl.color_loc(), colors::cursor_edge.r, colors::cursor_edge.g, colors::cursor_edge.b, colors::cursor_edge.a);
 	float outline[] = {
 		x, -a, -a,  x, a, -a,
 		x,  a, -a,  x, a,  a,

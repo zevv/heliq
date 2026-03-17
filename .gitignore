@@ -5,3 +5,8 @@ imgui.ini
 compile_commands.json
 .cache
 config.txt
+dump.txt
+perf.data*
+test/test_solver_4d
+test/test_vkfft4d*
+test/test_rocfft4d
