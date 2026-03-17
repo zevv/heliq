@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <math.h>
 #include "math3d.hpp"
+#include "config.hpp"
 
 static constexpr double CAM_PITCH_LIMIT = M_PI * 0.49;
 
@@ -66,6 +67,33 @@ struct Camera3D {
 				if(dist > 50.0) dist = 50.0;
 			}
 		}
+	}
+
+	void save(ConfigWriter &cfg, const char *prefix = "") const {
+		char k[32];
+		auto key = [&](const char *name) -> const char * {
+			snprintf(k, sizeof(k), "%s%s", prefix, name); return k;
+		};
+		cfg.write(key("yaw"), yaw);
+		cfg.write(key("pitch"), pitch);
+		cfg.write(key("dist"), dist);
+		cfg.write(key("pan_x"), pan_x);
+		cfg.write(key("pan_y"), pan_y);
+		cfg.write(key("ortho"), ortho ? 1 : 0);
+	}
+
+	void load(ConfigReader::Node *node, const char *prefix = "") {
+		if(!node) return;
+		char k[32];
+		auto key = [&](const char *name) -> const char * {
+			snprintf(k, sizeof(k), "%s%s", prefix, name); return k;
+		};
+		node->read(key("yaw"), yaw);
+		node->read(key("pitch"), pitch);
+		node->read(key("dist"), dist);
+		node->read(key("pan_x"), pan_x);
+		node->read(key("pan_y"), pan_y);
+		int o = ortho; node->read(key("ortho"), o); ortho = o;
 	}
 
 	void handle_keys() {

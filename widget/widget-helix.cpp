@@ -151,12 +151,7 @@ WidgetHelixGL::~WidgetHelixGL()
 
 void WidgetHelixGL::do_save(ConfigWriter &cfg)
 {
-	cfg.write("yaw", m_camera.yaw);
-	cfg.write("pitch", m_camera.pitch);
-	cfg.write("dist", m_camera.dist);
-	cfg.write("pan_x", m_camera.pan_x);
-	cfg.write("pan_y", m_camera.pan_y);
-	cfg.write("ortho", m_camera.ortho);
+	m_camera.save(cfg);
 	cfg.write("amplitude", m_amplitude);
 	cfg.write("envelope_on", m_envelope.on ? 1 : 0);
 	cfg.write("envelope", m_envelope.mode);
@@ -184,12 +179,7 @@ void WidgetHelixGL::do_save(ConfigWriter &cfg)
 void WidgetHelixGL::do_load(ConfigReader::Node *node)
 {
 	if(!node) return;
-	node->read("yaw", m_camera.yaw);
-	node->read("pitch", m_camera.pitch);
-	node->read("dist", m_camera.dist);
-	node->read("pan_x", m_camera.pan_x);
-	node->read("pan_y", m_camera.pan_y);
-	node->read("ortho", m_camera.ortho);
+	m_camera.load(node);
 	node->read("amplitude", m_amplitude);
 	int env_on = m_envelope.on; node->read("envelope_on", env_on); m_envelope.on = env_on;
 	node->read("envelope", m_envelope.mode);
