@@ -51,9 +51,9 @@ public:
 			cfg.write("gamma", m_overlays[i].gamma);
 			cfg.pop();
 		}
-		cfg.write("zoom", m_zoom);
-		cfg.write("pan_x", m_pan_x);
-		cfg.write("pan_y", m_pan_y);
+		cfg.write("zoom", m_view_state.zoom);
+		cfg.write("pan_x", m_view_state.pan_x);
+		cfg.write("pan_y", m_view_state.pan_y);
 		cfg.write("axis_x", m_axis_x);
 		cfg.write("axis_y", m_axis_y);
 		cfg.write("marginal", m_marginal ? 1 : 0);
@@ -73,9 +73,9 @@ public:
 			m_overlays[i].source = (DataSource)src;
 			m_overlays[i].palette = (Palette)pal;
 		}
-		node->read("zoom", m_zoom);
-		node->read("pan_x", m_pan_x);
-		node->read("pan_y", m_pan_y);
+		node->read("zoom", m_view_state.zoom);
+		node->read("pan_x", m_view_state.pan_x);
+		node->read("pan_y", m_view_state.pan_y);
 		node->read("axis_x", m_axis_x);
 		node->read("axis_y", m_axis_y);
 		int marg = 0; node->read("marginal", marg); m_marginal = marg;
@@ -94,10 +94,13 @@ private:
 	Overlay m_overlays[N_OVERLAYS]{};
 	int m_axis_x{0}, m_axis_y{1};  // which axes to display
 	bool m_marginal{false};         // true = sum over hidden axes
-	float m_zoom{1.0f};
-	float m_pan_x{0}, m_pan_y{0};
-	bool m_dragging{false};
-	float m_drag_x{}, m_drag_y{};
+
+	struct {
+		float zoom{1.0f};
+		float pan_x{0}, pan_y{0};
+		bool dragging{false};
+		float drag_x{}, drag_y{};
+	} m_view_state;
 
 	// current display rect (set each frame by do_draw)
 	SDL_FRect m_dst{};
@@ -427,17 +430,17 @@ SDL_FRect WidgetGrid::compute_display_rect(int tw, int th, float avail_x, float 
 {
 	float disp_w, disp_h;
 	if(th == 1) {
-		disp_w = avail_w * m_zoom;
+		disp_w = avail_w * m_view_state.zoom;
 		disp_h = avail_h;
 	} else {
 		float tex_aspect = (float)tw / (float)th;
 		float base_scale = (avail_w / avail_h > tex_aspect) ? avail_h / th : avail_w / tw;
-		float scale = base_scale * m_zoom;
+		float scale = base_scale * m_view_state.zoom;
 		disp_w = tw * scale;
 		disp_h = th * scale;
 	}
-	float cx = avail_x + avail_w * 0.5f + m_pan_x;
-	float cy = avail_y + avail_h * 0.5f + m_pan_y;
+	float cx = avail_x + avail_w * 0.5f + m_view_state.pan_x;
+	float cy = avail_y + avail_h * 0.5f + m_view_state.pan_y;
 	return { cx - disp_w * 0.5f, cy - disp_h * 0.5f, disp_w, disp_h };
 }
 
@@ -473,7 +476,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	int tw = grid.axes[m_axis_x].points;
 	int th = (grid.rank >= 2) ? grid.axes[m_axis_y].points : 1;
 
-	handle_mouse(r, ctrl_h, m_zoom, m_pan_x, m_pan_y, m_dragging, m_drag_x, m_drag_y);
+	handle_mouse(r, ctrl_h, m_view_state.zoom, m_view_state.pan_x, m_view_state.pan_y, m_view_state.dragging, m_view_state.drag_x, m_view_state.drag_y);
 
 	m_grid_w = tw;
 	m_grid_h = th;
@@ -488,7 +491,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	draw_cursor(rend, grid);
 
 	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
-		m_zoom = 1.0f; m_pan_x = 0; m_pan_y = 0;
+		m_view_state = {};
 	}
 	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D))
 		dump_slice(sim, tw, th);

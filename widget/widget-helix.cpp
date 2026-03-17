@@ -48,7 +48,7 @@ private:
 
 	// visual layers
 	struct {
-		bool on{true};
+		bool on{false};
 		int mode{0};
 		float alpha{0.7f};
 		int color{0};  // HelixColor
@@ -61,13 +61,13 @@ private:
 	} m_helix;
 
 	struct {
-		bool on{true};
-		float alpha{0.1f};
+		bool on{false};
+		float alpha{0.3f};
 		int color{0};  // HelixColor
 	} m_surface;
 
 	struct {
-		bool on{true};
+		bool on{false};
 		float alpha{0.3f};
 	} m_potential;
 
@@ -296,9 +296,10 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		if(ImGui::IsKeyPressed(ImGuiKey_A)) {
 			m_camera = Camera3D{};
 			m_amplitude = 0.1f;
-			m_surface.on = true; m_surface.color = 0; m_surface.alpha = 0.3f;
-			m_helix.on = true; m_helix.color = 0; m_helix.alpha = 1.0f;
-			m_envelope.on = true; m_envelope.mode = 0; m_envelope.alpha = 0.7f;
+			m_helix = {};
+			m_surface = {};
+			m_envelope = {};
+			m_potential = {};
 			m_slice.mode = Slice;
 		}
 	}
