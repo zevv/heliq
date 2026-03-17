@@ -537,8 +537,13 @@ void Simulation::sample_wavefunction(const Setup &setup)
 	double scale = 1.0 / sqrt(norm);
 
 	size_t n = grid.total_points();
-	for(size_t i = 0; i < n; i++)
-		psi[0][i] *= scale;
+	float fscale = (float)scale;
+	for(size_t i = 0; i < n; i++) {
+		psi[0][i] *= fscale;
+		// clamp float32 denormal noise to zero
+		if(std::norm(psi[0][i]) < 1e-20f)
+			psi[0][i] = psi_t(0, 0);
+	}
 
 	std::copy_n(psi[0], n, psi_initial);
 	std::copy_n(psi[0], n, psi[1]);

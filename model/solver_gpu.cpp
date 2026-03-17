@@ -258,7 +258,8 @@ GpuSolver::GpuSolver(const Grid &grid)
 	m->program = clCreateProgramWithSource(m->ctx, 1, &kernel_src, nullptr, &err);
 	check_cl(err, "clCreateProgramWithSource");
 
-	err = clBuildProgram(m->program, 1, &m->device, nullptr, nullptr, nullptr);
+	err = clBuildProgram(m->program, 1, &m->device,
+		"-cl-denorms-are-zero -cl-fast-relaxed-math", nullptr, nullptr);
 	if(err != CL_SUCCESS) {
 		char log[4096]{};
 		clGetProgramBuildInfo(m->program, m->device, CL_PROGRAM_BUILD_LOG, sizeof(log), log, nullptr);
