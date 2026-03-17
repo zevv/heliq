@@ -263,9 +263,14 @@ void App::init(int argc, char **argv)
 
 	// Create default panel layout if empty
 	if(m_root_panel->nkids() == 0) {
-		Panel *p1 = new Panel(Panel::Type::SplitV);
-		p1->add(Widgets::create_widget("dummy"));
-		m_root_panel->add(p1);
+		Panel *split = new Panel(Panel::Type::SplitH);
+		Panel *left = new Panel(Panel::Type::SplitV);
+		Panel *right = new Panel(Panel::Type::SplitV);
+		left->add(Widgets::create_widget("helix"));
+		right->add(Widgets::create_widget("info"));
+		split->add(left);
+		split->add(right);
+		m_root_panel->add(split);
 	}
 }
 
