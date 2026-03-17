@@ -1,17 +1,13 @@
--- Mach-Zehnder interferometer in 2D.
--- Particle enters at 45°, hits the bottom beam splitter and splits.
--- Path A (transmitted) goes right to the right mirror, reflects upward.
--- Path B (reflected) goes left to the left mirror, reflects upward.
--- Both paths meet at the top beam splitter and interfere.
--- The gap between the two splitter halves keeps the paths separate.
--- Output depends on the relative phase accumulated on each path.
--- Try adjusting splitter height to tune the splitting ratio.
-
-local L = 5 * um
+description("Mach-Zehnder Interferometer", [[
+A beam splitter divides the electron into two paths. Mirrors redirect
+both paths to a second meeting point where they recombine and interfere.
+The output depends on the relative phase accumulated on each path.
+This is the optical bench of quantum mechanics — the building block
+of quantum eraser experiments.]])
 
 domain {
-    { min = -L, max = L, points = 512 },
-    { min = -L, max = L, points = 512 },
+    { min = -100 * nm, max = 100 * nm, points = 512 },
+    { min = -100 * nm, max = 100 * nm, points = 512 },
 }
 
 electron = def_particle {
@@ -19,38 +15,38 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.1e-3 * eV
+local energy = 0.1 * eV
 local p = math.sqrt(2 * m_electron * energy)
 
+-- enter at 45 degrees
 particle(electron, {
-    position = { -2 * um, -4 * um },
-    momentum = { p, p },
-    width = 0.2 * um,
+    position = { -20 * nm, -80 * nm },
+    momentum = { p * 0.707, p * 0.707 },
+    width = 6 * nm,
 })
 
-local split_h = energy * 1.75
-local split_w = 0.01 * um
+local split_h = energy * 0.65
+local split_w = 0.5 * nm
 local mirror_h = energy * 20
-local mirror_w = 0.03 * um
+local mirror_w = 1 * nm
 
--- Beam splitter
+-- beam splitter (vertical, at x=0)
 barrier {
-    from = { -split_w, -5 * um },
-    to   = {  split_w,  5 * um },
+    from = { -split_w, -100 * nm },
+    to   = {  split_w,  100 * nm },
     height = split_h,
 }
 
 -- left mirror
 barrier {
-    from = { -2 * um - mirror_w, -2 * um},
-    to   = { -2 * um + mirror_w,  2 * um},
+    from = { -50 * nm - mirror_w, -40 * nm },
+    to   = { -50 * nm + mirror_w,  40 * nm },
     height = mirror_h,
 }
 
 -- right mirror
 barrier {
-    from = { 2 * um - mirror_w, -2 * um},
-    to   = { 2 * um + mirror_w,  2 * um},
+    from = { 50 * nm - mirror_w, -40 * nm },
+    to   = { 50 * nm + mirror_w,  40 * nm },
     height = mirror_h,
 }
-

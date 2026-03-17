@@ -58,6 +58,7 @@ private:
 		bool on{true};
 		int color{0};
 		float alpha{1.0f};
+		bool thick{false};
 	} m_helix;
 
 	struct {
@@ -207,10 +208,12 @@ void WidgetHelixGL::do_load(ConfigReader::Node *node)
 
 void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 {
-	// sync camera from shared view when locked
+	// sync from shared view when locked
 	if(m_view.lock) {
 		m_camera = m_view.camera;
 		m_amplitude = m_view.amplitude;
+		m_slice.normalize = m_view.normalize;
+		m_slice.auto_track = m_view.auto_track;
 	}
 
 	if(!m_gl.valid()) m_gl.init(rend);
@@ -302,6 +305,8 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			m_potential = {};
 			m_slice.mode = Slice;
 		}
+		if(ImGui::IsKeyPressed(ImGuiKey_W))
+			m_helix.thick = !m_helix.thick;
 	}
 	draw_controls(sim);
 
@@ -309,6 +314,8 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	if(m_view.lock) {
 		m_view.camera = m_camera;
 		m_view.amplitude = m_amplitude;
+		m_view.normalize = m_slice.normalize;
+		m_view.auto_track = m_slice.auto_track;
 	}
 }
 
@@ -694,9 +701,11 @@ void WidgetHelixGL::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 	glUseProgram(m_gl.vcol_shader());
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
+	glLineWidth(m_helix.thick ? 2.0f : 1.0f);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data());
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data() + 3);
 	glDrawArrays(GL_LINE_STRIP, 0, n);
+	glLineWidth(1.0f);
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
 }

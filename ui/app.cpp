@@ -73,6 +73,9 @@ void App::load()
 		}
 		m_view.camera.load(n, "cam_");
 		n->read("amplitude", m_view.amplitude);
+		int norm = 0, autotr = 0;
+		n->read("normalize", norm); m_view.normalize = norm;
+		n->read("auto_track", autotr); m_view.auto_track = autotr;
 	}
 }
 
@@ -101,6 +104,8 @@ void App::save()
 	}
 	m_view.camera.save(cw, "cam_");
 	cw.write("amplitude", m_view.amplitude);
+	cw.write("normalize", m_view.normalize ? 1 : 0);
+	cw.write("auto_track", m_view.auto_track ? 1 : 0);
 	cw.pop();
 	cw.close();
 }

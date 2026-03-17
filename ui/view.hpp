@@ -23,6 +23,10 @@ public:
     Camera3D camera;
     float amplitude{0.1f};
 
+    // shared slice state for locked helix widgets (mode and axis stay per-widget)
+    bool normalize{false};
+    bool auto_track{false};
+
     // persistent grid cursor — set by grid LMB click, read by helix widgets
     int cursor[MAX_RANK]{};
 
