@@ -254,7 +254,7 @@ void App::init(int argc, char **argv)
 	init_video();
 
 	// load experiment from script
-	m_script = (argc > 1) ? argv[1] : "experiments/1p1d-barrier.lua";
+	m_script = (argc > 1) ? argv[1] : "experiments/010-1D-1P-free.lua";
 	m_experiment.load(m_script);
 	init_cursor();
 

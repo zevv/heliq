@@ -1,6 +1,7 @@
--- Two particles with different widths and hard bounce.
--- Asymmetry makes entanglement from the bounce visible.
--- Blob rotates through diagonal orientations during reflection.
+-- Two particles colliding via contact interaction.
+-- In config space, the diagonal x₁=x₂ is a repulsive wall.
+-- The blob bounces off the diagonal — that's the collision.
+-- Watch the marginals: momentum transfers from one particle to the other.
 -- Finite interaction time creates phase shearing.
 -- Use conditional slices to verify: if slices differ, it's entangled.
 
