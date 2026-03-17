@@ -804,35 +804,41 @@ void WidgetHelixGL::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 static void gl_draw_box(float x0, float x1, float a,
                          const float x0_col[4], const float x1_col[4])
 {
-	// 6 faces × 4 verts × 7 floats
-	// x0 verts use x0_col, x1 verts use x1_col
-	// for y/z faces, interpolate between x0_col and x1_col
+	// tube: 4 faces wrapping around X (front, back, top, bottom)
+	// no left/right caps — the wavefunction passes through
 	const float *c0 = x0_col, *c1 = x1_col;
-	float verts[] = {
-		// front (z=a)
+	float faces[] = {
+		// front (z=+a)
 		x0,-a,a, c0[0],c0[1],c0[2],c0[3],  x1,-a,a, c1[0],c1[1],c1[2],c1[3],
 		x0, a,a, c0[0],c0[1],c0[2],c0[3],  x1, a,a, c1[0],c1[1],c1[2],c1[3],
 		// back (z=-a)
 		x0,-a,-a, c0[0],c0[1],c0[2],c0[3],  x1,-a,-a, c1[0],c1[1],c1[2],c1[3],
 		x0, a,-a, c0[0],c0[1],c0[2],c0[3],  x1, a,-a, c1[0],c1[1],c1[2],c1[3],
-		// top (y=a)
+		// top (y=+a)
 		x0,a,-a, c0[0],c0[1],c0[2],c0[3],  x1,a,-a, c1[0],c1[1],c1[2],c1[3],
 		x0,a, a, c0[0],c0[1],c0[2],c0[3],  x1,a, a, c1[0],c1[1],c1[2],c1[3],
 		// bottom (y=-a)
 		x0,-a,-a, c0[0],c0[1],c0[2],c0[3],  x1,-a,-a, c1[0],c1[1],c1[2],c1[3],
 		x0,-a, a, c0[0],c0[1],c0[2],c0[3],  x1,-a, a, c1[0],c1[1],c1[2],c1[3],
-		// left (x=x0)
-		x0,-a,-a, c0[0],c0[1],c0[2],c0[3],  x0,-a,a, c0[0],c0[1],c0[2],c0[3],
-		x0, a,-a, c0[0],c0[1],c0[2],c0[3],  x0, a,a, c0[0],c0[1],c0[2],c0[3],
-		// right (x=x1)
-		x1,-a,-a, c1[0],c1[1],c1[2],c1[3],  x1,-a,a, c1[0],c1[1],c1[2],c1[3],
-		x1, a,-a, c1[0],c1[1],c1[2],c1[3],  x1, a,a, c1[0],c1[1],c1[2],c1[3],
 	};
-	for(int f = 0; f < 6; f++) {
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), verts + f * 28);
-		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), verts + f * 28 + 3);
+	for(int f = 0; f < 4; f++) {
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), faces + f * 28);
+		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), faces + f * 28 + 3);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	}
+
+}
+
+
+static void gl_draw_cap(float x, float a, const float col[4])
+{
+	float cap[] = {
+		x,-a,-a, col[0],col[1],col[2],col[3],  x,-a,a, col[0],col[1],col[2],col[3],
+		x, a,-a, col[0],col[1],col[2],col[3],  x, a,a, col[0],col[1],col[2],col[3],
+	};
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), cap);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), cap + 3);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
 
@@ -858,15 +864,37 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
 
+	float prev_alpha = 0;
 	for(int i = 0; i < n; i++) {
 		double v = fabs(pot_view[i].real());
-		if(v < 1e-30) continue;
+		float alpha = (v > 1e-30) ? (float)(v / v_max) * m_potential.alpha : 0;
 
-		float alpha = (float)(v / v_max) * m_potential.alpha;
-		float x0 = -1.0f + dx * i;
-		float x1 = x0 + dx;
-		float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
-		gl_draw_box(x0, x1, a, col, col);
+		if(alpha > 1e-4f) {
+			float x0 = -1.0f + dx * i;
+			float x1 = x0 + dx;
+			float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
+			gl_draw_box(x0, x1, a, col, col);
+
+			// cap at sharp rising edge
+			float delta = alpha - prev_alpha;
+			if(delta > 0.15f * m_potential.alpha)
+				gl_draw_cap(x0, a, col);
+		}
+
+		// cap at sharp falling edge (previous cell was high, this is low)
+		if(prev_alpha > 1e-4f && (alpha - prev_alpha) < -0.15f * m_potential.alpha) {
+			float px1 = -1.0f + dx * i;
+			float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
+			gl_draw_cap(px1, a, pcol);
+		}
+
+		prev_alpha = alpha;
+	}
+
+	// cap at domain edge if last cell has potential
+	if(prev_alpha > 0.15f * m_potential.alpha) {
+		float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
+		gl_draw_cap(1.0f, a, pcol);
 	}
 
 	glDisableVertexAttribArray(1);
