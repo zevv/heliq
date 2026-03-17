@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fftw3.h>
 #include "solver.hpp"
 
 class CpuSolver : public Solver {
@@ -21,6 +22,6 @@ private:
 	psi_t *m_potential_phase{};
 	psi_t *m_kinetic_phase{};
 
-	void *m_fft_forward{};
-	void *m_fft_inverse{};
+	fftwf_plan m_fft_forward{};
+	fftwf_plan m_fft_inverse{};
 };

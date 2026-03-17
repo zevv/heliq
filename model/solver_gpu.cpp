@@ -170,6 +170,7 @@ struct GpuSolverImpl {
 	cl_kernel k_marginal_2d{};
 	cl_mem d_reduce_partial{};        // partial sums for reduction
 	cl_mem d_marginal_out{};          // 2D marginal output
+	size_t d_marginal_out_size{};     // current allocation size
 	cl_mem d_strides{};               // constant buffer for grid strides
 	int n_reduce_groups{};
 
@@ -391,6 +392,12 @@ GpuSolver::~GpuSolver()
 	if(m->d_kinetic_phase_t) clReleaseMemObject(m->d_kinetic_phase_t);
 	if(m->k_transpose_fwd) clReleaseKernel(m->k_transpose_fwd);
 	if(m->k_transpose_inv) clReleaseKernel(m->k_transpose_inv);
+	if(m->d_reduce_partial) clReleaseMemObject(m->d_reduce_partial);
+	if(m->d_marginal_out) clReleaseMemObject(m->d_marginal_out);
+	if(m->d_strides) clReleaseMemObject(m->d_strides);
+	if(m->k_extract_slice_2d) clReleaseKernel(m->k_extract_slice_2d);
+	if(m->k_reduce_norm_sq) clReleaseKernel(m->k_reduce_norm_sq);
+	if(m->k_marginal_2d) clReleaseKernel(m->k_marginal_2d);
 	if(m->d_psi) clReleaseMemObject(m->d_psi);
 	if(m->d_potential_phase) clReleaseMemObject(m->d_potential_phase);
 	if(m->d_kinetic_phase) clReleaseMemObject(m->d_kinetic_phase);
@@ -614,9 +621,12 @@ void GpuSolver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *ou
 	size_t out_bytes = nx * ny * sizeof(float);
 	cl_int err;
 
-	// allocate output buffer
-	if(!m->d_marginal_out)
+	// allocate or reallocate output buffer if size changed
+	if(out_bytes != m->d_marginal_out_size) {
+		if(m->d_marginal_out) clReleaseMemObject(m->d_marginal_out);
 		m->d_marginal_out = clCreateBuffer(m->ctx, CL_MEM_READ_WRITE, out_bytes, nullptr, &err);
+		m->d_marginal_out_size = out_bytes;
+	}
 
 	// collect hidden axes info
 	cl_uint hidden_strides[MAX_RANK];

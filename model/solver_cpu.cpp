@@ -74,8 +74,8 @@ CpuSolver::CpuSolver(const Grid &grid)
 
 CpuSolver::~CpuSolver()
 {
-	if(m_fft_forward) fftwf_destroy_plan((fftwf_plan)m_fft_forward);
-	if(m_fft_inverse) fftwf_destroy_plan((fftwf_plan)m_fft_inverse);
+	if(m_fft_forward) fftwf_destroy_plan(m_fft_forward);
+	if(m_fft_inverse) fftwf_destroy_plan(m_fft_inverse);
 	fftwf_free(m_psi);
 	fftwf_free(m_potential_phase);
 	fftwf_free(m_kinetic_phase);
@@ -91,14 +91,14 @@ void CpuSolver::step()
 		m_psi[i] *= m_potential_phase[i];
 
 	// 2. FFT forward
-	fftwf_execute_dft((fftwf_plan)m_fft_forward, (fftwf_complex *)m_psi, (fftwf_complex *)m_psi);
+	fftwf_execute_dft(m_fft_forward, (fftwf_complex *)m_psi, (fftwf_complex *)m_psi);
 
 	// 3. full-step kinetic
 	for(size_t i = 0; i < n; i++)
 		m_psi[i] *= m_kinetic_phase[i];
 
 	// 4. FFT inverse
-	fftwf_execute_dft((fftwf_plan)m_fft_inverse, (fftwf_complex *)m_psi, (fftwf_complex *)m_psi);
+	fftwf_execute_dft(m_fft_inverse, (fftwf_complex *)m_psi, (fftwf_complex *)m_psi);
 
 	// FFTW inverse doesn't normalize
 	float inv_n = 1.0f / (float)n;
