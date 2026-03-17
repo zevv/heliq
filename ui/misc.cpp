@@ -33,6 +33,8 @@ void humanize(double val, char *buf, size_t buf_len)
 		{ 1e-6, "μ" },
 		{ 1e-9, "n" },
 		{ 1e-12,"p" },
+		{ 1e-15,"f" },
+		{ 1e-18,"a" },
 		{ 0.0,  nullptr }
 	};
 
@@ -43,6 +45,14 @@ void humanize(double val, char *buf, size_t buf_len)
 			return;
 		}
 	}
+}
+
+
+void humanize_unit(double val, const char *unit, char *buf, size_t buf_len)
+{
+	char tmp[64];
+	humanize(val, tmp, sizeof(tmp));
+	snprintf(buf, buf_len, "%s%s", tmp, unit);
 }
 
 

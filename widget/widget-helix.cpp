@@ -296,7 +296,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		if(ImGui::IsKeyPressed(ImGuiKey_A)) {
 			m_camera = Camera3D{};
 			m_amplitude = 0.1f;
-			m_surface.on = true; m_surface.alpha = 0.1f;
+			m_surface.on = true; m_surface.color = 0; m_surface.alpha = 0.3f;
 			m_helix.on = true; m_helix.color = 0; m_helix.alpha = 1.0f;
 			m_envelope.on = true; m_envelope.mode = 0; m_envelope.alpha = 0.7f;
 			m_slice.mode = Slice;

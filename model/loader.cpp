@@ -251,8 +251,17 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 		return false;
 	}
 
+	// title and description
+	lua_getfield(L, -1, "title");
+	if(lua_isstring(L, -1)) setup.title = lua_tostring(L, -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "description");
+	if(lua_isstring(L, -1)) setup.description = lua_tostring(L, -1);
+	lua_pop(L, 1);
+
 	setup.spatial_dims = (int)getfield_number(L, -1, "spatial_dims");
 	setup.timescale = getfield_number(L, -1, "timescale", 1e-15);
+	setup.default_timescale = setup.timescale;
 
 	// absorbing boundary
 	lua_getfield(L, -1, "absorbing_boundary");
@@ -268,6 +277,10 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 	       && load_potentials(L, setup)
 	       && load_interactions(L, setup)
 	       && load_simulations(L, setup);
+
+	// store auto-computed defaults for UI reset
+	if(!setup.simulations.empty())
+		setup.default_dt = fabs(setup.simulations[0].dt);
 
 	lua_close(L);
 	return ok;

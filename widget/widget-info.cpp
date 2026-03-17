@@ -4,6 +4,7 @@
 #include "widgetregistry.hpp"
 #include "experiment.hpp"
 #include "config.hpp"
+#include "misc.hpp"
 
 class WidgetInfo : public Widget {
 public:
@@ -43,7 +44,9 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		if(ImGui::Button(rev ? "<" : ">"))
 			exp.timescale = -exp.timescale;
 		ImGui::TableNextColumn();
-		ImGui::Text("t = %.4e s", exp.sim_time);
+		char time_str[64];
+		humanize_unit(exp.sim_time, "s", time_str, sizeof(time_str));
+		ImGui::Text("t = %s", time_str);
 
 		// speed
 		ImGui::TableNextRow();
@@ -52,7 +55,10 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		ImGui::TableNextColumn();
 		ImGui::SetNextItemWidth(-1);
 		float log_ts = log10f(fabs(exp.timescale));
-		if(ImGui::SliderFloat("##speed", &log_ts, -14.0f, -5.0f, "speed: 1e%.1f x"))
+		float log_ts_def = log10f(fabs(exp.setup.default_timescale));
+		char ts_label[64];
+		humanize_unit(fabs(exp.timescale), "s/s", ts_label, sizeof(ts_label));
+		if(ImGui::SliderFloat("##speed", &log_ts, log_ts_def - 4, log_ts_def + 4, ts_label))
 			exp.timescale = (rev ? -1.0 : 1.0) * pow(10.0, log_ts);
 
 		if(!exp.simulations.empty()) {
@@ -64,7 +70,10 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			ImGui::TableNextColumn();
 			ImGui::SetNextItemWidth(-1);
 			float log_dt = log10f(fabs(sim.dt));
-			if(ImGui::SliderFloat("##dt", &log_dt, -14.0f, -8.0f, "step: 1e%.1f s")) {
+			float log_dt_def = (exp.setup.default_dt > 0) ? log10f(exp.setup.default_dt) : log_dt;
+			char dt_label[64];
+			humanize_unit(fabs(sim.dt), "s", dt_label, sizeof(dt_label));
+			if(ImGui::SliderFloat("##dt", &log_dt, log_dt_def - 3, log_dt_def + 3, dt_label)) {
 				double new_dt = (sim.dt < 0 ? -1.0 : 1.0) * pow(10.0, log_dt);
 				for(auto &s : exp.simulations)
 					s->set_dt(new_dt);
@@ -147,6 +156,15 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		ImGui::EndTable();
 	}
 
+	// experiment title and description
+	if(!exp.setup.title.empty()) {
+		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", exp.setup.title.c_str());
+		if(!exp.setup.description.empty())
+			ImGui::TextWrapped("%s", exp.setup.description.c_str());
+	}
+
 	// experiment info below
 	ImGui::Spacing();
 	ImGui::Separator();
@@ -184,6 +202,14 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			ImGui::Text("  %zu: %s  height=%.2g eV",
 				i, types[(int)pot.type], pot.height / 1.602e-19);
 		}
+	}
+
+	// A: reset speed and dt to auto-computed defaults
+	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
+		exp.timescale = exp.setup.default_timescale;
+		if(exp.setup.default_dt > 0)
+			for(auto &sim : exp.simulations)
+				sim->set_dt(exp.timescale >= 0 ? exp.setup.default_dt : -exp.setup.default_dt);
 	}
 
 	// simulations

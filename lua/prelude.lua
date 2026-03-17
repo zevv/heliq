@@ -4,6 +4,8 @@
 
 -- accumulated world state
 local world = {
+    title = "",
+    description = "",
     spatial_dims = nil,
     domain = {},
     particles = {},
@@ -64,6 +66,11 @@ env.k_coulomb  = k_coulomb
 function env.dimensions(n)
     -- kept for backward compatibility, spatial_dims inferred from domain
     world.spatial_dims = n
+end
+
+function env.description(title, text)
+    world.title = title
+    world.description = text or ""
 end
 
 function env.domain(axes)

@@ -48,13 +48,17 @@ struct SimConfig {
 };
 
 struct Setup {
+	std::string title{};
+	std::string description{};
 	int spatial_dims{};
 	Axis domain[MAX_RANK]{};
 	std::vector<Particle> particles{};
 	std::vector<Potential> potentials{};
 	std::vector<Interaction> interactions{};
 	std::vector<SimConfig> simulations{};
-	double timescale{1e-15};
+	double timescale{1e-15};         // current timescale
+	double default_timescale{1e-15}; // auto-computed, for 'A' reset
+	double default_dt{};             // auto-computed, for 'A' reset
 	bool absorbing_boundary{false};
 	double absorb_width{0.02};     // fraction of domain width per side
 	double absorb_strength{};      // 0 = auto-compute from potential/grid

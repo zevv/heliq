@@ -10,6 +10,7 @@
 double hirestime();
 
 void humanize(double val, char *buf, size_t buf_len);
+void humanize_unit(double val, const char *unit, char *buf, size_t buf_len);
 void hsv_to_rgb(double h, double s, double v, uint8_t &r, uint8_t &g, uint8_t &b);
 
 struct Grid;

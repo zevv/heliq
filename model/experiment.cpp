@@ -9,6 +9,11 @@
 
 bool Experiment::load(const std::string& path)
 {
+	// preserve user-adjusted timescale and dt across reloads
+	bool is_reload = !simulations.empty();
+	double prev_timescale = timescale;
+	double prev_dt = is_reload ? simulations[0]->dt : 0;
+
 	simulations.clear();
 	setup = Setup{};
 
@@ -21,10 +26,19 @@ bool Experiment::load(const std::string& path)
 		setup.spatial_dims, setup.particles.size(),
 		setup.potentials.size(), setup.simulations.size());
 
-	timescale = setup.timescale;
+	if(is_reload) {
+		// restore user's timescale; override sim dt after creation
+		timescale = prev_timescale;
+	} else {
+		timescale = setup.timescale;
+	}
 
 	for(auto &sc : setup.simulations)
 		simulations.push_back(std::make_unique<Simulation>(sc, setup));
+
+	if(is_reload && prev_dt != 0)
+		for(auto &sim : simulations)
+			sim->set_dt(prev_dt);
 
 	sim_time = 0;
 	batch_size = 4;
