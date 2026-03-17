@@ -67,7 +67,7 @@ private:
 	} m_surface;
 
 	struct {
-		bool on{false};
+		bool on{true};
 		float alpha{0.3f};
 	} m_potential;
 

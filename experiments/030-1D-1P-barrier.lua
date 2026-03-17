@@ -1,9 +1,12 @@
--- Electron hitting a high potential barrier in 1D.
--- Barrier is 10× the kinetic energy: mostly reflects, tiny evanescent tail.
--- Watch for partial reflection and the standing wave pattern from interference.
+description("Barrier Reflection", [[
+An electron hitting a tall potential barrier — 10x the kinetic energy.
+Mostly reflects, but watch for the evanescent tail leaking into the barrier.
+As the reflected wave returns, it interferes with the incoming wave,
+creating a standing wave pattern. This is the quantum version of a ball
+bouncing off a wall — except the ball partially leaks through.]])
 
 domain {
-    { min = -5 * um, max = 5 * um, points = 512 },
+    { min = -100 * nm, max = 100 * nm, points = 512 },
 }
 
 electron = def_particle {
@@ -11,20 +14,17 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.01e-3 * eV
+local energy = 0.1 * eV
 local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
-    position = { 0 },
+    position = { -30 * nm },
     momentum = { momentum },
-    width = 0.4 * um,
+    width = 5 * nm,
 })
 
-local wall_h = 10 * energy
-local wall_w = 0.2 * um
-
 barrier {
-    from = { 4 * um },
-    to   = { 5 * um },
-    height = wall_h,
+    from = { 20 * nm },
+    to   = { 30 * nm },
+    height = 10 * energy,
 }

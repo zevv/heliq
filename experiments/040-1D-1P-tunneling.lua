@@ -1,9 +1,12 @@
--- Quantum tunneling through a thin barrier in 1D.
--- Barrier height equals kinetic energy: significant transmission.
--- Watch the packet split: reflected and transmitted parts separate cleanly.
+description("Quantum Tunneling", [[
+An electron hitting a thin barrier slightly above its kinetic energy.
+Classically, it would bounce. Quantum mechanically, part of the
+wavefunction leaks through — tunneling. Watch the packet split into
+reflected and transmitted components. The thinner the barrier, the
+more gets through. This is how tunnel diodes and STM microscopes work.]])
 
 domain {
-    { min = -5 * um, max = 5 * um, points = 512 },
+    { min = -100 * nm, max = 100 * nm, points = 512 },
 }
 
 electron = def_particle {
@@ -11,20 +14,18 @@ electron = def_particle {
     charge = -e_charge,
 }
 
-local energy = 0.01e-3 * eV
+local energy = 0.1 * eV
 local momentum = math.sqrt(2 * m_electron * energy)
 
 particle(electron, {
-    position = { -2 * um },
+    position = { -30 * nm },
     momentum = { momentum },
-    width = 0.4 * um,
+    width = 5 * nm,
 })
 
-local wall_h = 1 * energy
-local wall_w = 0.05 * um
-
+-- thin barrier, slightly above kinetic energy
 barrier {
-    from = { -wall_w },
-    to   = {  wall_w },
-    height = wall_h,
+    from = { -0.5 * nm },
+    to   = {  0.5 * nm },
+    height = 1.0 * energy,
 }
