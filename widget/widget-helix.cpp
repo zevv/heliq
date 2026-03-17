@@ -19,7 +19,7 @@
 #include "misc.hpp"
 #include "glview.hpp"
 
-static constexpr double PITCH_LIMIT = M_PI * 0.49;
+#include "camera3d.hpp"
 
 enum class Envelope { Amplitude, ProbDensity, Real, Imaginary, COUNT };
 enum class HelixColor { Default, Gray, Rainbow, Flame, Spatial, COUNT };
@@ -41,12 +41,7 @@ private:
 
 	enum SliceMode { Slice, Marginal, Momentum };
 
-	// camera state
-	struct {
-		double yaw{0}, pitch{0}, dist{2.5};
-		double pan_x{0}, pan_y{0};
-		bool ortho{true};
-	} m_camera;
+	Camera3D m_camera;
 
 	float m_amplitude{0.1f};
 
@@ -84,12 +79,7 @@ private:
 		bool auto_track{false};
 	} m_slice;
 
-	// input state
-	struct {
-		bool orbiting{false}, panning{false};
-		float drag_x{}, drag_y{};
 
-	} m_input;
 
 	// data
 	std::vector<psi_t> m_slice_data;
@@ -123,7 +113,7 @@ private:
 	double envelope_value(psi_t psi, double max_amp);
 
 	// camera
-	mat4 build_camera(int w, int h);
+
 	void mvp_to_float(const mat4 &m, float *out);
 
 	// GL drawing
@@ -141,9 +131,7 @@ private:
 	// SDL drawing (overlays on top of GL texture)
 	void draw_controls(const Simulation &sim);
 
-	// input
-	void handle_mouse(SDL_Rect &r);
-	void handle_keys();
+
 
 };
 
@@ -230,12 +218,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 {
 	// sync camera from shared view when locked
 	if(m_view.lock) {
-		m_camera.yaw = m_view.camera.yaw;
-		m_camera.pitch = m_view.camera.pitch;
-		m_camera.dist = m_view.camera.dist;
-		m_camera.pan_x = m_view.camera.pan_x;
-		m_camera.pan_y = m_view.camera.pan_y;
-		m_camera.ortho = m_view.camera.ortho;
+		m_camera = m_view.camera;
 		m_amplitude = m_view.amplitude;
 	}
 
@@ -263,7 +246,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	auto *psi = m_slice_data.data();
 	double max_amp = compute_max_amp(sim, psi, psi_all, n);
 
-	handle_mouse(r);
+	m_camera.handle_mouse(r);
 
 	// GL render
 	m_gl.resize(r.w, r.h);
@@ -273,7 +256,7 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	//glLineWidth(2.0f);
 
-	mat4 vp = build_camera(r.w, r.h);
+	mat4 vp = m_camera.build(r.w, r.h);
 	float mvp[16];
 	mvp_to_float(vp, mvp);
 	m_gl.set_mvp(mvp);
@@ -317,17 +300,22 @@ void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		}
 	}
 
-	if(ImGui::IsWindowFocused()) handle_keys();
+	if(ImGui::IsWindowFocused()) {
+		m_camera.handle_keys();
+		if(ImGui::IsKeyPressed(ImGuiKey_A)) {
+			m_camera = Camera3D{};
+			m_amplitude = 0.1f;
+			m_surface.on = true; m_surface.alpha = 0.1f;
+			m_helix.on = true; m_helix.color = 0; m_helix.alpha = 1.0f;
+			m_envelope.on = true; m_envelope.mode = 0; m_envelope.alpha = 0.7f;
+			m_slice.mode = Slice;
+		}
+	}
 	draw_controls(sim);
 
 	// sync camera back to shared view when locked
 	if(m_view.lock) {
-		m_view.camera.yaw = m_camera.yaw;
-		m_view.camera.pitch = m_camera.pitch;
-		m_view.camera.dist = m_camera.dist;
-		m_view.camera.pan_x = m_camera.pan_x;
-		m_view.camera.pan_y = m_camera.pan_y;
-		m_view.camera.ortho = m_camera.ortho;
+		m_view.camera = m_camera;
 		m_view.amplitude = m_amplitude;
 	}
 }
@@ -456,7 +444,7 @@ void WidgetHelixGL::compute_marginals(const Simulation &sim, const psi_t *psi_al
 		int ax = m_slice.axis;
 		int na = sim.grid.axes[ax].points;
 		m_potential_marginal.assign(na, 0);
-		auto pot_view = sim.grid.slice_view(0, 1, zero_cursor, sim.potential);
+		auto pot_view = sim.grid.slice_view(0, 1, zero_cursor, sim.potential.data());
 		for(int i = 0; i < n0; i++) {
 			for(int j = 0; j < n1; j++) {
 				double v = fabs(pot_view.at(i, j).real());
@@ -551,23 +539,6 @@ double WidgetHelixGL::envelope_value(psi_t psi, double max_amp)
 
 
 // --- camera ---
-
-
-mat4 WidgetHelixGL::build_camera(int w, int h)
-{
-	vec3 center = {m_camera.pan_x, m_camera.pan_y, 0};
-	vec3 eye = {
-		center.x + m_camera.dist * sin(m_camera.yaw) * cos(m_camera.pitch),
-		center.y + m_camera.dist * sin(m_camera.pitch),
-		center.z + m_camera.dist * cos(m_camera.yaw) * cos(m_camera.pitch),
-	};
-	mat4 view = mat4::look_at(eye, center, {0, 1, 0});
-	double aspect = (double)w / h;
-	mat4 proj = m_camera.ortho
-		? mat4::ortho(m_camera.dist * 0.5, aspect, -100.0, 100.0)
-		: mat4::perspective(0.8, aspect, 0.001, 1000.0);
-	return proj * view;
-}
 
 
 void WidgetHelixGL::mvp_to_float(const mat4 &m, float *out)
@@ -875,7 +846,7 @@ static void gl_draw_box(float x0, float x1, float a,
 
 void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 {
-	auto *pot = sim.potential;
+	auto *pot = sim.potential.data();
 	float a = m_amplitude;
 
 	auto pot_view = sim.grid.axis_view(m_slice.axis, m_slice.pos, pot);
@@ -1104,92 +1075,6 @@ void WidgetHelixGL::draw_controls(const Simulation &sim)
 
 
 // --- input (identical to widget-helix.cpp) ---
-
-
-void WidgetHelixGL::handle_mouse(SDL_Rect &r)
-{
-	ImVec2 mp = ImGui::GetMousePos();
-	bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
-	               mp.y >= r.y && mp.y < r.y + r.h;
-	bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
-
-	if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
-		if(shift) m_input.panning = true;
-		else      m_input.orbiting = true;
-		m_input.drag_x = mp.x; m_input.drag_y = mp.y;
-	}
-	if(m_input.orbiting && ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !shift) {
-		m_camera.yaw   -= (mp.x - m_input.drag_x) * 0.005;
-		m_camera.pitch += (mp.y - m_input.drag_y) * 0.005;
-		if(m_camera.pitch >  PITCH_LIMIT) m_camera.pitch =  PITCH_LIMIT;
-		if(m_camera.pitch < -PITCH_LIMIT) m_camera.pitch = -PITCH_LIMIT;
-		m_input.drag_x = mp.x; m_input.drag_y = mp.y;
-	}
-	if(m_input.panning && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
-		double scale = m_camera.dist * 0.002;
-		m_camera.pan_x -= (mp.x - m_input.drag_x) * scale * cos(m_camera.yaw);
-		m_camera.pan_y += (mp.y - m_input.drag_y) * scale;
-		m_input.drag_x = mp.x; m_input.drag_y = mp.y;
-	}
-	if(ImGui::IsMouseReleased(ImGuiMouseButton_Middle)) {
-		m_input.orbiting = false; m_input.panning = false;
-	}
-
-	if(in_rect) {
-		float wheel = ImGui::GetIO().MouseWheel;
-		if(wheel != 0) {
-			m_camera.dist *= (1.0 - wheel * 0.1);
-			if(m_camera.dist < 0.1) m_camera.dist = 0.1;
-			if(m_camera.dist > 50.0) m_camera.dist = 50.0;
-		}
-	}
-}
-
-
-void WidgetHelixGL::handle_keys()
-{
-	auto key = [](ImGuiKey numpad, ImGuiKey regular) {
-		return ImGui::IsKeyPressed(numpad) || ImGui::IsKeyPressed(regular);
-	};
-	bool ctrl = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
-
-	if(key(ImGuiKey_Keypad1, ImGuiKey_1)) {
-		if(ctrl) { m_camera.yaw = M_PI; m_camera.pitch = 0; }
-		else     { m_camera.yaw = 0;    m_camera.pitch = 0; }
-	}
-	if(key(ImGuiKey_Keypad3, ImGuiKey_3)) {
-		if(ctrl) { m_camera.yaw = -M_PI/2; m_camera.pitch = 0; }
-		else     { m_camera.yaw =  M_PI/2; m_camera.pitch = 0; }
-	}
-	if(key(ImGuiKey_Keypad7, ImGuiKey_7)) {
-		if(ctrl) { m_camera.yaw = 0; m_camera.pitch = -PITCH_LIMIT; }
-		else     { m_camera.yaw = 0; m_camera.pitch =  PITCH_LIMIT; }
-	}
-	if(key(ImGuiKey_Keypad5, ImGuiKey_5)) { m_camera.ortho = !m_camera.ortho; }
-
-	if(ImGui::IsKeyPressed(ImGuiKey_A)) {
-		m_camera.yaw = 0; m_camera.pitch = 0; m_camera.dist = 2.5;
-		m_camera.pan_x = 0; m_camera.pan_y = 0;
-		m_camera.ortho = true;
-		m_amplitude = 0.1f;
-		m_surface.on = true; m_surface.alpha = 0.1f;
-		m_potential.on = true; m_potential.alpha = 0.3f;
-		m_helix.on = true; m_helix.color = 0; m_helix.alpha = 1.0f;
-		m_envelope.on = true; m_envelope.mode = 0; m_envelope.alpha = 0.7f;
-		m_slice.mode = Slice;
-	}
-
-	if(key(ImGuiKey_Keypad4, ImGuiKey_4)) { m_camera.yaw -= M_PI/12; }
-	if(key(ImGuiKey_Keypad6, ImGuiKey_6)) { m_camera.yaw += M_PI/12; }
-	if(key(ImGuiKey_Keypad8, ImGuiKey_8)) {
-		m_camera.pitch += M_PI/12;
-		if(m_camera.pitch > PITCH_LIMIT) m_camera.pitch = PITCH_LIMIT;
-	}
-	if(key(ImGuiKey_Keypad2, ImGuiKey_2)) {
-		m_camera.pitch -= M_PI/12;
-		if(m_camera.pitch < -PITCH_LIMIT) m_camera.pitch = -PITCH_LIMIT;
-	}
-}
 
 
 REGISTER_WIDGET(WidgetHelixGL,

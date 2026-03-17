@@ -4,6 +4,7 @@
 #include <atomic>
 #include <string>
 #include <memory>
+#include <vector>
 
 #include "grid.hpp"
 #include "configspace.hpp"
@@ -40,19 +41,19 @@ public:
 	double time() const { return sim_time; }
 
 	// CPU-side wavefunction double buffer (for widget reads)
-	psi_t *psi[2]{};
+	std::vector<psi_t> psi[2];
 	std::atomic<int> front{0};
 
 	// potential (CPU-side, for widget display)
-	psi_t *potential{};
+	std::vector<psi_t> potential;
 
 	// initial state snapshot for reset
-	psi_t *psi_initial{};
+	std::vector<psi_t> psi_initial;
 
 	// read access for widgets (triggers GPU readback if stale)
 	psi_t *psi_front() {
 		if(m_psi_dirty) { sync(); m_psi_dirty = false; }
-		return psi[front.load()];
+		return psi[front.load()].data();
 	}
 	void mark_dirty() { m_psi_dirty = true; }
 
@@ -85,6 +86,6 @@ private:
 	std::unique_ptr<Solver> m_solver{};
 
 	// CPU-side phase arrays (computed here, uploaded to solver)
-	psi_t *m_potential_phase{};
-	psi_t *m_kinetic_phase{};
+	std::vector<psi_t> m_potential_phase;
+	std::vector<psi_t> m_kinetic_phase;
 };

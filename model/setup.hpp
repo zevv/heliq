@@ -18,7 +18,7 @@ struct Particle {
 };
 
 struct Potential {
-	enum Type { Barrier, Well, Harmonic, Absorbing };
+	enum class Type { Barrier, Well, Harmonic, Absorbing };
 	Type type{};
 	double from[MAX_RANK]{};         // meters
 	double to[MAX_RANK]{};           // meters
@@ -29,7 +29,7 @@ struct Potential {
 };
 
 struct Interaction {
-	enum Type { Coulomb, Contact };
+	enum class Type { Coulomb, Contact };
 	Type type{};
 	int particle_a{};                // 0-indexed particle indices
 	int particle_b{};

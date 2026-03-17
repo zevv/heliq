@@ -55,13 +55,13 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 
 	size_t n = grid.total_points();
 
-	// CPU-side arrays for widget display and setup data
-	psi[0]            = new psi_t[n]();
-	psi[1]            = new psi_t[n]();
-	potential         = new psi_t[n]();
-	psi_initial       = new psi_t[n]();
-	m_potential_phase = new psi_t[n]();
-	m_kinetic_phase   = new psi_t[n]();
+	// CPU-side arrays
+	psi[0].resize(n);
+	psi[1].resize(n);
+	potential.resize(n);
+	psi_initial.resize(n);
+	m_potential_phase.resize(n);
+	m_kinetic_phase.resize(n);
 
 	// sample potentials and wavefunction into CPU arrays
 	sample_potential(setup);
@@ -84,11 +84,11 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	// create solver and upload data
 	m_solver = Solver::create(grid);
 	upload_phases();
-	m_solver->write_psi(psi_initial);
+	m_solver->write_psi(psi_initial.data());
 
 	// copy initial state into display buffers
-	std::copy_n(psi_initial, n, psi[0]);
-	std::copy_n(psi_initial, n, psi[1]);
+	std::copy_n(psi_initial.data(), n, psi[0].data());
+	std::copy_n(psi_initial.data(), n, psi[1].data());
 
 	// apply absorbing boundary from setup
 	if(setup.absorbing_boundary) {
@@ -163,7 +163,7 @@ void Simulation::precompute_phases()
 
 void Simulation::upload_phases()
 {
-	m_solver->set_phases(m_potential_phase, m_kinetic_phase);
+	m_solver->set_phases(m_potential_phase.data(), m_kinetic_phase.data());
 }
 
 
@@ -229,9 +229,9 @@ void Simulation::set_dt(double new_dt)
 void Simulation::reset()
 {
 	size_t n = grid.total_points();
-	m_solver->write_psi(psi_initial);
-	std::copy_n(psi_initial, n, psi[0]);
-	std::copy_n(psi_initial, n, psi[1]);
+	m_solver->write_psi(psi_initial.data());
+	std::copy_n(psi_initial.data(), n, psi[0].data());
+	std::copy_n(psi_initial.data(), n, psi[1].data());
 	front.store(0);
 	step_count = 0;
 	sim_time = 0;
@@ -311,7 +311,7 @@ int Simulation::measure(int axis, double collapse_width)
 		// upload to solver
 		m_solver->write_psi(p);
 		int back = 1 - front.load();
-		std::copy_n(p, n, psi[back]);
+		std::copy_n(p, n, psi[back].data());
 		front.store(back);
 
 		return result;
@@ -365,7 +365,7 @@ int Simulation::measure(int axis, double collapse_width)
 		// upload
 		m_solver->write_psi(p);
 		int back = 1 - front.load();
-		std::copy_n(p, n, psi[back]);
+		std::copy_n(p, n, psi[back].data());
 		front.store(back);
 
 		return result;
@@ -394,7 +394,7 @@ void Simulation::decohere(int axis, double strength)
 
 	m_solver->write_psi(p);
 	int back = 1 - front.load();
-	std::copy_n(p, n, psi[back]);
+	std::copy_n(p, n, psi[back].data());
 	front.store(back);
 }
 
@@ -424,7 +424,7 @@ void Simulation::flush()
 void Simulation::sync()
 {
 	int back = 1 - front.load();
-	m_solver->read_psi(psi[back]);
+	m_solver->read_psi(psi[back].data());
 	front.store(back);
 }
 
@@ -447,15 +447,15 @@ void Simulation::sample_potential(const Setup &setup)
 		psi_t v(0, 0);
 		for(auto &pot : setup.potentials) {
 			switch(pot.type) {
-				case Potential::Barrier:
+				case Potential::Type::Barrier:
 					if(inside_bounds(pos, pot.from, pot.to, grid.rank))
 						v += pot.height;
 					break;
-				case Potential::Well:
+				case Potential::Type::Well:
 					if(inside_bounds(pos, pot.from, pot.to, grid.rank))
 						v -= pot.depth;
 					break;
-				case Potential::Harmonic: {
+				case Potential::Type::Harmonic: {
 					double r2 = 0;
 					for(int d = 0; d < grid.rank; d++) {
 						double dx = pos[d] - pot.center[d];
@@ -464,7 +464,7 @@ void Simulation::sample_potential(const Setup &setup)
 					v += 0.5 * pot.k * r2;
 					break;
 				}
-				case Potential::Absorbing:
+				case Potential::Type::Absorbing:
 					if(inside_bounds(pos, pot.from, pot.to, grid.rank))
 						v += psi_t(0, pot.height);
 					break;
@@ -480,14 +480,14 @@ void Simulation::sample_potential(const Setup &setup)
 			double dist2 = cs.distance_sq(pa, pb, pos);
 
 			switch(inter.type) {
-				case Interaction::Coulomb: {
+				case Interaction::Type::Coulomb: {
 					double q_a = setup.particles[pa].charge;
 					double q_b = setup.particles[pb].charge;
 					double r = sqrt(dist2 + inter.softening * inter.softening);
 					v += k_coulomb * q_a * q_b / r;
 					break;
 				}
-				case Interaction::Contact: {
+				case Interaction::Type::Contact: {
 					// Gaussian-shaped contact: smooth falloff, no hard wall
 					double w2 = inter.width * inter.width;
 					v += inter.strength * exp(-dist2 / w2);
@@ -545,19 +545,14 @@ void Simulation::sample_wavefunction(const Setup &setup)
 			psi[0][i] = psi_t(0, 0);
 	}
 
-	std::copy_n(psi[0], n, psi_initial);
-	std::copy_n(psi[0], n, psi[1]);
+	std::copy_n(psi[0].data(), n, psi_initial.data());
+	std::copy_n(psi[0].data(), n, psi[1].data());
 }
 
 
 Simulation::~Simulation()
 {
-	// solver destroyed via unique_ptr before we free arrays
+	// solver destroyed before vectors (implicit ordering is fine,
+	// but explicit reset ensures GPU resources freed first)
 	m_solver.reset();
-	delete[] psi[0];
-	delete[] psi[1];
-	delete[] potential;
-	delete[] psi_initial;
-	delete[] m_potential_phase;
-	delete[] m_kinetic_phase;
 }

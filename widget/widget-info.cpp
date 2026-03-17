@@ -182,7 +182,7 @@ void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 			auto &pot = s.potentials[i];
 			const char *types[] = {"barrier", "well", "harmonic", "absorbing"};
 			ImGui::Text("  %zu: %s  height=%.2g eV",
-				i, types[pot.type], pot.height / 1.602e-19);
+				i, types[(int)pot.type], pot.height / 1.602e-19);
 		}
 	}
 

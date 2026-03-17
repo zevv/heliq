@@ -11,54 +11,7 @@
 
 // color palettes: value [0..1] -> RGBA
 // alpha carries intensity, color is always full brightness
-static uint32_t palette_flame(double v, double gamma) {
-	double t = fmin(1.0, v);
-	int a = (int)(255 * pow(t, gamma));
-	int r = 255;
-	int g = (int)(255 * fmin(1.0, t * 2.0));
-	int b = (int)(255 * fmin(1.0, fmax(0.0, t * 2.0 - 1.0)));
-	return (a << 24) | (b << 16) | (g << 8) | r;
-}
-
-static uint32_t palette_gray(double v, double gamma) {
-	double t = fmin(1.0, v);
-	int a = (int)(255 * pow(t, gamma));
-	return (a << 24) | (255 << 16) | (255 << 8) | 255;
-}
-
-enum class DataSource {
-	Off,
-	PsiSq,     // |ψ|²
-	PsiRe,     // Re(ψ)
-	PsiIm,     // Im(ψ)
-	PsiPhase,  // arg(ψ)
-	Potential,  // Re(V)
-	COUNT
-};
-
-static const char *datasource_names[] = {
-	"off", "|psi|^2", "Re(psi)", "Im(psi)", "phase(psi)", "potential"
-};
-
-enum class Palette {
-	Flame,
-	Gray,
-	Rainbow,
-	Zebra,
-	Spatial,
-	COUNT
-};
-
-static const char *palette_names[] = {
-	"flame", "gray", "rainbow", "zebra", "spatial"
-};
-
-// map 2D grid position to hue [0,1] using angle from center
-static double spatial_hue(int x, int y, int tw, int th) {
-	double cx = (double)x / (tw - 1) - 0.5;
-	double cy = (double)y / (th - 1) - 0.5;
-	return fmod(atan2(cy, cx) / (2.0 * M_PI) + 1.0, 1.0);
-}
+#include "datasource.hpp"
 
 struct Overlay {
 	DataSource source{DataSource::PsiSq};
@@ -220,17 +173,6 @@ static void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h)
 	ov.tex_h = h;
 }
 
-static double sample_value(DataSource src, psi_t psi, psi_t pot)
-{
-	switch(src) {
-		case DataSource::PsiSq:    return std::norm(psi);
-		case DataSource::PsiRe:    return psi.real();
-		case DataSource::PsiIm:    return psi.imag();
-		case DataSource::PsiPhase: return std::arg(psi);
-		case DataSource::Potential: return pot.real();
-		default: return 0;
-	}
-}
 
 static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_buf, int tw, int th);
 
@@ -426,7 +368,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 
 			// potential slice (still CPU-side for now)
 			std::vector<psi_t> pot_buf(tw * th);
-			auto pot_view = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, sim.potential);
+			auto pot_view = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, sim.potential.data());
 			for(int x = 0; x < tw; x++)
 				for(int y = 0; y < th; y++)
 					pot_buf[x * th + y] = pot_view.at(x, y);
@@ -506,7 +448,7 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	// D: dump displayed slice to dump.txt
 	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D)) {
 		auto *psi = sim.psi_front();
-		auto *pot = sim.potential;
+		auto *pot = sim.potential.data();
 
 		auto psi_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, psi);
 		auto pot_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, pot);

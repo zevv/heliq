@@ -14,6 +14,7 @@ SRC += ui/config.cpp
 SRC += ui/style.cpp
 SRC += ui/glview.cpp
 SRC += model/loader.cpp
+SRC += model/experiment.cpp
 SRC += model/simulation.cpp
 SRC += model/solver.cpp
 SRC += model/solver_cpu.cpp

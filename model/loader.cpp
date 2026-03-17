@@ -121,10 +121,10 @@ static bool load_potentials(lua_State *L, Setup &setup)
 
 			const char *type = getfield_string(L, -1, "type");
 			if(type) {
-				if(strcmp(type, "barrier") == 0)   pot.type = Potential::Barrier;
-				else if(strcmp(type, "well") == 0) pot.type = Potential::Well;
-				else if(strcmp(type, "harmonic") == 0) pot.type = Potential::Harmonic;
-				else if(strcmp(type, "absorbing") == 0) pot.type = Potential::Absorbing;
+				if(strcmp(type, "barrier") == 0)   pot.type = Potential::Type::Barrier;
+				else if(strcmp(type, "well") == 0) pot.type = Potential::Type::Well;
+				else if(strcmp(type, "harmonic") == 0) pot.type = Potential::Type::Harmonic;
+				else if(strcmp(type, "absorbing") == 0) pot.type = Potential::Type::Absorbing;
 				else fprintf(stderr, "loader: unknown potential type '%s'\n", type);
 			}
 
@@ -161,8 +161,8 @@ static bool load_interactions(lua_State *L, Setup &setup)
 
 			const char *type = getfield_string(L, -1, "type");
 			if(type) {
-				if(strcmp(type, "coulomb") == 0) inter.type = Interaction::Coulomb;
-				else if(strcmp(type, "contact") == 0) inter.type = Interaction::Contact;
+				if(strcmp(type, "coulomb") == 0) inter.type = Interaction::Type::Coulomb;
+				else if(strcmp(type, "contact") == 0) inter.type = Interaction::Type::Contact;
 				else fprintf(stderr, "loader: unknown interaction type '%s'\n", type);
 			}
 

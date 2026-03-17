@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include "config.hpp"
 #include "grid.hpp"
+#include "camera3d.hpp"
 
 class View {
 public:
@@ -19,11 +20,7 @@ public:
     bool lock{true};
 
     // shared camera state for locked helix widgets
-    struct Camera {
-        double yaw{0}, pitch{0}, dist{2.5};
-        double pan_x{0}, pan_y{0};
-        bool ortho{true};
-    } camera;
+    Camera3D camera;
     float amplitude{0.1f};
 
     // persistent grid cursor — set by grid LMB click, read by helix widgets
