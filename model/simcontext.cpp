@@ -7,6 +7,7 @@ struct SimContext::Impl {
 	Experiment exp{};
 	int generation{};
 	int last_published_gen{-1};
+	PublishedState st{};  // canonical state, copied to triple buffer on publish
 };
 
 SimContext::SimContext() : m_impl(std::make_unique<Impl>()) {}
@@ -16,7 +17,7 @@ SimContext::~SimContext() = default;
 void SimContext::poll(double wall_dt)
 {
 	auto &exp = m_impl->exp;
-	auto &st = m_tbuf.write_buf();
+	auto &st = m_impl->st;
 
 	// drain all pending commands
 	m_cmds.drain([&](SimCommand cmd) { handle(cmd); });
@@ -33,6 +34,8 @@ void SimContext::poll(double wall_dt)
 		publish();
 	}
 
+	// publish to triple buffer
+	m_tbuf.write_buf() = m_impl->st;
 	m_tbuf.publish();
 
 	// clear requests for next frame
@@ -51,10 +54,10 @@ void SimContext::handle(SimCommand &cmd)
 			if(exp.load(std::move(c.setup))) {
 				m_impl->generation++;
 			} else {
-				m_tbuf.write_buf().error = "load failed";
+				m_impl->st.error = "load failed";
 			}
-			m_tbuf.write_buf().running = false;
-			m_tbuf.write_buf().generation = m_impl->generation;
+			m_impl->st.running = false;
+			m_impl->st.generation = m_impl->generation;
 		}
 		else if constexpr (std::is_same_v<T, CmdAdvance>) {
 			// handled in poll() via exp.advance()
@@ -73,7 +76,7 @@ void SimContext::handle(SimCommand &cmd)
 			exp.timescale = c.ts;
 		}
 		else if constexpr (std::is_same_v<T, CmdSetRunning>) {
-			m_tbuf.write_buf().running = c.run;
+			m_impl->st.running = c.run;
 			exp.running = c.run;
 		}
 		else if constexpr (std::is_same_v<T, CmdMeasure>) {
@@ -100,11 +103,11 @@ void SimContext::extract()
 {
 	auto &exp = m_impl->exp;
 	auto &sim = *exp.simulations[0];
-	m_tbuf.write_buf().n_results = 0;
+	m_impl->st.n_results = 0;
 
 	for(int i = 0; i < m_requests.count; i++) {
 		auto &req = m_requests.req[i];
-		auto &res = m_tbuf.write_buf().results[m_tbuf.write_buf().n_results];
+		auto &res = m_impl->st.results[m_impl->st.n_results];
 
 		// count free axes
 		int n_axes = 0;
@@ -169,7 +172,7 @@ void SimContext::extract()
 			}
 		}
 
-		m_tbuf.write_buf().n_results++;
+		m_impl->st.n_results++;
 	}
 }
 
@@ -179,33 +182,33 @@ void SimContext::publish()
 	auto &exp = m_impl->exp;
 	auto &sim = *exp.simulations[0];
 
-	m_tbuf.write_buf().sim_time = exp.sim_time;
-	m_tbuf.write_buf().step_count = sim.step_count;
-	m_tbuf.write_buf().total_probability = sim.total_probability();
-	m_tbuf.write_buf().phase_v = sim.max_potential_phase;
-	m_tbuf.write_buf().phase_k = sim.max_kinetic_phase;
-	m_tbuf.write_buf().dt = sim.dt;
-	m_tbuf.write_buf().timescale = exp.timescale;
-	m_tbuf.write_buf().generation = m_impl->generation;
-	m_tbuf.write_buf().error.clear();
+	m_impl->st.sim_time = exp.sim_time;
+	m_impl->st.step_count = sim.step_count;
+	m_impl->st.total_probability = sim.total_probability();
+	m_impl->st.phase_v = sim.max_potential_phase;
+	m_impl->st.phase_k = sim.max_kinetic_phase;
+	m_impl->st.dt = sim.dt;
+	m_impl->st.timescale = exp.timescale;
+	m_impl->st.generation = m_impl->generation;
+	m_impl->st.error.clear();
 
 	for(int d = 0; d < sim.grid.rank; d++)
-		m_tbuf.write_buf().k_nyquist_ratio[d] = sim.k_nyquist_ratio[d];
+		m_impl->st.k_nyquist_ratio[d] = sim.k_nyquist_ratio[d];
 
-	m_tbuf.write_buf().grid.rank = sim.grid.rank;
+	m_impl->st.grid.rank = sim.grid.rank;
 	for(int d = 0; d < sim.grid.rank; d++)
-		m_tbuf.write_buf().grid.axes[d] = sim.grid.axes[d];
-	m_tbuf.write_buf().grid.cs = sim.cs;
+		m_impl->st.grid.axes[d] = sim.grid.axes[d];
+	m_impl->st.grid.cs = sim.cs;
 
 	// setup only changes on load, avoid per-frame copy
-	if(m_tbuf.write_buf().generation != m_impl->last_published_gen) {
-		m_tbuf.write_buf().setup = exp.setup;
-		m_impl->last_published_gen = m_tbuf.write_buf().generation;
+	if(m_impl->st.generation != m_impl->last_published_gen) {
+		m_impl->st.setup = exp.setup;
+		m_impl->last_published_gen = m_impl->st.generation;
 	}
 
-	m_tbuf.write_buf().absorbing_boundary = sim.absorbing_boundary;
-	m_tbuf.write_buf().absorb_width = sim.absorb_width;
-	m_tbuf.write_buf().absorb_strength = sim.absorb_strength;
+	m_impl->st.absorbing_boundary = sim.absorbing_boundary;
+	m_impl->st.absorb_width = sim.absorb_width;
+	m_impl->st.absorb_strength = sim.absorb_strength;
 
 	// TODO: marginal peaks from extraction results
 }
