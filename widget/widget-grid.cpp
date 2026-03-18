@@ -450,7 +450,19 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	SDL_SetRenderDrawColor(rend, colors::bg_grid.r, colors::bg_grid.g, colors::bg_grid.b, colors::bg_grid.a);
 	SDL_RenderFillRect(rend, nullptr);
 
-	// Measure button — measures both displayed axes
+	// axis selection and slice/marginal mode
+	if(!exp.simulations.empty() && exp.simulations[0]->grid.rank > 2) {
+		auto &g = exp.simulations[0]->grid;
+		ImGui::AxisCombo("##ax_x", &m_axis_x, g);
+		ImGui::SameLine();
+		ImGui::AxisCombo("##ax_y", &m_axis_y, g);
+		ImGui::SameLine();
+		if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
+			m_marginal = !m_marginal;
+		ImGui::SameLine();
+	}
+
+	// Measure button — always last on the line
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
@@ -461,18 +473,6 @@ void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 		}
 	}
 	ImGui::PopStyleColor(3);
-	ImGui::SameLine();
-
-	// axis selection and slice/marginal mode
-	if(!exp.simulations.empty() && exp.simulations[0]->grid.rank > 2) {
-		auto &g = exp.simulations[0]->grid;
-		ImGui::AxisCombo("##ax_x", &m_axis_x, g);
-		ImGui::SameLine();
-		ImGui::AxisCombo("##ax_y", &m_axis_y, g);
-		ImGui::SameLine();
-		if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
-			m_marginal = !m_marginal;
-	}
 
 	draw_controls(m_overlays, N_OVERLAYS);
 	float ctrl_h = ImGui::GetCursorPosY();

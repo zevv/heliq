@@ -21,7 +21,7 @@ private:
     void init_video();
     void draw();
     int draw_topbar();
-    void draw_bottombar();
+    int draw_bottombar();
     void resize_window(int w, int h);
     void req_redraw();
 
@@ -42,5 +42,6 @@ private:
 
     ImFont *m_font{nullptr};
     std::string m_script;
+    float m_ui_scale{1.0f};
 };
 

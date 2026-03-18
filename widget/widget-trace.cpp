@@ -2,7 +2,6 @@
 #include <SDL3/SDL.h>
 #include <math.h>
 #include <string>
-#include <chrono>
 
 #include "widget.hpp"
 #include "widgetregistry.hpp"
@@ -50,7 +49,7 @@ public:
 		}
 		cfg.write("axis", m_axis);
 		cfg.write("marginal", m_marginal ? 1 : 0);
-		cfg.write("interval", m_snapshot_interval);
+		cfg.write("step_interval", m_step_interval);
 		cfg.write("history", m_history_depth);
 	}
 
@@ -70,7 +69,7 @@ public:
 		}
 		node->read("axis", m_axis);
 		int marg = 0; node->read("marginal", marg); m_marginal = marg;
-		node->read("interval", m_snapshot_interval);
+		node->read("step_interval", m_step_interval);
 		node->read("history", m_history_depth);
 	}
 
@@ -79,14 +78,14 @@ public:
 private:
 	void snapshot(Simulation &sim);
 	void update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz);
-	void draw_controls(const Grid &grid);
+	void draw_controls(const Grid &grid, Experiment &exp);
 	void draw_cursor(SDL_Renderer *rend, bool horiz);
 
 	static constexpr int N_OVERLAYS = 3;
 	Overlay m_overlays[N_OVERLAYS]{};
 	int m_axis{0};
 	bool m_marginal{false};
-	float m_snapshot_interval{0.1f};  // seconds
+	int m_step_interval{1};    // snapshot every N sim steps
 	int m_history_depth{300};
 
 	// ring buffer: [history_depth × axis_points]
@@ -96,8 +95,7 @@ private:
 	int m_history_count{0}; // samples written
 	int m_axis_points{0};   // cached from last snapshot
 
-	bool m_started{false};
-	std::chrono::steady_clock::time_point m_last_snapshot{};
+	size_t m_last_step{0};  // step_count at last snapshot
 
 	// display rect for cursor
 	SDL_FRect m_dst{};
@@ -274,25 +272,31 @@ void WidgetTrace::update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz
 		std::vector<psi_t> psi_buf(tw * th, psi_t(0, 0));
 		std::vector<psi_t> pot_buf(tw * th, psi_t(0, 0));
 
+		// newest sample always at the fixed edge (top for horiz, right for vert)
+		// oldest scrolls away toward the opposite edge; unfilled = zero (black)
 		int samples = m_history_count;
+		int time_slots = horiz ? th : tw;
+		int offset = time_slots - samples;  // unfilled slots at the "old" edge
+
 		for(int t = 0; t < samples; t++) {
 			int ring_idx = (m_history_head - samples + t + m_history_depth) % m_history_depth;
 			psi_t *psi_src = &m_psi_history[ring_idx * m_axis_points];
 			psi_t *pot_src = &m_pot_history[ring_idx * m_axis_points];
+			int ti = t + offset;  // position in texture
 
 			if(horiz) {
-				// X-axis mode: space horizontal (x), time vertical (y)
+				// space horizontal (x), time vertical (y)
 				// newest on top → newest = highest y in buffer (render_texture flips)
 				for(int s = 0; s < m_axis_points; s++) {
-					psi_buf[s * th + t] = psi_src[s];
-					pot_buf[s * th + t] = pot_src[s];
+					psi_buf[s * th + ti] = psi_src[s];
+					pot_buf[s * th + ti] = pot_src[s];
 				}
 			} else {
-				// Y-axis mode: time horizontal (x), space vertical (y)
-				// newest on right → newest = highest x
+				// time horizontal (x), space vertical (y)
+				// newest on right → highest x
 				for(int s = 0; s < m_axis_points; s++) {
-					psi_buf[t * th + s] = psi_src[s];
-					pot_buf[t * th + s] = pot_src[s];
+					psi_buf[ti * th + s] = psi_src[s];
+					pot_buf[ti * th + s] = pot_src[s];
 				}
 			}
 		}
@@ -301,17 +305,18 @@ void WidgetTrace::update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz
 	}
 }
 
-void WidgetTrace::draw_controls(const Grid &grid)
+void WidgetTrace::draw_controls(const Grid &grid, Experiment &exp)
 {
-	ImGui::Text("Trace");
-	ImGui::Separator();
-
-	ImGui::AxisCombo("Axis", &m_axis, grid);
-	ImGui::Checkbox("Marginal", &m_marginal);
-
-	ImGui::SliderFloat("Interval", &m_snapshot_interval, 0.01f, 1.0f, "%.2fs");
-	if(ImGui::SliderInt("History", &m_history_depth, 100, 1000)) {
-		// resize buffers
+	ImGui::AxisCombo("##axis", &m_axis, grid);
+	ImGui::SameLine();
+	if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
+		m_marginal = !m_marginal;
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(80);
+	ImGui::SliderInt("##step", &m_step_interval, 1, 8, "/%d");
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(80);
+	if(ImGui::SliderInt("##history", &m_history_depth, 100, 1000, "n %d")) {
 		int old_depth = (int)(m_psi_history.size() / std::max(1, m_axis_points));
 		if(m_history_depth != old_depth) {
 			m_psi_history.clear();
@@ -322,8 +327,18 @@ void WidgetTrace::draw_controls(const Grid &grid)
 			m_history_count = 0;
 		}
 	}
+	ImGui::SameLine();
 
-	ImGui::Separator();
+	// Measure button — always last on the line
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+	if(ImGui::Button("Measure")) {
+		for(auto &s : exp.simulations)
+			s->measure(m_axis);
+	}
+	ImGui::PopStyleColor(3);
+
 	draw_overlay_controls(m_overlays, N_OVERLAYS);
 }
 
@@ -371,20 +386,26 @@ void WidgetTrace::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
 	auto &sim = *exp.simulations[0];
 	const auto &grid = sim.grid;
 
-	// check if it's time to snapshot
-	auto now = std::chrono::steady_clock::now();
-	if(!m_started) {
-		m_last_snapshot = now;
-		m_started = true;
+	// detect reset (step_count went backwards)
+	if(sim.step_count < m_last_step) {
+		m_psi_history.assign(m_psi_history.size(), psi_t(0, 0));
+		m_pot_history.assign(m_pot_history.size(), psi_t(0, 0));
+		m_history_head = 0;
+		m_history_count = 0;
+		m_last_step = 0;
+		for(auto &ov : m_overlays) {
+			if(ov.tex) { SDL_DestroyTexture(ov.tex); ov.tex = nullptr; }
+		}
 	}
-	auto elapsed = std::chrono::duration<double>(now - m_last_snapshot).count();
-	if(elapsed >= m_snapshot_interval) {
+
+	// snapshot every N sim steps
+	if(exp.running && sim.step_count >= m_last_step + m_step_interval) {
 		snapshot(sim);
-		m_last_snapshot = now;
+		m_last_step = sim.step_count;
 	}
 
 	// draw controls
-	draw_controls(grid);
+	draw_controls(grid, exp);
 	float ctrl_h = ImGui::GetCursorPosY();
 
 	// draw texture

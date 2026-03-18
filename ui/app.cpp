@@ -13,6 +13,7 @@
 #include "app.hpp"
 #include "style.hpp"
 #include "loader.hpp"
+#include "misc.hpp"
 
 
 App::App()
@@ -73,6 +74,9 @@ void App::load()
 		}
 		m_view.camera.load(n, "cam_");
 		n->read("amplitude", m_view.amplitude);
+		double scale = m_ui_scale;
+		n->read("ui_scale", scale);
+		m_ui_scale = (float)scale;
 		int norm = 0, autotr = 0;
 		n->read("normalize", norm); m_view.normalize = norm;
 		n->read("auto_track", autotr); m_view.auto_track = autotr;
@@ -106,6 +110,7 @@ void App::save()
 	cw.write("amplitude", m_view.amplitude);
 	cw.write("normalize", m_view.normalize ? 1 : 0);
 	cw.write("auto_track", m_view.auto_track ? 1 : 0);
+	cw.write("ui_scale", (double)m_ui_scale);
 	cw.pop();
 	cw.close();
 }
@@ -192,9 +197,15 @@ int App::draw_topbar()
 	flags |= ImGuiWindowFlags_NoTitleBar;
 	flags |= ImGuiWindowFlags_NoSavedSettings;
 	flags |= ImGuiWindowFlags_NoScrollbar;
+	flags |= ImGuiWindowFlags_NoDecoration;
 
+	float pad = 2.0f * m_ui_scale;
+	float bar_h = ImGui::GetFontSize() + pad * 2;
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, pad));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(1, 1));
 	ImGui::SetNextWindowPos(ImVec2(0, 0));
-	ImGui::SetNextWindowSize(ImVec2(m_w, 20));
+	ImGui::SetNextWindowSize(ImVec2(m_w, bar_h));
 	ImGui::SetNextWindowBgAlpha(1.0f);
 	ImGui::Begin("topbar", nullptr, flags);
 
@@ -202,14 +213,76 @@ int App::draw_topbar()
 	ImGui::Text("FPS: %.0f", fps);
 
 	ImGui::SameLine();
-	ImGui::Text("t=%.3e s", m_experiment.sim_time);
+	char time_str[64];
+	humanize_unit(m_experiment.sim_time, "s", time_str, sizeof(time_str));
+	ImGui::Text("t=%s", time_str);
+
+	// right-aligned sanity checks
+	if(!m_experiment.simulations.empty()) {
+		auto &sim = *m_experiment.simulations[0];
+		ImVec4 col_ok   = ImVec4(0.4, 0.8, 0.4, 1);
+		ImVec4 col_warn = ImVec4(0.9, 0.8, 0.2, 1);
+		ImVec4 col_bad  = ImVec4(1.0, 0.3, 0.3, 1);
+
+		// build right-aligned text
+		float rx = ImGui::GetWindowWidth() - 8;
+
+		// grid aliasing per axis
+		for(int d = sim.grid.rank - 1; d >= 0; d--) {
+			double kr = sim.k_nyquist_ratio[d];
+			ImVec4 col = (kr < 0.3) ? col_ok : (kr < 0.5) ? col_warn : col_bad;
+			char buf[32];
+			snprintf(buf, sizeof(buf), "%d:%.0f%%", d, kr * 100);
+			rx -= ImGui::CalcTextSize(buf).x + 4;
+			ImGui::SameLine(rx);
+			ImGui::TextColored(col, "%s", buf);
+		}
+
+		// "Grid" label
+		rx -= ImGui::CalcTextSize("Grid").x + 8;
+		ImGui::SameLine(rx);
+		ImGui::Text("Grid");
+
+		// phase stability
+		double pp = sim.max_potential_phase;
+		double kp = sim.max_kinetic_phase;
+		ImVec4 col_p = (pp < 0.3) ? col_ok : (pp < 1.0) ? col_warn : col_bad;
+		ImVec4 col_k = (kp < 0.3) ? col_ok : (kp < 1.0) ? col_warn : col_bad;
+
+		char kbuf[32], pbuf[32];
+		snprintf(kbuf, sizeof(kbuf), "K %.2f", kp);
+		snprintf(pbuf, sizeof(pbuf), "V %.2f", pp);
+
+		rx -= ImGui::CalcTextSize(kbuf).x + 4;
+		ImGui::SameLine(rx);
+		ImGui::TextColored(col_k, "%s", kbuf);
+
+		rx -= ImGui::CalcTextSize(pbuf).x + 4;
+		ImGui::SameLine(rx);
+		ImGui::TextColored(col_p, "%s", pbuf);
+
+		rx -= ImGui::CalcTextSize("Phase").x + 8;
+		ImGui::SameLine(rx);
+		ImGui::Text("Phase");
+
+		// probability
+		double prob = sim.total_probability();
+		ImVec4 col_prob = (fabs(prob - 1.0) < 0.01) ? col_ok :
+		                  (fabs(prob - 1.0) < 0.05) ? col_warn : col_bad;
+		char prob_buf[32];
+		snprintf(prob_buf, sizeof(prob_buf), "P=%.4f", prob);
+		rx -= ImGui::CalcTextSize(prob_buf).x + 8;
+		ImGui::SameLine(rx);
+		ImGui::TextColored(col_prob, "%s", prob_buf);
+	}
 
 	ImGui::End();
-	return 20;
+	ImGui::PopStyleVar(3);
+	return (int)bar_h;
 }
 
 
-void App::draw_bottombar()
+int App::draw_bottombar()
 {
 	ImGuiWindowFlags flags = 0;
 	flags |= ImGuiWindowFlags_NoCollapse;
@@ -219,14 +292,19 @@ void App::draw_bottombar()
 	flags |= ImGuiWindowFlags_NoSavedSettings;
 	flags |= ImGuiWindowFlags_NoScrollbar;
 
-	ImGui::SetNextWindowPos(ImVec2(0, m_h - 20));
-	ImGui::SetNextWindowSize(ImVec2(m_w, 20));
+	float pad = 2.0f * m_ui_scale;
+	float bar_h = ImGui::GetFontSize() + pad * 2;
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, pad));
+	ImGui::SetNextWindowPos(ImVec2(0, m_h - bar_h));
+	ImGui::SetNextWindowSize(ImVec2(m_w, bar_h));
 	ImGui::SetNextWindowBgAlpha(1.0f);
 	ImGui::Begin("bottombar", nullptr, flags);
 
 	ImGui::Text("Quantum Simulator - Press Q to quit");
 
 	ImGui::End();
+	ImGui::PopStyleVar();
+	return (int)bar_h;
 }
 
 
@@ -241,10 +319,10 @@ void App::draw()
 
 	if(m_font) ImGui::PushFont(m_font);
 
-	int bar_h = draw_topbar();
-	draw_bottombar();
+	int top_h = draw_topbar();
+	int bot_h = draw_bottombar();
 	m_view.clear_slices();
-	m_root_panel->draw(m_view, m_experiment, m_rend, 0, bar_h + 1, m_w, m_h - bar_h - bar_h + 1);
+	m_root_panel->draw(m_view, m_experiment, m_rend, 0, top_h + 1, m_w, m_h - top_h - bot_h - 2);
 
 	if(m_font) ImGui::PopFont();
 
@@ -361,6 +439,18 @@ void App::run()
 		}
 
 
+
+		// Ctrl+0/+/- for UI scale
+		bool ctrl = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
+		if(ctrl && ImGui::IsKeyPressed(ImGuiKey_0))
+			m_ui_scale = 1.0f;
+		if(ctrl && ImGui::IsKeyPressed(ImGuiKey_Equal))
+			m_ui_scale *= 1.2f;
+		if(ctrl && ImGui::IsKeyPressed(ImGuiKey_Minus))
+			m_ui_scale /= 1.2f;
+		if(m_ui_scale < 0.4f) m_ui_scale = 0.4f;
+		if(m_ui_scale > 4.0f) m_ui_scale = 4.0f;
+		ImGui::GetIO().FontGlobalScale = m_ui_scale;
 
 		// single step with right arrow
 		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !m_experiment.running) {
