@@ -2,12 +2,14 @@
 #include <SDL3/SDL.h>
 #include "widget.hpp"
 #include "widgetregistry.hpp"
+#include "simcontext.hpp"
 
 class WidgetDummy : public Widget {
 public:
     WidgetDummy(Widget::Info &info) : Widget(info) {}
 
-    void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override {
+    void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override {
+        auto &exp = ctx.experiment();
         // Draw a simple colored rectangle
         SDL_SetRenderDrawColor(rend, 40, 60, 80, 255);
         SDL_RenderFillRect(rend, nullptr);

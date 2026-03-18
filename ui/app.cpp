@@ -59,13 +59,13 @@ void App::load()
 	if(auto n = cr.find("panel")) m_root_panel->load(n);
 	if(auto n = cr.find("style")) Style::load(n);
 	if(auto n = cr.find("experiment")) {
-		double ts = m_experiment.timescale;
+		double ts = m_ctx.experiment().timescale;
 		n->read("timescale", ts);
-		m_experiment.timescale = fabs(ts);
-		if(!m_experiment.simulations.empty()) {
-		double dt = m_experiment.simulations[0]->dt;
+		m_ctx.experiment().timescale = fabs(ts);
+		if(!m_ctx.experiment().simulations.empty()) {
+		double dt = m_ctx.experiment().simulations[0]->dt;
 		n->read("dt", dt);
-		for(auto &sim : m_experiment.simulations)
+		for(auto &sim : m_ctx.experiment().simulations)
 			sim->set_dt(dt);
 	}
 		for(int d = 0; d < MAX_RANK; d++) {
@@ -98,9 +98,9 @@ void App::save()
 	Style::save(cw);
 	cw.pop();
 	cw.push("experiment");
-	cw.write("timescale", m_experiment.timescale);
-	if(!m_experiment.simulations.empty()) {
-		cw.write("dt", m_experiment.simulations[0]->dt);
+	cw.write("timescale", m_ctx.experiment().timescale);
+	if(!m_ctx.experiment().simulations.empty()) {
+		cw.write("dt", m_ctx.experiment().simulations[0]->dt);
 	}
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
@@ -118,9 +118,9 @@ void App::save()
 
 void App::init_cursor()
 {
-	if(m_experiment.simulations.empty()) return;
-	auto &sim = *m_experiment.simulations[0];
-	auto &setup = m_experiment.setup;
+	if(m_ctx.experiment().simulations.empty()) return;
+	auto &sim = *m_ctx.experiment().simulations[0];
+	auto &setup = m_ctx.experiment().setup;
 
 	// set cursor to initial particle positions
 	for(int p = 0; p < sim.cs.n_particles; p++) {
@@ -214,12 +214,12 @@ int App::draw_topbar()
 
 	ImGui::SameLine();
 	char time_str[64];
-	humanize_unit(m_experiment.sim_time, "s", time_str, sizeof(time_str));
+	humanize_unit(m_ctx.experiment().sim_time, "s", time_str, sizeof(time_str));
 	ImGui::Text("t=%s", time_str);
 
 	// right-aligned sanity checks
-	if(!m_experiment.simulations.empty()) {
-		auto &sim = *m_experiment.simulations[0];
+	if(!m_ctx.experiment().simulations.empty()) {
+		auto &sim = *m_ctx.experiment().simulations[0];
 		ImVec4 col_ok   = ImVec4(0.4, 0.8, 0.4, 1);
 		ImVec4 col_warn = ImVec4(0.9, 0.8, 0.2, 1);
 		ImVec4 col_bad  = ImVec4(1.0, 0.3, 0.3, 1);
@@ -322,7 +322,7 @@ void App::draw()
 	int top_h = draw_topbar();
 	int bot_h = draw_bottombar();
 	m_view.clear_slices();
-	m_root_panel->draw(m_view, m_experiment, m_rend, 0, top_h + 1, m_w, m_h - top_h - bot_h - 2);
+	m_root_panel->draw(m_view, m_ctx, m_rend, 0, top_h + 1, m_w, m_h - top_h - bot_h - 2);
 
 	if(m_font) ImGui::PopFont();
 
@@ -338,7 +338,12 @@ void App::init(int argc, char **argv)
 
 	// load experiment from script
 	m_script = (argc > 1) ? argv[1] : "experiments/010-1D-1P-momentum.lua";
-	m_experiment.load(m_script);
+	{
+		Setup s{};
+		load_setup(m_script.c_str(), s, true);
+		m_ctx.push(CmdLoad{std::move(s)});
+	}
+	m_ctx.poll(0);
 	init_cursor();
 
 	m_root_panel = new Panel(Panel::Type::Root);
@@ -378,41 +383,44 @@ void App::run()
 				resize_window(event.window.data1, event.window.data2);
 		}
 
-		// advance simulation
+		// pump model: drain commands, advance, extract, publish
 		double wall_dt = 1.0 / ImGui::GetIO().Framerate;
 		if(wall_dt > 0.1) wall_dt = 1.0 / 60.0;  // clamp on first frame
-		m_experiment.advance(wall_dt);
+		m_ctx.poll(wall_dt);
 
 		// spacebar to toggle play/pause
-		if(ImGui::IsKeyPressed(ImGuiKey_Space))
-			m_experiment.running = !m_experiment.running;
+		if(ImGui::IsKeyPressed(ImGuiKey_Space)) {
+			bool next = !m_ctx.experiment().running;
+			m_ctx.push(CmdSetRunning{next});
+		}
 
 		// , for reverse, . for forward
 		if(ImGui::IsKeyPressed(ImGuiKey_Comma))
-			m_experiment.timescale = -fabs(m_experiment.timescale);
+			m_ctx.push(CmdSetTimescale{-fabs(m_ctx.experiment().timescale)});
 		if(ImGui::IsKeyPressed(ImGuiKey_Period))
-			m_experiment.timescale = fabs(m_experiment.timescale);
+			m_ctx.push(CmdSetTimescale{fabs(m_ctx.experiment().timescale)});
 
 		// R to reload experiment
 		if(ImGui::IsKeyPressed(ImGuiKey_R)) {
-			m_experiment.load(m_script);
+			Setup s{};
+			load_setup(m_script.c_str(), s, true);
+			m_ctx.push(CmdLoad{std::move(s)});
 		}
 
 		// M/N to measure, Shift+M/N to decohere
 		bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 		if(ImGui::IsKeyPressed(ImGuiKey_M)) {
-			for(auto &sim : m_experiment.simulations)
-				if(shift) sim->decohere(0); else sim->measure(0);
+			if(shift) m_ctx.push(CmdDecohere{0}); else m_ctx.push(CmdMeasure{0});
 		}
 		if(ImGui::IsKeyPressed(ImGuiKey_N)) {
-			for(auto &sim : m_experiment.simulations)
-				if(shift) sim->decohere(1); else sim->measure(1);
+			if(shift) m_ctx.push(CmdDecohere{1}); else m_ctx.push(CmdMeasure{1});
 		}
 
 		// B to toggle absorbing boundary
 		if(ImGui::IsKeyPressed(ImGuiKey_B)) {
-			for(auto &sim : m_experiment.simulations)
-				sim->set_absorbing_boundary(!sim->absorbing_boundary);
+			bool on = m_ctx.experiment().simulations.empty() ? false
+				: !m_ctx.experiment().simulations[0]->absorbing_boundary;
+			m_ctx.push(CmdSetAbsorb{on, 0.02f, 0.0f});
 		}
 
 		// [ and ] adjust timescale by 10^(1/3) ~= 2.154x
@@ -422,18 +430,20 @@ void App::run()
 			bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 			if(ImGui::IsKeyPressed(ImGuiKey_RightBracket)) {
 				if(shift) {
-					for(auto &sim : m_experiment.simulations)
-						sim->set_dt(sim->dt * factor);
+					double dt = m_ctx.experiment().simulations.empty() ? 0
+						: m_ctx.experiment().simulations[0]->dt;
+					m_ctx.push(CmdSetDt{dt * factor});
 				} else {
-					m_experiment.timescale *= factor;
+					m_ctx.push(CmdSetTimescale{m_ctx.experiment().timescale * factor});
 				}
 			}
 			if(ImGui::IsKeyPressed(ImGuiKey_LeftBracket)) {
 				if(shift) {
-					for(auto &sim : m_experiment.simulations)
-						sim->set_dt(sim->dt / factor);
+					double dt = m_ctx.experiment().simulations.empty() ? 0
+						: m_ctx.experiment().simulations[0]->dt;
+					m_ctx.push(CmdSetDt{dt / factor});
 				} else {
-					m_experiment.timescale /= factor;
+					m_ctx.push(CmdSetTimescale{m_ctx.experiment().timescale / factor});
 				}
 			}
 		}
@@ -453,11 +463,11 @@ void App::run()
 		ImGui::GetIO().FontGlobalScale = m_ui_scale;
 
 		// single step with right arrow
-		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !m_experiment.running) {
-			for(auto &sim : m_experiment.simulations)
+		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !m_ctx.experiment().running) {
+			for(auto &sim : m_ctx.experiment().simulations)
 				sim->step();
-			m_experiment.sim_time = m_experiment.simulations.empty() ? 0 :
-				m_experiment.simulations[0]->time();
+			m_ctx.experiment().sim_time = m_ctx.experiment().simulations.empty() ? 0 :
+				m_ctx.experiment().simulations[0]->time();
 		}
 
 		draw();

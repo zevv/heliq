@@ -11,7 +11,7 @@
 
 #include "widget.hpp"
 #include "widgetregistry.hpp"
-#include "experiment.hpp"
+#include "simcontext.hpp"
 #include "config.hpp"
 #include "math3d.hpp"
 #include "grid.hpp"
@@ -38,7 +38,7 @@ public:
 private:
 	void do_save(ConfigWriter &cfg) override;
 	void do_load(ConfigReader::Node *node) override;
-	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override;
+	void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override;
 
 	enum SliceMode { Slice, Marginal, Momentum };
 
@@ -207,8 +207,9 @@ void WidgetHelixGL::do_load(ConfigReader::Node *node)
 }
 
 
-void WidgetHelixGL::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
+void WidgetHelixGL::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
+	auto &exp = ctx.experiment();
 	// sync from shared view when locked
 	if(m_view.lock) {
 		m_camera = m_view.camera;

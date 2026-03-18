@@ -19,6 +19,7 @@ SRC += model/simulation.cpp
 SRC += model/solver.cpp
 SRC += model/solver_cpu.cpp
 SRC += model/solver_gpu.cpp
+SRC += model/simcontext.cpp
 SRC += widget/widget-dummy.cpp
 SRC += widget/widget-info.cpp
 SRC += widget/widget-grid.cpp

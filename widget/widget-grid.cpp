@@ -5,7 +5,7 @@
 
 #include "widget.hpp"
 #include "widgetregistry.hpp"
-#include "experiment.hpp"
+#include "simcontext.hpp"
 #include "config.hpp"
 #include "misc.hpp"
 #include "colors.hpp"
@@ -81,7 +81,7 @@ public:
 		int marg = 0; node->read("marginal", marg); m_marginal = marg;
 	}
 
-	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override;
+	void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override;
 
 private:
 	void update_overlays(Simulation &sim, SDL_Renderer *rend, int tw, int th);
@@ -445,8 +445,9 @@ SDL_FRect WidgetGrid::compute_display_rect(int tw, int th, float avail_x, float 
 }
 
 
-void WidgetGrid::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
+void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
+	auto &exp = ctx.experiment();
 	SDL_SetRenderDrawColor(rend, colors::bg_grid.r, colors::bg_grid.g, colors::bg_grid.b, colors::bg_grid.a);
 	SDL_RenderFillRect(rend, nullptr);
 

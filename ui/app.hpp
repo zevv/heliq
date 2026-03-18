@@ -7,7 +7,7 @@
 #include "view.hpp"
 #include "config.hpp"
 #include "widgetregistry.hpp"
-#include "experiment.hpp"
+#include "simcontext.hpp"
 
 class App {
 public:
@@ -34,7 +34,7 @@ private:
     SDL_Window *m_win{};
     SDL_Renderer *m_rend{};
     View m_view{};
-    Experiment m_experiment{};
+    SimContext m_ctx{};
     bool m_resize{true};
     int m_w{800};
     int m_h{600};

@@ -2,7 +2,7 @@
 #include <SDL3/SDL.h>
 #include "widget.hpp"
 #include "widgetregistry.hpp"
-#include "experiment.hpp"
+#include "simcontext.hpp"
 #include "config.hpp"
 #include "misc.hpp"
 
@@ -10,7 +10,7 @@ class WidgetInfo : public Widget {
 public:
 	WidgetInfo(Widget::Info &info) : Widget(info) {}
 
-	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override;
+	void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override;
 
 	void do_save(ConfigWriter &cfg) override {
 		// nothing widget-specific to save yet — timescale/dt live on experiment
@@ -21,8 +21,9 @@ public:
 };
 
 
-void WidgetInfo::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
+void WidgetInfo::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
+	auto &exp = ctx.experiment();
 	SDL_SetRenderDrawColor(rend, 20, 20, 25, 255);
 	SDL_RenderFillRect(rend, nullptr);
 

@@ -5,7 +5,7 @@
 
 #include "widget.hpp"
 #include "widgetregistry.hpp"
-#include "experiment.hpp"
+#include "simcontext.hpp"
 #include "config.hpp"
 #include "misc.hpp"
 #include "colors.hpp"
@@ -73,7 +73,7 @@ public:
 		node->read("history", m_history_depth);
 	}
 
-	void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) override;
+	void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override;
 
 private:
 	void snapshot(Simulation &sim);
@@ -380,8 +380,9 @@ void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)
 	}
 }
 
-void WidgetTrace::do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
+void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
+	auto &exp = ctx.experiment();
 	if(exp.simulations.empty()) return;
 	auto &sim = *exp.simulations[0];
 	const auto &grid = sim.grid;

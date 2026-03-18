@@ -5,7 +5,7 @@
 #include "view.hpp"
 #include "config.hpp"
 
-class Experiment;
+class SimContext;
 
 class Widget {
 public:
@@ -24,11 +24,11 @@ public:
     Widget *copy();
     void copy_to(Widget *w);
     const char *name() { return m_info.name; }
-    void draw(View &view, Experiment &exp, SDL_Renderer *rend, SDL_Rect &r);
+    void draw(View &view, SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r);
 
 protected:
     virtual void do_copy(Widget *w) {};
-    virtual void do_draw(Experiment &exp, SDL_Renderer *rend, SDL_Rect &r) {};
+    virtual void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) {};
     virtual void do_load(ConfigReader::Node *node) {};
     virtual void do_save(ConfigWriter &cfg) {};
 

@@ -80,8 +80,9 @@ solver uses for stepping. This must be untangled.
 - FR-008: Mutating operations (measure, decohere, set_dt, set_absorb)
   are commands. Sim thread applies them between step batches.
 - FR-009: Published state includes: extraction results, sim_time,
-  step_count, total_probability, phase indicators (V, K), running state,
-  grid metadata (rank, axes, labels, configspace).
+  step_count, total_probability, phase indicators (V, K), dt, timescale,
+  running state, grid metadata (rank, axes, labels, configspace),
+  setup metadata (title, description, n_particles), marginal peaks.
 - FR-010: First frame renders empty — no data yet. Requests are sent,
   results arrive next frame. One frame of latency, invisible at 60fps.
 - FR-011: Sim thread sleeps when paused. Wakes on command (resume,
@@ -112,13 +113,16 @@ solver uses for stepping. This must be untangled.
   generic over rank — axes list determines dimensionality. 1D, 2D, or
   higher, same request struct. Model dispatches to the right GPU kernel
   based on axes count. Resolves TBD-001.
-- DEC-005: Extraction results are always complex (psi_t). Marginals
-  store real part only, imaginary zeroed. One data type, one buffer,
-  one code path. No variant in result.
-- DEC-006: Potential is extracted alongside psi in every extraction
-  result. Same axes, same cursor. ExtractionResult carries both
-  data (psi) and potential vectors. Handles future time-dependent
-  potentials without interface change.
+- DEC-005: (revised) Extraction results always carry all derived
+  quantities for the requested axes/cursor. No per-field flags.
+  For every request the model always computes:
+  - psi: complex slice, or |ψ|² marginal (real, im=0)
+  - pot: complex potential slice, or |ψ|²-weighted potential marginal
+  - coherent: ∫ψ over hidden axes (marginal only; empty for slices)
+  All stored as psi_t (complex). Cost is sub-millisecond for all three;
+  no reason to make widgets opt-in per field.
+- DEC-006: (revised) Superceded by DEC-005. Potential and coherent
+  marginal always bundled with psi in every extraction result.
 - DEC-007: Trace widget accumulates whenever new data arrives (check
   step_count changed in published state). No per-step guarantee.
   Captures at frame rate at best. step_interval slider dropped —
@@ -146,108 +150,108 @@ solver uses for stepping. This must be untangled.
 
 ## Actionable Items
 
-- ACT-001: Define shared types. New header `model/simtypes.hpp`:
+### Phase 1: Async API facade (synchronous, single-threaded)
+
+Define an async API on top of the current model. All widget/app access
+to the model goes through this API. Under the hood, `poll()` executes
+synchronously on the main thread — drain commands, step, extract,
+publish. System stays working at every step during migration.
+
+- ACT-001: Define shared types in `model/simtypes.hpp`:
   SimCommand variant, ExtractionRequest, ExtractionResult,
-  ExtractionSet, PublishedState, GridMeta. No implementation,
-  just the data definitions. Both threads include this.
+  ExtractionSet, PublishedState, GridMeta.
 
-- ACT-002: Triple-buffer template. `TripleBuffer<T>` with
-  `write()` (producer publishes), `read()` (consumer gets latest).
-  Lock-free, atomic index. Put in `model/triplebuf.hpp`.
+- ACT-002: Triple-buffer template `model/triplebuf.hpp`.
 
-- ACT-003: Command queue. SPSC lock-free ring or mutex+deque.
-  `SimCommandQueue`: `push(SimCommand)` from UI, `drain(callback)`
-  from sim thread. Condvar for waking sim thread when idle.
-  Put in `model/simqueue.hpp`.
+- ACT-003: Command queue `model/simqueue.hpp`.
 
-- ACT-004: SimThread class. `model/simthread.hpp/cpp`. Owns the
-  thread, command queue, request double-buffer, result triple-buffer.
-  Public interface: `start()`, `stop()`, `push(SimCommand)`,
-  `publish_requests(ExtractionSet)`, `read_state() → PublishedState*`.
-  Internal loop: drain cmds → step batch → extract → publish.
+- ACT-004: SimContext class — the async API facade.
+  `model/simcontext.hpp/cpp`. Owns Experiment, command queue,
+  extraction request set, published state. Public interface:
+  `push(SimCommand)`, `publish_requests(ExtractionSet)`,
+  `poll()`, `state() → const PublishedState&`.
+  `poll()` is synchronous: drain commands → step → extract → publish.
+  This is the only interface widgets and app use.
 
-- ACT-005: (revised) Wire SimThread into App alongside Experiment.
-  App owns both. SimThread starts, receives CmdLoad, CmdAdvance,
-  publishes state. Widgets still read from Experiment directly.
-  Proves plumbing works. Compiles and runs at every step.
+- ACT-005: Wire SimContext into App. App owns SimContext.
+  Load goes through `push(CmdLoad{source})`. Advance goes through
+  `push(CmdAdvance{wall_dt})`. App calls `poll()` each frame.
+  Widgets still read from Experiment directly (transitional).
 
-- ACT-006: (revised) Add SimContext to widget interface as second
-  parameter (Experiment& stays). Widgets can optionally read from
-  SimContext. Migrate one widget at a time to read from published
-  state, starting with the simplest (info, then grid, then trace,
-  then helix).
+- ACT-006: Migrate widgets to read from `state()` instead of
+  poking Simulation. One widget at a time: info → grid → trace → helix.
+  Each widget declares extraction requests via `publish_requests()`.
+  Experiment& stays in widget interface during migration.
 
-- ACT-007: (revised) Once all widgets read from SimContext only,
-  remove Experiment& from the widget interface. App stops populating
-  Experiment, relies on SimThread entirely.
+- ACT-007: Remove direct Simulation/Experiment access from all
+  widgets. Widget interface drops Experiment&, receives only
+  `const PublishedState&`. SimContext is the sole model interface.
 
-- ACT-008: (revised) Delete direct Simulation access from widgets.
-  Remove Simulation::read_slice_*, psi_front(), etc from public API.
+### Phase 2: Thread detach
+
+Replace the synchronous `poll()` with a real thread. The API surface
+does not change — widgets don't know the difference.
+
+- ACT-008: SimThread replaces the guts of SimContext. `poll()` becomes
+  "swap in latest published state from triple buffer". Commands go to
+  the queue. Model free-runs on its own thread, lockstepped to wall
+  time via timescale, or max speed.
 
 - ACT-009: Replace all fprintf/printf logging with log macros
   across codebase.
 
 ## Done
 
-- ACT-001: simtypes.hpp — SimCommand variant, ExtractionRequest/Set/Result, PublishedState, GridMeta
-- ACT-002: triplebuf.hpp — lock-free TripleBuffer<T> template
-- ACT-003: simqueue.hpp — SimCommandQueue with mutex+condvar
+(none — proto implementations exist for ACT-001/002/003 but are
+not validated or integrated)
 
 ## Scratch
 
-- Command sum type:
-  CmdAdvance{double wall_dt}, CmdSetDt{double}, CmdSetTimescale{double},
-  CmdSetRunning{bool}, CmdMeasure{int axis}, CmdDecohere{int axis},
-  CmdSetAbsorb{bool, float w, float s}, CmdLoad{string lua_source},
-  CmdSingleStep{}
+### Two-phase migration strategy
 
-- Extraction request:
-  struct ExtractionRequest {
-      int axes[MAX_RANK];    // free axes, -1 terminated
-      int cursor[MAX_RANK];  // position on fixed axes (ignored for marginal)
-      bool marginal;         // false=slice, true=marginal
-  };
-  Deduplication: equal if same axes, same marginal, same cursor (slices).
-  UI builds set each frame, publishes via double-buffered slot.
+Phase 1 introduces SimContext as a synchronous facade. All model access
+goes through it. `poll()` runs inline on the main thread. Widgets
+migrate one at a time from poking Simulation to reading PublishedState.
+System always compiles and runs.
 
-- Extraction result:
-  struct ExtractionResult {
-      int axes[MAX_RANK];    // what was extracted
-      bool marginal;
-      int shape[MAX_RANK];   // points per axis, -1 terminated
-      std::vector<psi_t> data;  // always complex, marginal: im=0
-  };
-  Widgets scan result bag, match by axes+marginal, render.
+Phase 2 replaces `poll()` with a real thread. The API surface is
+identical. Widgets don't know the difference.
 
-- Published state (triple-buffered, overwrite semantics):
-  struct PublishedState {
-      ExtractionResult results[8];
-      int n_results;
-      double sim_time;
-      size_t step_count;
-      double total_probability;
-      double phase_v, phase_k;
-      double max_amplitude;
-      int marginal_peaks[MAX_RANK];  // argmax per axis (for auto-track)
-      GridMeta grid;     // rank, axes, labels, configspace
-      std::string error; // empty = ok
-  };
+### Extraction pipeline
 
-- Request path: double-buffered slot, UI writes back, atomic swap, sim
-  reads front.
-- Result path: triple-buffered slot (overwrite dequeue), sim writes,
-  UI reads latest.
-- Sim thread loop: while(alive) { drain commands; apply; if have
-  wall_dt budget: step batch; read request set; extract; publish;
-  if idle: condvar wait for next command }
-- psi never crosses thread boundary. Widgets never see raw psi_t*.
-  Everything goes through extraction results.
+For every ExtractionRequest (axes + cursor + marginal flag), the model
+computes all derived quantities in one pass. No per-field opt-in.
+
+  ExtractionResult {
+      axes[], marginal, shape[]
+      psi       // slice: complex; marginal: |ψ|² (im=0)
+      pot       // slice: complex V; marginal: |ψ|²-weighted V
+      coherent  // marginal only: ∫ψ over hidden axes (complex)
+  }
+
+Cost for 512² rank-2: sub-millisecond for all three. Negligible vs
+the FFT step cost.
+
+Deduplication: UI consolidates widget requests into ExtractionSet.
+Same (axes, cursor, marginal) = one request. Multiple widgets share
+the result.
+
+### Always-published state (no request needed)
+
+- Scalars: sim_time, step_count, total_probability, phase_v, phase_k,
+  dt, timescale, running
+- Grid metadata: rank, axes, configspace, labels
+- Setup metadata: title, description, n_particles
+- Marginal peaks: argmax of |ψ|² per axis (for auto-track)
+- Generation counter (incremented on load/reload)
+- Error string (non-empty = fatal)
+
+### Invariants
+
+- psi never crosses the API boundary. Widgets never see raw psi_t*.
 - Camera, cursor, panel state — purely UI-side, no change needed.
 - CmdLoad carries source string. UI reads file / editor buffer.
-- Pacing: timescale already controls sim-time per wall-second.
-  default_timescale is auto-computed by prelude.lua ("20% domain
-  crossing in 5 wall seconds"). No new mechanism needed.
-- Helix spatial hue: widget requests slice_2d(0,1), computes hue/sat
-  locally. No special extraction type. Rank>2 already skips this.
+- Pacing: timescale controls sim-time per wall-second. Auto-computed
+  by prelude.lua. No new mechanism needed.
 - Auto-track: model computes marginal peaks, publishes in state.
   UI moves cursor if auto_track enabled. No model→UI callback.

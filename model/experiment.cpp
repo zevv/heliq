@@ -7,7 +7,7 @@
 #include "loader.hpp"
 
 
-bool Experiment::load(const std::string& path)
+bool Experiment::load(Setup new_setup)
 {
 	// preserve user-adjusted timescale and dt across reloads
 	bool is_reload = !simulations.empty();
@@ -15,19 +15,13 @@ bool Experiment::load(const std::string& path)
 	double prev_dt = is_reload ? simulations[0]->dt : 0;
 
 	simulations.clear();
-	setup = Setup{};
-
-	if(!load_setup(path.c_str(), setup, true)) {
-		fprintf(stderr, "failed to load experiment from %s\n", path.c_str());
-		return false;
-	}
+	setup = std::move(new_setup);
 
 	fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",
 		setup.spatial_dims, setup.particles.size(),
 		setup.potentials.size(), setup.simulations.size());
 
 	if(is_reload) {
-		// restore user's timescale; override sim dt after creation
 		timescale = prev_timescale;
 	} else {
 		timescale = setup.timescale;
@@ -45,6 +39,17 @@ bool Experiment::load(const std::string& path)
 	running = false;
 
 	return true;
+}
+
+
+bool Experiment::load_script(const std::string& path)
+{
+	Setup s{};
+	if(!load_setup(path.c_str(), s, true)) {
+		fprintf(stderr, "failed to load experiment from %s\n", path.c_str());
+		return false;
+	}
+	return load(std::move(s));
 }
 
 

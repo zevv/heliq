@@ -50,12 +50,12 @@ void Widget::copy_to(Widget *w)
 }
 
 
-void Widget::draw(View &view, Experiment &exp, SDL_Renderer *rend, SDL_Rect &r)
+void Widget::draw(View &view, SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
 	if(m_view.lock) m_view = view;
 
 	double t1 = hirestime();
-	do_draw(exp, rend, r);
+	do_draw(ctx, rend, r);
 	double t2 = hirestime();
 
 	// draw render time
