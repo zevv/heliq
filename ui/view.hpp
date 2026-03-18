@@ -30,6 +30,12 @@ public:
     // persistent grid cursor — set by grid LMB click, read by helix widgets
     int cursor[MAX_RANK]{};
 
+    // shared spatial zoom/pan — screen-fraction coordinates
+    // sl = left edge of spatial axis as fraction of panel width [0..1]
+    // sr = right edge of spatial axis as fraction of panel width [0..1]
+    // both helix and trace read/write these when locked
+    float spatial_sl{0}, spatial_sr{1};
+
     // per-frame slice list — rebuilt each frame by helix widgets, read by grid for crosshairs
     static constexpr int MAX_SLICES = 8;
     struct Slice {

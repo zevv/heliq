@@ -6,7 +6,7 @@
 #include <vector>
 
 #include <EGL/egl.h>
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
 
 #include "widget.hpp"
 #include "widgetregistry.hpp"
@@ -176,6 +176,26 @@ void WidgetHelix::do_load(ConfigReader::Node *node)
 }
 
 
+// local centroid within a window around current cursor position
+static int auto_track(const psi_t *psi, int n, int cur)
+{
+	int win = n / 4;
+	int lo = std::max(0, cur - win);
+	int hi = std::min(n, cur + win);
+	double sum_w = 0, sum_wi = 0;
+	for(int i = lo; i < hi; i++) {
+		double w = std::norm(psi[i]);
+		sum_w += w;
+		sum_wi += w * i;
+	}
+	if(sum_w > 1e-30) {
+		int ci = (int)(sum_wi / sum_w + 0.5);
+		return std::clamp(ci, 0, n - 1);
+	}
+	return cur;
+}
+
+
 void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
 	// sync from shared view when locked
@@ -221,22 +241,9 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	// get result from previous frame (before building request so auto-track can update cursor)
 	auto *result = state.find(req);
 
-	// auto-track: probability-weighted centroid
 	if(m_slice.auto_track && m_slice.mode != Marginal && state.grid.rank > 1
-		&& result && !result->psi.empty()) {
-		double sum_w = 0, sum_wi = 0;
-		for(int i = 0; i < n; i++) {
-			double w = std::norm(result->psi[i]);
-			sum_w += w;
-			sum_wi += w * i;
-		}
-		if(sum_w > 1e-30) {
-			int ci = (int)(sum_wi / sum_w + 0.5);
-			if(ci < 0) ci = 0;
-			if(ci >= n) ci = n - 1;
-			m_view.cursor[m_slice.axis] = ci;
-		}
-	}
+		&& result && !result->psi.empty())
+		m_view.cursor[m_slice.axis] = auto_track(result->psi.data(), n, m_view.cursor[m_slice.axis]);
 
 	// rebuild request with updated cursor
 	for(int d = 0; d < MAX_RANK; d++)
@@ -264,7 +271,7 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 
 	glClearColor(colors::bg_gl.r, colors::bg_gl.g, colors::bg_gl.b, colors::bg_gl.a);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glLineWidth(m_thick_lines ? 3.0f : 1.0f);
+	glLineWidth(m_thick_lines ? 3.0f : 1.5f);
 
 	mat4 vp = m_camera.build(gl_w, gl_h);
 	float mvp[16];
@@ -296,15 +303,21 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	SDL_FRect dst = { (float)r.x, (float)r.y, (float)r.w, (float)r.h };
 	SDL_RenderTexture(rend, m_gl.texture(), &src, &dst);
 
+	// compute visible spatial range as screen fractions
+	vec3 p_left  = vp.transform({-1, 0, 0});
+	vec3 p_right = vp.transform({ 1, 0, 0});
+	float sl = (1.0f + (float)p_left.x)  * 0.5f;
+	float sr = (1.0f + (float)p_right.x) * 0.5f;
+	m_view.spatial_sl = sl;
+	m_view.spatial_sr = sr;
+
 	// hover cursor: mouse screen X → grid index on current axis
 	if(ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-		vec3 p_left  = vp.transform({-1, 0, 0});
-		vec3 p_right = vp.transform({ 1, 0, 0});
-		float sl = (1.0f + (float)p_left.x)  * 0.5f * r.w + r.x;
-		float sr = (1.0f + (float)p_right.x) * 0.5f * r.w + r.x;
+		float sl_px = sl * r.w + r.x;
+		float sr_px = sr * r.w + r.x;
 		float mx = ImGui::GetMousePos().x;
-		if(fabs(sr - sl) > 1.0f) {
-			float t = (mx - sl) / (sr - sl);
+		if(fabs(sr_px - sl_px) > 1.0f) {
+			float t = (mx - sl_px) / (sr_px - sl_px);
 			int ci = (int)(t * (n - 1) + 0.5f);
 			if(ci >= 0 && ci < n)
 				m_view.cursor[m_slice.axis] = ci;
@@ -875,7 +888,7 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 	if(mact == 1) ctx.push(CmdMeasure{m_slice.axis});
 	if(mact == 2) ctx.push(CmdDecohere{m_slice.axis});
 
-	if(ImGui::IsWindowFocused() && ImGui::BeginTable("layers", 5, ImGuiTableFlags_SizingStretchProp)) {
+	if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::BeginTable("layers", 5, ImGuiTableFlags_SizingStretchProp)) {
 		ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, 30);
 		ImGui::TableSetupColumn("en", ImGuiTableColumnFlags_WidthFixed, 20);
 		ImGui::TableSetupColumn("alpha", ImGuiTableColumnFlags_WidthFixed, 60);

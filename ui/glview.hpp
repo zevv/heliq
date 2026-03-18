@@ -4,7 +4,7 @@
 #include <vector>
 #include <stdint.h>
 
-// Offscreen GLES2 render target, outputs to an SDL_Texture.
+// Offscreen GLES3 render target with 4x MSAA, outputs to an SDL_Texture.
 // Uses SDL's own GL context management to avoid platform conflicts.
 // Usage:
 //   glview.init(window);          // once, after SDL_CreateRenderer
@@ -50,6 +50,8 @@ private:
 	unsigned int m_fbo{};
 	unsigned int m_rbo_color{};
 	unsigned int m_rbo_depth{};
+	unsigned int m_fbo_resolve{};
+	unsigned int m_rbo_resolve_color{};
 
 	// SDL texture for output
 	SDL_Texture *m_sdl_tex{};

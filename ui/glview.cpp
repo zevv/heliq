@@ -3,8 +3,7 @@
 #include <string.h>
 
 #include <SDL3/SDL.h>
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
+#include <GLES3/gl3.h>
 
 #include "glview.hpp"
 
@@ -49,45 +48,57 @@ static GLuint link_program(GLuint vs, GLuint fs)
 
 
 static const char *solid_vs =
-"#version 100\n"
-"attribute vec3 a_pos;\n"
+"#version 300 es\n"
+"in vec3 a_pos;\n"
 "uniform mat4 u_mvp;\n"
 "void main() {\n"
 "  gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
 "}\n";
 
 static const char *solid_fs =
-"#version 100\n"
+"#version 300 es\n"
 "precision mediump float;\n"
 "uniform vec4 u_color;\n"
+"out vec4 fragColor;\n"
 "void main() {\n"
-"  gl_FragColor = u_color;\n"
+"  fragColor = u_color;\n"
 "}\n";
 
 static const char *vcol_vs =
-"#version 100\n"
-"attribute vec3 a_pos;\n"
-"attribute vec4 a_color;\n"
+"#version 300 es\n"
+"in vec3 a_pos;\n"
+"in vec4 a_color;\n"
 "uniform mat4 u_mvp;\n"
-"varying vec4 v_color;\n"
+"out vec4 v_color;\n"
 "void main() {\n"
 "  gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
 "  v_color = a_color;\n"
 "}\n";
 
 static const char *vcol_fs =
-"#version 100\n"
+"#version 300 es\n"
 "precision mediump float;\n"
-"varying vec4 v_color;\n"
+"in vec4 v_color;\n"
+"out vec4 fragColor;\n"
 "void main() {\n"
-"  gl_FragColor = v_color;\n"
+"  fragColor = v_color;\n"
 "}\n";
 
 
 GLView::~GLView()
 {
 	if(m_sdl_tex) SDL_DestroyTexture(m_sdl_tex);
-	if(m_gl_ctx) SDL_GL_DestroyContext(m_gl_ctx);
+	if(m_gl_ctx) {
+		// cleanup GL objects
+		if(m_fbo) glDeleteFramebuffers(1, &m_fbo);
+		if(m_fbo_resolve) glDeleteFramebuffers(1, &m_fbo_resolve);
+		if(m_rbo_color) glDeleteRenderbuffers(1, &m_rbo_color);
+		if(m_rbo_depth) glDeleteRenderbuffers(1, &m_rbo_depth);
+		if(m_rbo_resolve_color) glDeleteRenderbuffers(1, &m_rbo_resolve_color);
+		if(m_prog_solid) glDeleteProgram(m_prog_solid);
+		if(m_prog_vcol) glDeleteProgram(m_prog_vcol);
+		SDL_GL_DestroyContext(m_gl_ctx);
+	}
 }
 
 
@@ -102,7 +113,7 @@ bool GLView::init(SDL_Renderer *rend)
 	}
 
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 
 	m_gl_ctx = SDL_GL_CreateContext(win);
@@ -165,6 +176,8 @@ void GLView::resize(int w, int h)
 	m_fbo = 0;
 	m_rbo_color = 0;
 	m_rbo_depth = 0;
+	m_fbo_resolve = 0;
+	m_rbo_resolve_color = 0;
 	if(m_sdl_tex) { SDL_DestroyTexture(m_sdl_tex); m_sdl_tex = nullptr; }
 	m_pixels.resize(w * h * 4);
 }
@@ -182,13 +195,14 @@ void GLView::begin(SDL_Renderer *rend)
 
 	// create FBO if needed
 	if(!m_fbo && m_w > 0 && m_h > 0) {
+		// MSAA FBO (4x)
 		glGenRenderbuffers(1, &m_rbo_color);
 		glBindRenderbuffer(GL_RENDERBUFFER, m_rbo_color);
-		glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8_OES, m_w, m_h);
+		glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_RGBA8, m_w, m_h);
 
 		glGenRenderbuffers(1, &m_rbo_depth);
 		glBindRenderbuffer(GL_RENDERBUFFER, m_rbo_depth);
-		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, m_w, m_h);
+		glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT16, m_w, m_h);
 
 		glGenFramebuffers(1, &m_fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
@@ -197,7 +211,20 @@ void GLView::begin(SDL_Renderer *rend)
 
 		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 		if(status != GL_FRAMEBUFFER_COMPLETE)
-			fprintf(stderr, "glview: FBO incomplete: 0x%x\n", status);
+			fprintf(stderr, "glview: MSAA FBO incomplete: 0x%x\n", status);
+
+		// Resolve FBO (non-MSAA for reading pixels)
+		glGenRenderbuffers(1, &m_rbo_resolve_color);
+		glBindRenderbuffer(GL_RENDERBUFFER, m_rbo_resolve_color);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, m_w, m_h);
+
+		glGenFramebuffers(1, &m_fbo_resolve);
+		glBindFramebuffer(GL_FRAMEBUFFER, m_fbo_resolve);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, m_rbo_resolve_color);
+
+		status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+		if(status != GL_FRAMEBUFFER_COMPLETE)
+			fprintf(stderr, "glview: resolve FBO incomplete: 0x%x\n", status);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
@@ -213,7 +240,13 @@ void GLView::end(SDL_Renderer *rend)
 
 	SDL_Window *win = SDL_GetRenderWindow(rend);
 
-	// read pixels from FBO
+	// blit MSAA FBO to resolve FBO
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, m_fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_fbo_resolve);
+	glBlitFramebuffer(0, 0, m_w, m_h, 0, 0, m_w, m_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+	// read pixels from resolve FBO
+	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo_resolve);
 	glReadPixels(0, 0, m_w, m_h, GL_RGBA, GL_UNSIGNED_BYTE, m_pixels.data());
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

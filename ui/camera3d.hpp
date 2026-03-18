@@ -17,18 +17,23 @@ struct Camera3D {
 	float drag_x{}, drag_y{};
 
 	mat4 build(int w, int h) const {
-		vec3 center = {pan_x, pan_y, 0};
+		vec3 center = {0, 0, 0};
 		vec3 eye = {
-			center.x + dist * sin(yaw) * cos(pitch),
-			center.y + dist * sin(pitch),
-			center.z + dist * cos(yaw) * cos(pitch),
+			dist * sin(yaw) * cos(pitch),
+			dist * sin(pitch),
+			dist * cos(yaw) * cos(pitch),
 		};
 		mat4 view = mat4::look_at(eye, center, {0, 1, 0});
 		double aspect = (double)w / h;
 		mat4 proj = ortho
 			? mat4::ortho(dist * 0.5, aspect, -100.0, 100.0)
 			: mat4::perspective(0.8, aspect, 0.001, 1000.0);
-		return proj * view;
+		// pan in NDC: convert pixel offset to NDC offset
+		mat4 pan_mat{};
+		pan_mat.m[0] = 1; pan_mat.m[5] = 1; pan_mat.m[10] = 1; pan_mat.m[15] = 1;
+		pan_mat.m[12] = 2.0 * pan_x / w;
+		pan_mat.m[13] = -2.0 * pan_y / h;
+		return pan_mat * proj * view;
 	}
 
 	void handle_mouse(SDL_Rect &r) {
@@ -51,11 +56,8 @@ struct Camera3D {
 			drag_x = mp.x; drag_y = mp.y;
 		}
 		if(panning && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-			double hfov_half = 0.4;  // half of 0.8 rad horizontal FOV
-			double visible_w = ortho ? dist * 0.5 * 2.0 : 2.0 * dist * tan(hfov_half);
-			double scale = visible_w / r.w;
-			pan_x -= (mp.x - drag_x) * scale * cos(yaw);
-			pan_y += (mp.y - drag_y) * scale;
+			pan_x += (mp.x - drag_x);
+			pan_y += (mp.y - drag_y);
 			drag_x = mp.x; drag_y = mp.y;
 		}
 		if(ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
@@ -65,9 +67,16 @@ struct Camera3D {
 		if(in_rect) {
 			float wheel = ImGui::GetIO().MouseWheel;
 			if(wheel != 0) {
+				double old_dist = dist;
 				dist *= (1.0 - wheel * 0.1);
 				if(dist < 0.1) dist = 0.1;
 				if(dist > 50.0) dist = 50.0;
+				// zoom toward mouse: adjust pan so mouse point stays fixed
+				double zf = old_dist / dist;  // >1 when zooming in
+				float cx = r.x + r.w * 0.5f;
+				float cy = r.y + r.h * 0.5f;
+				pan_x = (pan_x + cx - mp.x) * zf + mp.x - cx;
+				pan_y = (pan_y + cy - mp.y) * zf + mp.y - cy;
 			}
 		}
 	}

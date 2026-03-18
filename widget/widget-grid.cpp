@@ -436,7 +436,7 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	if(mact == 1) { ctx.push(CmdMeasure{m_axis_x}); ctx.push(CmdMeasure{m_axis_y}); }
 	if(mact == 2) { ctx.push(CmdDecohere{m_axis_x}); ctx.push(CmdDecohere{m_axis_y}); }
 
-	if(ImGui::IsWindowFocused())
+	if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
 		draw_controls(m_overlays, N_OVERLAYS);
 	float ctrl_h = ImGui::GetCursorPosY();
 

@@ -88,6 +88,8 @@ private:
 	int m_step_interval{1};
 	int m_history_depth{300};
 
+	Camera3D m_camera;
+
 	// ring buffer: [history_depth × axis_points]
 	std::vector<psi_t> m_psi_history;
 	std::vector<psi_t> m_pot_history;
@@ -266,7 +268,8 @@ void WidgetTrace::update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz
 void WidgetTrace::draw_controls(SimContext &ctx)
 {
 	auto &gm = ctx.state().grid;
-	
+
+	ImGui::ToggleButton("L", &m_view.lock);
 	ImGui::SameLine();
 
 	// axis combo — inline since we have GridMeta not Grid
@@ -306,7 +309,7 @@ void WidgetTrace::draw_controls(SimContext &ctx)
 	if(mact == 1) ctx.push(CmdMeasure{m_axis});
 	if(mact == 2) ctx.push(CmdDecohere{m_axis});
 
-	if(ImGui::IsWindowFocused())
+	if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
 		draw_overlay_controls(m_overlays, N_OVERLAYS);
 }
 
@@ -344,6 +347,10 @@ void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)
 
 void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
+	// sync camera from shared view when locked
+	if(m_view.lock)
+		m_camera = m_view.camera;
+
 	auto &st = ctx.state();
 	auto &gm = st.grid;
 
@@ -388,18 +395,32 @@ void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		int th = horiz ? m_history_depth : m_axis_points;
 		update_overlays(rend, tw, th, horiz);
 
-		float avail_w = r.w;
+		// pan/zoom via shared camera mechanism
+		m_camera.handle_mouse(r);
+
 		float avail_h = r.h - ctrl_h - 10;
 		float aspect = (float)tw / th;
+
+		// compute spatial extent from camera — same math as helix
+		// helix builds VP with square aspect (w×w), we replicate that
+		mat4 vp = m_camera.build(r.w, r.w);
+		vec3 pl = vp.transform({-1, 0, 0});
+		vec3 pr = vp.transform({ 1, 0, 0});
+		float sl = (1.0f + (float)pl.x) * 0.5f;
+		float sr = (1.0f + (float)pr.x) * 0.5f;
+
 		SDL_FRect dst;
-		dst.w = avail_w;
-		dst.h = avail_w / aspect;
-		if(dst.h > avail_h) {
-			dst.h = avail_h;
-			dst.w = avail_h * aspect;
+		if(horiz) {
+			dst.x = r.x + sl * r.w;
+			dst.w = (sr - sl) * r.w;
+			dst.h = dst.w / aspect;
+			dst.y = r.y + ctrl_h + avail_h * 0.5f + m_camera.pan_y - dst.h * 0.5f;
+		} else {
+			dst.h = (sr - sl) * r.w;  // spatial axis is vertical
+			dst.w = dst.h * aspect;
+			dst.y = r.y + ctrl_h + (1.0f - sr) * r.w;  // flip for vertical
+			dst.x = r.x + r.w * 0.5f + m_camera.pan_x - dst.w * 0.5f;
 		}
-		dst.x = r.x + (avail_w - dst.w) * 0.5f;
-		dst.y = r.y + ctrl_h + (avail_h - dst.h) * 0.5f;
 
 		for(auto &ov : m_overlays) {
 			if(ov.source == DataSource::Off || !ov.tex) continue;
@@ -422,7 +443,12 @@ void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		m_pot_history.resize(m_history_depth * m_axis_points, psi_t(0, 0));
 		m_history_head = 0;
 		m_history_count = 0;
+		m_camera = Camera3D{};
 	}
+
+	// write back camera to shared view when locked
+	if(m_view.lock)
+		m_view.camera = m_camera;
 }
 
 
