@@ -84,7 +84,7 @@ public:
 	void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override;
 
 private:
-	void update_overlays(Simulation &sim, SDL_Renderer *rend, int tw, int th);
+	void update_overlays_from_result(const ExtractionResult &res, SDL_Renderer *rend, int tw, int th);
 	void draw_absorb_boundary(SDL_Renderer *rend, const Simulation &sim, int tw);
 	void draw_cursor(SDL_Renderer *rend, const Grid &grid);
 	void dump_slice(Simulation &sim, int tw, int th);
@@ -185,23 +185,6 @@ static void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h)
 
 static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_buf, int tw, int th);
 
-static void fill_texture_marginal(Overlay &ov, Simulation &sim, int tw, int th,
-                                   int axis_x, int axis_y)
-{
-	// GPU-side marginal: get |psi|^2 summed over hidden axes
-	std::vector<float> marg(tw * th);
-	sim.read_marginal_2d(axis_x, axis_y, marg.data());
-
-	// convert marginal |psi|^2 to psi_t with real=sqrt(val) so sample_value works
-	std::vector<psi_t> psi_buf(tw * th);
-	std::vector<psi_t> pot_buf(tw * th, psi_t(0, 0));
-	for(int i = 0; i < tw * th; i++)
-		psi_buf[i] = psi_t(sqrtf(marg[i]), 0);
-
-	render_texture(ov, psi_buf.data(), pot_buf.data(), tw, th);
-}
-
-
 // render a 2D psi/pot buffer into an SDL texture overlay
 static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_buf,
                             int tw, int th)
@@ -286,31 +269,14 @@ static void draw_controls(Overlay overlays[], int n_overlays)
 }
 
 
-void WidgetGrid::update_overlays(Simulation &sim, SDL_Renderer *rend, int tw, int th)
+void WidgetGrid::update_overlays_from_result(const ExtractionResult &res,
+	SDL_Renderer *rend, int tw, int th)
 {
 	for(int oi = 0; oi < N_OVERLAYS; oi++) {
 		auto &ov = m_overlays[oi];
 		if(ov.source == DataSource::Off) continue;
 		ensure_texture(rend, ov, tw, th);
-		if(m_marginal && sim.grid.rank > 2) {
-			fill_texture_marginal(ov, sim, tw, th, m_axis_x, m_axis_y);
-		} else if(sim.grid.rank == 1) {
-			// 1D: psi is small, just read directly
-			auto *psi = sim.psi_front();
-			render_texture(ov, psi, sim.potential.data(), tw, th);
-		} else {
-			std::vector<psi_t> psi_buf(tw * th);
-			sim.read_slice_2d(m_axis_x, m_axis_y, m_view.cursor, psi_buf.data());
-
-			std::vector<psi_t> pot_buf(tw * th);
-			auto pot_view = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, sim.potential.data());
-			for(int x = 0; x < tw; x++)
-				for(int y = 0; y < th; y++)
-					pot_buf[x * th + y] = pot_view.at(x, y);
-
-			render_texture(ov, psi_buf.data(), pot_buf.data(), tw, th);
-		}
-
+		render_texture(ov, res.psi.data(), res.pot.data(), tw, th);
 		SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
 		SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
 		SDL_RenderTexture(rend, ov.tex, nullptr, &m_dst);
@@ -447,48 +413,49 @@ SDL_FRect WidgetGrid::compute_display_rect(int tw, int th, float avail_x, float 
 
 void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
-	auto &exp = ctx.experiment();
+	auto &st = ctx.state();
+	auto &gm = st.grid;
+
 	SDL_SetRenderDrawColor(rend, colors::bg_grid.r, colors::bg_grid.g, colors::bg_grid.b, colors::bg_grid.a);
 	SDL_RenderFillRect(rend, nullptr);
 
+	if(gm.rank == 0) { ImGui::Text("No simulation"); return; }
+
+	// clamp axis selection
+	if(m_axis_x >= gm.rank) m_axis_x = 0;
+	if(m_axis_y >= gm.rank) m_axis_y = gm.rank > 1 ? 1 : 0;
+	if(m_axis_x == m_axis_y && gm.rank > 1) m_axis_y = (m_axis_x + 1) % gm.rank;
+
 	// axis selection and slice/marginal mode
-	if(!exp.simulations.empty() && exp.simulations[0]->grid.rank > 2) {
-		auto &g = exp.simulations[0]->grid;
-		ImGui::AxisCombo("##ax_x", &m_axis_x, g);
+	if(gm.rank > 2) {
+		// AxisCombo needs a Grid — construct a temporary from GridMeta
+		Grid grid_tmp{};
+		grid_tmp.rank = gm.rank;
+		for(int d = 0; d < gm.rank; d++) grid_tmp.axes[d] = gm.axes[d];
+		ImGui::AxisCombo("##ax_x", &m_axis_x, grid_tmp);
 		ImGui::SameLine();
-		ImGui::AxisCombo("##ax_y", &m_axis_y, g);
+		ImGui::AxisCombo("##ax_y", &m_axis_y, grid_tmp);
 		ImGui::SameLine();
 		if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
 			m_marginal = !m_marginal;
 		ImGui::SameLine();
 	}
 
-	// Measure button — always last on the line
+	// Measure button
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
 	if(ImGui::Button("Measure")) {
-		for(auto &s : exp.simulations) {
-			s->measure(m_axis_x);
-			s->measure(m_axis_y);
-		}
+		ctx.push(CmdMeasure{m_axis_x});
+		ctx.push(CmdMeasure{m_axis_y});
 	}
 	ImGui::PopStyleColor(3);
 
 	draw_controls(m_overlays, N_OVERLAYS);
 	float ctrl_h = ImGui::GetCursorPosY();
 
-	if(exp.simulations.empty()) { ImGui::Text("No simulation"); return; }
-
-	auto &sim = *exp.simulations[0];
-	auto &grid = sim.grid;
-
-	if(m_axis_x >= grid.rank) m_axis_x = 0;
-	if(m_axis_y >= grid.rank) m_axis_y = grid.rank > 1 ? 1 : 0;
-	if(m_axis_x == m_axis_y && grid.rank > 1) m_axis_y = (m_axis_x + 1) % grid.rank;
-
-	int tw = grid.axes[m_axis_x].points;
-	int th = (grid.rank >= 2) ? grid.axes[m_axis_y].points : 1;
+	int tw = gm.axes[m_axis_x].points;
+	int th = (gm.rank >= 2) ? gm.axes[m_axis_y].points : 1;
 
 	handle_mouse(r, ctrl_h, m_view_state.zoom, m_view_state.pan_x, m_view_state.pan_y, m_view_state.dragging, m_view_state.drag_x, m_view_state.drag_y);
 
@@ -496,19 +463,44 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	m_grid_h = th;
 	m_dst = compute_display_rect(tw, th, r.x, r.y + ctrl_h, r.w, r.h - ctrl_h);
 
-	update_overlays(sim, rend, tw, th);
-	draw_absorb_boundary(rend, sim, tw);
+	// declare extraction request for next frame
+	bool want_marginal = m_marginal && gm.rank > 2;
+	ExtractionRequest req{};
+	req.axes[0] = m_axis_x;
+	req.axes[1] = (gm.rank >= 2) ? m_axis_y : -1;
+	for(int a = 2; a < MAX_RANK; a++) req.axes[a] = -1;
+	for(int d = 0; d < MAX_RANK; d++) req.cursor[d] = m_view.cursor[d];
+	req.marginal = want_marginal;
+	ctx.request(req);
+
+	// read result from previous frame
+	auto *res = st.find(req);
+	if(res && !res->psi.empty()) {
+		update_overlays_from_result(*res, rend, tw, th);
+	}
+
+	// TODO: draw_absorb_boundary needs absorb state in PublishedState
+	auto &exp = ctx.experiment();
+	if(!exp.simulations.empty())
+		draw_absorb_boundary(rend, *exp.simulations[0], tw);
 
 	SDL_SetRenderDrawColor(rend, colors::grid_border.r, colors::grid_border.g, colors::grid_border.b, colors::grid_border.a);
 	SDL_RenderRect(rend, &m_dst);
 
-	draw_cursor(rend, grid);
+	// cursor uses grid metadata from state
+	Grid grid_tmp{};
+	grid_tmp.rank = gm.rank;
+	for(int d = 0; d < gm.rank; d++) grid_tmp.axes[d] = gm.axes[d];
+	draw_cursor(rend, grid_tmp);
 
 	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
 		m_view_state = {};
 	}
-	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D))
-		dump_slice(sim, tw, th);
+	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D)) {
+		// dump still uses escape hatch
+		if(!exp.simulations.empty())
+			dump_slice(*exp.simulations[0], tw, th);
+	}
 }
 
 

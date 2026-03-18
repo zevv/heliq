@@ -134,8 +134,20 @@ void SimContext::extract()
 				sim.read_slice_2d(req.axes[0], req.axes[1], req.cursor,
 					res.psi.data());
 
-			// TODO: potential slice
-			std::fill(res.pot.begin(), res.pot.end(), psi_t(0, 0));
+			// potential slice (CPU-side, cheap)
+			if(n_axes == 1) {
+				auto pot_view = sim.grid.axis_view(req.axes[0], req.cursor, sim.potential.data());
+				int idx = 0;
+				for(auto val : pot_view) {
+					if(idx >= total) break;
+					res.pot[idx++] = val;
+				}
+			} else if(n_axes == 2) {
+				auto pot_view = sim.grid.slice_view(req.axes[0], req.axes[1], req.cursor, sim.potential.data());
+				for(int x = 0; x < res.shape[0]; x++)
+					for(int y = 0; y < res.shape[1]; y++)
+						res.pot[x * res.shape[1] + y] = pot_view.at(x, y);
+			}
 		}
 
 		m_state.n_results++;
@@ -165,9 +177,11 @@ void SimContext::publish()
 		m_state.grid.axes[d] = sim.grid.axes[d];
 	m_state.grid.cs = sim.cs;
 
-	m_state.title = m_exp.setup.title;
-	m_state.description = m_exp.setup.description;
-	m_state.n_particles = (int)m_exp.setup.particles.size();
+	m_state.setup = m_exp.setup;
+
+	m_state.absorbing_boundary = sim.absorbing_boundary;
+	m_state.absorb_width = sim.absorb_width;
+	m_state.absorb_strength = sim.absorb_strength;
 
 	// TODO: marginal peaks from extraction results
 }

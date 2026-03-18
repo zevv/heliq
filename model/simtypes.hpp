@@ -107,13 +107,31 @@ struct PublishedState {
 	// grid + configspace metadata
 	GridMeta grid{};
 
-	// setup metadata
-	std::string title;
-	std::string description;
-	int n_particles{};
+	// setup (full copy, updated on load)
+	Setup setup{};
+
+	// absorbing boundary state
+	bool absorbing_boundary{};
+	double absorb_width{0.02};
+	double absorb_strength{};
 
 	// lifecycle
 	int generation{};          // incremented on load/reload
 	bool running{};
 	std::string error;         // non-empty = fatal/blocking error
+
+	// find extraction result matching a request (nullptr if not found)
+	const ExtractionResult *find(const ExtractionRequest &r) const {
+		for(int i = 0; i < n_results; i++) {
+			auto &res = results[i];
+			if(res.marginal != r.marginal) continue;
+			bool match = true;
+			for(int a = 0; a < MAX_RANK; a++) {
+				if(res.axes[a] != r.axes[a]) { match = false; break; }
+				if(res.axes[a] == -1) break;
+			}
+			if(match) return &res;
+		}
+		return nullptr;
+	}
 };
