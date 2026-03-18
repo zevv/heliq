@@ -221,16 +221,21 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	// get result from previous frame (before building request so auto-track can update cursor)
 	auto *result = state.find(req);
 
-	// auto-track: find peak in previous result, update cursor for this frame's request
+	// auto-track: probability-weighted centroid
 	if(m_slice.auto_track && m_slice.mode != Marginal && state.grid.rank > 1
 		&& result && !result->psi.empty()) {
-		double best = -1;
-		int best_i = n / 2;
+		double sum_w = 0, sum_wi = 0;
 		for(int i = 0; i < n; i++) {
-			double v = std::norm(result->psi[i]);
-			if(v > best) { best = v; best_i = i; }
+			double w = std::norm(result->psi[i]);
+			sum_w += w;
+			sum_wi += w * i;
 		}
-		m_view.cursor[m_slice.axis] = best_i;
+		if(sum_w > 1e-30) {
+			int ci = (int)(sum_wi / sum_w + 0.5);
+			if(ci < 0) ci = 0;
+			if(ci >= n) ci = n - 1;
+			m_view.cursor[m_slice.axis] = ci;
+		}
 	}
 
 	// rebuild request with updated cursor
