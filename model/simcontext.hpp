@@ -2,7 +2,6 @@
 
 #include "simtypes.hpp"
 #include "simqueue.hpp"
-#include "experiment.hpp"
 
 // Async API facade for the simulation model.
 //
@@ -10,6 +9,9 @@
 // Phase 2: poll() swaps in latest state from a real sim thread.
 //
 // All widget/app access to the model goes through this class.
+// The model internals (Experiment, Simulation, Solver) are hidden.
+
+class Experiment;  // forward decl, private implementation detail
 
 class SimContext {
 public:
@@ -26,10 +28,6 @@ public:
 	// UI reads: latest published state (always valid after first poll)
 	const PublishedState &state() const { return m_state; }
 
-	// transitional: direct access to experiment during migration
-	// TODO: remove once all widgets read from state()
-	Experiment &experiment() { return m_exp; }
-
 private:
 	void handle(SimCommand &cmd);
 	void extract();
@@ -38,6 +36,12 @@ private:
 	SimCommandQueue m_cmds;
 	ExtractionSet m_requests{};
 	PublishedState m_state{};
-	Experiment m_exp{};
-	int m_generation{};
+
+	// opaque model state — only accessed by simcontext.cpp
+	struct Impl;
+	std::unique_ptr<Impl> m_impl;
+
+public:
+	SimContext();
+	~SimContext();
 };

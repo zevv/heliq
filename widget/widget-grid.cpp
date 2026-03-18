@@ -85,9 +85,9 @@ public:
 
 private:
 	void update_overlays_from_result(const ExtractionResult &res, SDL_Renderer *rend, int tw, int th);
-	void draw_absorb_boundary(SDL_Renderer *rend, const Simulation &sim, int tw);
+	void draw_absorb_boundary(SDL_Renderer *rend, const PublishedState &st, int tw);
 	void draw_cursor(SDL_Renderer *rend, const Grid &grid);
-	void dump_slice(Simulation &sim, int tw, int th);
+	void dump_result(const ExtractionResult &res, int tw, int th);
 	SDL_FRect compute_display_rect(int tw, int th, float avail_x, float avail_y, float avail_w, float avail_h);
 
 	static constexpr int N_OVERLAYS = 3;
@@ -284,11 +284,11 @@ void WidgetGrid::update_overlays_from_result(const ExtractionResult &res,
 }
 
 
-void WidgetGrid::draw_absorb_boundary(SDL_Renderer *rend, const Simulation &sim, int tw)
+void WidgetGrid::draw_absorb_boundary(SDL_Renderer *rend, const PublishedState &st, int tw)
 {
-	if(!sim.absorbing_boundary) return;
+	if(!st.absorbing_boundary) return;
 
-	float w = (float)sim.absorb_width;
+	float w = (float)st.absorb_width;
 	int n_strips = (int)(w * tw);
 	if(n_strips < 1) n_strips = 1;
 	SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
@@ -303,7 +303,7 @@ void WidgetGrid::draw_absorb_boundary(SDL_Renderer *rend, const Simulation &sim,
 		SDL_RenderFillRect(rend, &rl);
 		SDL_RenderFillRect(rend, &rr);
 	}
-	if(sim.grid.rank >= 2) {
+	if(st.grid.rank >= 2) {
 		float strip_h = m_dst.h * w / n_strips;
 		for(int i = 0; i < n_strips; i++) {
 			float t = cosf(0.5f * M_PI * (i + 1) / n_strips);
@@ -341,34 +341,22 @@ void WidgetGrid::draw_cursor(SDL_Renderer *rend, const Grid &grid)
 }
 
 
-void WidgetGrid::dump_slice(Simulation &sim, int tw, int th)
+void WidgetGrid::dump_result(const ExtractionResult &res, int tw, int th)
 {
-	auto *psi = sim.psi_front();
-	auto *pot = sim.potential.data();
-	auto psi_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, psi);
-	auto pot_slice = sim.grid.slice_view(m_axis_x, m_axis_y, m_view.cursor, pot);
+	if(res.psi.empty()) return;
 
 	int sx = (tw + 255) / 256;
 	int sy = (th + 127) / 128;
 	int ox = tw / sx, oy = th / sy;
 
 	double max_val = 1e-30;
-	for(int iy = 0; iy < th; iy++)
-		for(int ix = 0; ix < tw; ix++) {
-			double v = std::norm(psi_slice.at(ix, iy));
-			if(v > max_val) max_val = v;
-		}
-
-	const char *lx = sim.grid.axes[m_axis_x].label[0] ? sim.grid.axes[m_axis_x].label : "?";
-	const char *ly = sim.grid.axes[m_axis_y].label[0] ? sim.grid.axes[m_axis_y].label : "?";
+	for(int i = 0; i < tw * th; i++) {
+		double v = std::norm(res.psi[i]);
+		if(v > max_val) max_val = v;
+	}
 
 	FILE *f = fopen("dump.txt", "w");
-	fprintf(f, "# t=%.4e  axes=%s/%s  %dx%d  max=%.4e\n", sim.time(), lx, ly, ox, oy, max_val);
-	for(int d = 0; d < sim.grid.rank; d++) {
-		if(d == m_axis_x || d == m_axis_y) continue;
-		const char *l = sim.grid.axes[d].label[0] ? sim.grid.axes[d].label : "?";
-		fprintf(f, "# %s=%d\n", l, m_view.cursor[d]);
-	}
+	fprintf(f, "# %dx%d  max=%.4e\n", ox, oy, max_val);
 
 	const char *shades = "_.:-=o+*#%@";
 	int nshades = 11;
@@ -376,10 +364,11 @@ void WidgetGrid::dump_slice(Simulation &sim, int tw, int th)
 		for(int ix = 0; ix < ox; ix++) {
 			int gx = ix * sx + sx / 2;
 			int gy = iy * sy + sy / 2;
-			if(pot_slice.at(gx, gy).real() > 0) {
+			int idx = gx * th + gy;
+			if(idx < (int)res.pot.size() && res.pot[idx].real() > 0) {
 				fputc('|', f);
 			} else {
-				double v = pow(std::norm(psi_slice.at(gx, gy)) / max_val, 0.15);
+				double v = pow(std::norm(res.psi[idx]) / max_val, 0.15);
 				int si = (int)(v * (nshades - 1));
 				si = std::clamp(si, 0, nshades - 1);
 				fputc(shades[si], f);
@@ -388,7 +377,7 @@ void WidgetGrid::dump_slice(Simulation &sim, int tw, int th)
 		fputc('\n', f);
 	}
 	fclose(f);
-	fprintf(stderr, "dumped %s/%s to dump.txt (%dx%d)\n", lx, ly, ox, oy);
+	fprintf(stderr, "dumped to dump.txt (%dx%d)\n", ox, oy);
 }
 
 
@@ -479,28 +468,22 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		update_overlays_from_result(*res, rend, tw, th);
 	}
 
-	// TODO: draw_absorb_boundary needs absorb state in PublishedState
-	auto &exp = ctx.experiment();
-	if(!exp.simulations.empty())
-		draw_absorb_boundary(rend, *exp.simulations[0], tw);
+	draw_absorb_boundary(rend, st, tw);
 
 	SDL_SetRenderDrawColor(rend, colors::grid_border.r, colors::grid_border.g, colors::grid_border.b, colors::grid_border.a);
 	SDL_RenderRect(rend, &m_dst);
 
-	// cursor uses grid metadata from state
 	Grid grid_tmp{};
 	grid_tmp.rank = gm.rank;
 	for(int d = 0; d < gm.rank; d++) grid_tmp.axes[d] = gm.axes[d];
 	draw_cursor(rend, grid_tmp);
 
-	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
+	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A))
 		m_view_state = {};
-	}
-	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D)) {
-		// dump still uses escape hatch
-		if(!exp.simulations.empty())
-			dump_slice(*exp.simulations[0], tw, th);
-	}
+
+	// D: dump current extraction to file
+	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_D) && res)
+		dump_result(*res, tw, th);
 }
 
 

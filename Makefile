@@ -23,7 +23,6 @@ SRC += model/simcontext.cpp
 SRC += widget/widget-dummy.cpp
 SRC += widget/widget-info.cpp
 SRC += widget/widget-grid.cpp
-SRC += widget/widget-helix.cpp
 SRC += widget/widget-helix2.cpp
 SRC += widget/widget-trace.cpp
 SRC += $(IMGUI_DIR)/imgui.cpp 

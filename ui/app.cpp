@@ -59,15 +59,12 @@ void App::load()
 	if(auto n = cr.find("panel")) m_root_panel->load(n);
 	if(auto n = cr.find("style")) Style::load(n);
 	if(auto n = cr.find("experiment")) {
-		double ts = m_ctx.experiment().timescale;
+		double ts = m_ctx.state().timescale;
 		n->read("timescale", ts);
-		m_ctx.experiment().timescale = fabs(ts);
-		if(!m_ctx.experiment().simulations.empty()) {
-		double dt = m_ctx.experiment().simulations[0]->dt;
+		m_ctx.push(CmdSetTimescale{fabs(ts)});
+		double dt = m_ctx.state().dt;
 		n->read("dt", dt);
-		for(auto &sim : m_ctx.experiment().simulations)
-			sim->set_dt(dt);
-	}
+		if(dt > 0) m_ctx.push(CmdSetDt{dt});
 		for(int d = 0; d < MAX_RANK; d++) {
 			char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
 			n->read(key, m_view.cursor[d]);
@@ -98,10 +95,9 @@ void App::save()
 	Style::save(cw);
 	cw.pop();
 	cw.push("experiment");
-	cw.write("timescale", m_ctx.experiment().timescale);
-	if(!m_ctx.experiment().simulations.empty()) {
-		cw.write("dt", m_ctx.experiment().simulations[0]->dt);
-	}
+	cw.write("timescale", m_ctx.state().timescale);
+	if(m_ctx.state().dt > 0)
+		cw.write("dt", m_ctx.state().dt);
 	for(int d = 0; d < MAX_RANK; d++) {
 		char key[16]; snprintf(key, sizeof(key), "cursor_%d", d);
 		cw.write(key, m_view.cursor[d]);
@@ -118,17 +114,17 @@ void App::save()
 
 void App::init_cursor()
 {
-	if(m_ctx.experiment().simulations.empty()) return;
-	auto &sim = *m_ctx.experiment().simulations[0];
-	auto &setup = m_ctx.experiment().setup;
+	auto &st = m_ctx.state();
+	auto &gm = st.grid;
+	if(gm.rank == 0) return;
 
 	// set cursor to initial particle positions
-	for(int p = 0; p < sim.cs.n_particles; p++) {
-		for(int d = 0; d < sim.cs.spatial_dims; d++) {
-			int ax = sim.cs.axis(p, d);
-			if(ax >= sim.grid.rank) continue;
-			auto &axis = sim.grid.axes[ax];
-			double pos = (p < (int)setup.particles.size()) ? setup.particles[p].position[d] : 0;
+	for(int p = 0; p < gm.cs.n_particles; p++) {
+		for(int d = 0; d < gm.cs.spatial_dims; d++) {
+			int ax = gm.cs.axis(p, d);
+			if(ax >= gm.rank) continue;
+			auto &axis = gm.axes[ax];
+			double pos = (p < (int)st.setup.particles.size()) ? st.setup.particles[p].position[d] : 0;
 			int idx = (int)((pos - axis.min) / (axis.max - axis.min) * axis.points);
 			if(idx < 0) idx = 0;
 			if(idx >= axis.points) idx = axis.points - 1;
@@ -212,24 +208,22 @@ int App::draw_topbar()
 	float fps = ImGui::GetIO().Framerate;
 	ImGui::Text("FPS: %.0f", fps);
 
+	auto &st = m_ctx.state();
 	ImGui::SameLine();
 	char time_str[64];
-	humanize_unit(m_ctx.experiment().sim_time, "s", time_str, sizeof(time_str));
+	humanize_unit(st.sim_time, "s", time_str, sizeof(time_str));
 	ImGui::Text("t=%s", time_str);
 
 	// right-aligned sanity checks
-	if(!m_ctx.experiment().simulations.empty()) {
-		auto &sim = *m_ctx.experiment().simulations[0];
+	if(st.grid.rank > 0) {
 		ImVec4 col_ok   = ImVec4(0.4, 0.8, 0.4, 1);
 		ImVec4 col_warn = ImVec4(0.9, 0.8, 0.2, 1);
 		ImVec4 col_bad  = ImVec4(1.0, 0.3, 0.3, 1);
 
-		// build right-aligned text
 		float rx = ImGui::GetWindowWidth() - 8;
 
-		// grid aliasing per axis
-		for(int d = sim.grid.rank - 1; d >= 0; d--) {
-			double kr = sim.k_nyquist_ratio[d];
+		for(int d = st.grid.rank - 1; d >= 0; d--) {
+			double kr = st.k_nyquist_ratio[d];
 			ImVec4 col = (kr < 0.3) ? col_ok : (kr < 0.5) ? col_warn : col_bad;
 			char buf[32];
 			snprintf(buf, sizeof(buf), "%d:%.0f%%", d, kr * 100);
@@ -238,14 +232,12 @@ int App::draw_topbar()
 			ImGui::TextColored(col, "%s", buf);
 		}
 
-		// "Grid" label
 		rx -= ImGui::CalcTextSize("Grid").x + 8;
 		ImGui::SameLine(rx);
 		ImGui::Text("Grid");
 
-		// phase stability
-		double pp = sim.max_potential_phase;
-		double kp = sim.max_kinetic_phase;
+		double pp = st.phase_v;
+		double kp = st.phase_k;
 		ImVec4 col_p = (pp < 0.3) ? col_ok : (pp < 1.0) ? col_warn : col_bad;
 		ImVec4 col_k = (kp < 0.3) ? col_ok : (kp < 1.0) ? col_warn : col_bad;
 
@@ -265,8 +257,7 @@ int App::draw_topbar()
 		ImGui::SameLine(rx);
 		ImGui::Text("Phase");
 
-		// probability
-		double prob = sim.total_probability();
+		double prob = st.total_probability;
 		ImVec4 col_prob = (fabs(prob - 1.0) < 0.01) ? col_ok :
 		                  (fabs(prob - 1.0) < 0.05) ? col_warn : col_bad;
 		char prob_buf[32];
@@ -388,17 +379,17 @@ void App::run()
 		if(wall_dt > 0.1) wall_dt = 1.0 / 60.0;  // clamp on first frame
 		m_ctx.poll(wall_dt);
 
+		auto &st = m_ctx.state();
+
 		// spacebar to toggle play/pause
-		if(ImGui::IsKeyPressed(ImGuiKey_Space)) {
-			bool next = !m_ctx.experiment().running;
-			m_ctx.push(CmdSetRunning{next});
-		}
+		if(ImGui::IsKeyPressed(ImGuiKey_Space))
+			m_ctx.push(CmdSetRunning{!st.running});
 
 		// , for reverse, . for forward
 		if(ImGui::IsKeyPressed(ImGuiKey_Comma))
-			m_ctx.push(CmdSetTimescale{-fabs(m_ctx.experiment().timescale)});
+			m_ctx.push(CmdSetTimescale{-fabs(st.timescale)});
 		if(ImGui::IsKeyPressed(ImGuiKey_Period))
-			m_ctx.push(CmdSetTimescale{fabs(m_ctx.experiment().timescale)});
+			m_ctx.push(CmdSetTimescale{fabs(st.timescale)});
 
 		// R to reload experiment
 		if(ImGui::IsKeyPressed(ImGuiKey_R)) {
@@ -417,11 +408,8 @@ void App::run()
 		}
 
 		// B to toggle absorbing boundary
-		if(ImGui::IsKeyPressed(ImGuiKey_B)) {
-			bool on = m_ctx.experiment().simulations.empty() ? false
-				: !m_ctx.experiment().simulations[0]->absorbing_boundary;
-			m_ctx.push(CmdSetAbsorb{on, 0.02f, 0.0f});
-		}
+		if(ImGui::IsKeyPressed(ImGuiKey_B))
+			m_ctx.push(CmdSetAbsorb{!st.absorbing_boundary, (float)st.absorb_width, (float)st.absorb_strength});
 
 		// [ and ] adjust timescale by 10^(1/3) ~= 2.154x
 		// shift+[ and shift+] adjust dt
@@ -429,22 +417,16 @@ void App::run()
 			double factor = pow(10.0, 1.0/3.0);
 			bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 			if(ImGui::IsKeyPressed(ImGuiKey_RightBracket)) {
-				if(shift) {
-					double dt = m_ctx.experiment().simulations.empty() ? 0
-						: m_ctx.experiment().simulations[0]->dt;
-					m_ctx.push(CmdSetDt{dt * factor});
-				} else {
-					m_ctx.push(CmdSetTimescale{m_ctx.experiment().timescale * factor});
-				}
+				if(shift)
+					m_ctx.push(CmdSetDt{st.dt * factor});
+				else
+					m_ctx.push(CmdSetTimescale{st.timescale * factor});
 			}
 			if(ImGui::IsKeyPressed(ImGuiKey_LeftBracket)) {
-				if(shift) {
-					double dt = m_ctx.experiment().simulations.empty() ? 0
-						: m_ctx.experiment().simulations[0]->dt;
-					m_ctx.push(CmdSetDt{dt / factor});
-				} else {
-					m_ctx.push(CmdSetTimescale{m_ctx.experiment().timescale / factor});
-				}
+				if(shift)
+					m_ctx.push(CmdSetDt{st.dt / factor});
+				else
+					m_ctx.push(CmdSetTimescale{st.timescale / factor});
 			}
 		}
 
@@ -463,12 +445,8 @@ void App::run()
 		ImGui::GetIO().FontGlobalScale = m_ui_scale;
 
 		// single step with right arrow
-		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !m_ctx.experiment().running) {
-			for(auto &sim : m_ctx.experiment().simulations)
-				sim->step();
-			m_ctx.experiment().sim_time = m_ctx.experiment().simulations.empty() ? 0 :
-				m_ctx.experiment().simulations[0]->time();
-		}
+		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !st.running)
+			m_ctx.push(CmdSingleStep{});
 
 		draw();
 	}

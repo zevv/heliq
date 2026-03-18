@@ -76,33 +76,32 @@ public:
 	void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override;
 
 private:
-	void snapshot(Simulation &sim);
+	void snapshot(const ExtractionResult &res);
 	void update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz);
-	void draw_controls(const Grid &grid, Experiment &exp);
+	void draw_controls(SimContext &ctx);
 	void draw_cursor(SDL_Renderer *rend, bool horiz);
 
 	static constexpr int N_OVERLAYS = 3;
 	Overlay m_overlays[N_OVERLAYS]{};
 	int m_axis{0};
 	bool m_marginal{false};
-	int m_step_interval{1};    // snapshot every N sim steps
+	int m_step_interval{1};
 	int m_history_depth{300};
 
 	// ring buffer: [history_depth × axis_points]
 	std::vector<psi_t> m_psi_history;
 	std::vector<psi_t> m_pot_history;
-	int m_history_head{0};  // write index
-	int m_history_count{0}; // samples written
-	int m_axis_points{0};   // cached from last snapshot
+	int m_history_head{0};
+	int m_history_count{0};
+	int m_axis_points{0};
 
-	size_t m_last_step{0};  // step_count at last snapshot
+	size_t m_last_step{0};
 
-	// display rect for cursor
 	SDL_FRect m_dst{};
 };
 
 
-// --- helper functions (duplicated from grid, extractable later) ---
+// --- helper functions ---
 
 static void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h)
 {
@@ -122,7 +121,6 @@ static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_b
 	int pitch;
 	if(!SDL_LockTexture(ov.tex, nullptr, &pixels, &pitch)) return;
 
-	// find data range for normalization
 	double vmin = 0, vmax = 1e-30, amp_max = 1e-30;
 	for(int i = 0; i < tw * th; i++) {
 		double v = sample_value(ov.source, psi_buf[i], pot_buf[i]);
@@ -200,14 +198,12 @@ static void draw_overlay_controls(Overlay overlays[], int n_overlays)
 
 // --- WidgetTrace implementation ---
 
-void WidgetTrace::snapshot(Simulation &sim)
+void WidgetTrace::snapshot(const ExtractionResult &res)
 {
-	const auto &grid = sim.grid;
-	if(m_axis < 0 || m_axis >= grid.rank) return;
+	int axis_pts = res.shape[0];
+	if(axis_pts <= 0) return;
 
-	int axis_pts = grid.axes[m_axis].points;
 	if(axis_pts != m_axis_points) {
-		// grid changed, reset history
 		m_axis_points = axis_pts;
 		m_psi_history.clear();
 		m_pot_history.clear();
@@ -217,45 +213,15 @@ void WidgetTrace::snapshot(Simulation &sim)
 		m_history_count = 0;
 	}
 
-	// read 1D slice/marginal
-	std::vector<psi_t> psi_snap(axis_pts);
-	std::vector<psi_t> pot_snap(axis_pts);
-
-	if(m_marginal && grid.rank > 1) {
-		// marginal: sum over all other axes
-		std::vector<float> marg(axis_pts);
-		sim.read_marginal_1d(m_axis, marg.data());
-		for(int i = 0; i < axis_pts; i++)
-			psi_snap[i] = psi_t(sqrtf(marg[i]), 0);
-		// no potential for marginal
-	} else {
-		// slice at current cursor position
-		int cursor[MAX_RANK]{};
-		for(int i = 0; i < grid.rank; i++)
-			cursor[i] = m_view.cursor[i];
-		sim.read_slice_1d(m_axis, cursor, psi_snap.data());
-
-		// sample potential at cursor (1D)
-		auto pot_view = grid.axis_view(m_axis, cursor, sim.potential.data());
-		int idx = 0;
-		for(auto val : pot_view) {
-			pot_snap[idx++] = val;
-			if(idx >= axis_pts) break;
-		}
-	}
-
-	// write to ring buffer
 	psi_t *psi_dest = &m_psi_history[m_history_head * axis_pts];
 	psi_t *pot_dest = &m_pot_history[m_history_head * axis_pts];
-	std::copy(psi_snap.begin(), psi_snap.end(), psi_dest);
-	std::copy(pot_snap.begin(), pot_snap.end(), pot_dest);
+	int n = std::min(axis_pts, (int)res.psi.size());
+	std::copy(res.psi.begin(), res.psi.begin() + n, psi_dest);
+	int np = std::min(axis_pts, (int)res.pot.size());
+	std::copy(res.pot.begin(), res.pot.begin() + np, pot_dest);
 
 	m_history_head = (m_history_head + 1) % m_history_depth;
 	if(m_history_count < m_history_depth) m_history_count++;
-
-	if(m_history_count <= 3)
-		fprintf(stderr, "trace: snap #%d axis=%d pts=%d |psi[0]|=%.3e\n",
-			m_history_count, m_axis, axis_pts, (double)std::abs(psi_snap[axis_pts/2]));
 }
 
 void WidgetTrace::update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz)
@@ -267,33 +233,25 @@ void WidgetTrace::update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz
 		if(ov.source == DataSource::Off) continue;
 		ensure_texture(rend, ov, tw, th);
 
-		// unroll ring buffer into linear array for rendering
-		// render_texture layout: buf[x * th + y], x = pixel col, y = pixel row (flipped)
 		std::vector<psi_t> psi_buf(tw * th, psi_t(0, 0));
 		std::vector<psi_t> pot_buf(tw * th, psi_t(0, 0));
 
-		// newest sample always at the fixed edge (top for horiz, right for vert)
-		// oldest scrolls away toward the opposite edge; unfilled = zero (black)
 		int samples = m_history_count;
 		int time_slots = horiz ? th : tw;
-		int offset = time_slots - samples;  // unfilled slots at the "old" edge
+		int offset = time_slots - samples;
 
 		for(int t = 0; t < samples; t++) {
 			int ring_idx = (m_history_head - samples + t + m_history_depth) % m_history_depth;
 			psi_t *psi_src = &m_psi_history[ring_idx * m_axis_points];
 			psi_t *pot_src = &m_pot_history[ring_idx * m_axis_points];
-			int ti = t + offset;  // position in texture
+			int ti = t + offset;
 
 			if(horiz) {
-				// space horizontal (x), time vertical (y)
-				// newest on top → newest = highest y in buffer (render_texture flips)
 				for(int s = 0; s < m_axis_points; s++) {
 					psi_buf[s * th + ti] = psi_src[s];
 					pot_buf[s * th + ti] = pot_src[s];
 				}
 			} else {
-				// time horizontal (x), space vertical (y)
-				// newest on right → highest x
 				for(int s = 0; s < m_axis_points; s++) {
 					psi_buf[ti * th + s] = psi_src[s];
 					pot_buf[ti * th + s] = pot_src[s];
@@ -305,10 +263,23 @@ void WidgetTrace::update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz
 	}
 }
 
-void WidgetTrace::draw_controls(const Grid &grid, Experiment &exp)
+void WidgetTrace::draw_controls(SimContext &ctx)
 {
-	ImGui::AxisCombo("##axis", &m_axis, grid);
-	ImGui::SameLine();
+	auto &gm = ctx.state().grid;
+
+	// axis combo — inline since we have GridMeta not Grid
+	if(gm.rank > 1) {
+		ImGui::SetNextItemWidth(80);
+		if(ImGui::BeginCombo("##axis", gm.axes[m_axis].label)) {
+			for(int d = 0; d < gm.rank; d++) {
+				if(ImGui::Selectable(gm.axes[d].label, d == m_axis))
+					m_axis = d;
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::SameLine();
+	}
+
 	if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
 		m_marginal = !m_marginal;
 	ImGui::SameLine();
@@ -329,14 +300,12 @@ void WidgetTrace::draw_controls(const Grid &grid, Experiment &exp)
 	}
 	ImGui::SameLine();
 
-	// Measure button — always last on the line
+	// Measure button
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-	if(ImGui::Button("Measure")) {
-		for(auto &s : exp.simulations)
-			s->measure(m_axis);
-	}
+	if(ImGui::Button("Measure"))
+		ctx.push(CmdMeasure{m_axis});
 	ImGui::PopStyleColor(3);
 
 	draw_overlay_controls(m_overlays, N_OVERLAYS);
@@ -346,17 +315,14 @@ void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)
 {
 	if(m_axis_points < 1) return;
 
-	// LMB drag updates cursor on the traced axis
 	if(ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 		ImVec2 mp = ImGui::GetMousePos();
 		if(mp.x >= m_dst.x && mp.x < m_dst.x + m_dst.w &&
 		   mp.y >= m_dst.y && mp.y < m_dst.y + m_dst.h) {
 			if(horiz) {
-				// space is horizontal
 				float frac = (mp.x - m_dst.x) / m_dst.w;
 				m_view.cursor[m_axis] = (int)(frac * m_axis_points);
 			} else {
-				// space is vertical (y increases upward → flip)
 				float frac = 1.0f - (mp.y - m_dst.y) / m_dst.h;
 				m_view.cursor[m_axis] = (int)(frac * m_axis_points);
 			}
@@ -365,16 +331,13 @@ void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)
 		}
 	}
 
-	// draw cursor line
 	SDL_SetRenderDrawColor(rend, colors::cursor_cross.r, colors::cursor_cross.g,
 	                       colors::cursor_cross.b, colors::cursor_cross.a);
 	int c = m_view.cursor[m_axis];
 	if(horiz) {
-		// vertical line at cursor position
 		float sx = m_dst.x + ((float)c + 0.5f) / m_axis_points * m_dst.w;
 		SDL_RenderLine(rend, sx, m_dst.y, sx, m_dst.y + m_dst.h);
 	} else {
-		// horizontal line at cursor position (y flipped)
 		float sy = m_dst.y + (1.0f - ((float)c + 0.5f) / m_axis_points) * m_dst.h;
 		SDL_RenderLine(rend, m_dst.x, sy, m_dst.x + m_dst.w, sy);
 	}
@@ -382,13 +345,23 @@ void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)
 
 void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
-	auto &exp = ctx.experiment();
-	if(exp.simulations.empty()) return;
-	auto &sim = *exp.simulations[0];
-	const auto &grid = sim.grid;
+	auto &st = ctx.state();
+	auto &gm = st.grid;
+
+	if(gm.rank == 0) return;
+	if(m_axis >= gm.rank) m_axis = 0;
+
+	// declare extraction request
+	bool want_marginal = m_marginal && gm.rank > 1;
+	ExtractionRequest req{};
+	req.axes[0] = m_axis;
+	for(int a = 1; a < MAX_RANK; a++) req.axes[a] = -1;
+	for(int d = 0; d < MAX_RANK; d++) req.cursor[d] = m_view.cursor[d];
+	req.marginal = want_marginal;
+	ctx.request(req);
 
 	// detect reset (step_count went backwards)
-	if(sim.step_count < m_last_step) {
+	if(st.step_count < m_last_step) {
 		m_psi_history.assign(m_psi_history.size(), psi_t(0, 0));
 		m_pot_history.assign(m_pot_history.size(), psi_t(0, 0));
 		m_history_head = 0;
@@ -399,20 +372,19 @@ void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		}
 	}
 
-	// snapshot every N sim steps
-	if(exp.running && sim.step_count >= m_last_step + m_step_interval) {
-		snapshot(sim);
-		m_last_step = sim.step_count;
+	// snapshot from extraction result when step advances
+	auto *res = st.find(req);
+	if(res && !res->psi.empty() && st.running &&
+	   st.step_count >= m_last_step + (size_t)m_step_interval) {
+		snapshot(*res);
+		m_last_step = st.step_count;
 	}
 
-	// draw controls
-	draw_controls(grid, exp);
+	draw_controls(ctx);
 	float ctrl_h = ImGui::GetCursorPosY();
 
-	// draw texture
 	if(m_axis_points > 0) {
-		// orient space axis to match its spatial dimension: x → horizontal, y → vertical
-		bool horiz = (sim.cs.dim_of(m_axis) == 0);
+		bool horiz = (gm.cs.dim_of(m_axis) == 0);
 		int tw = horiz ? m_axis_points   : m_history_depth;
 		int th = horiz ? m_history_depth : m_axis_points;
 		update_overlays(rend, tw, th, horiz);
@@ -436,7 +408,6 @@ void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 			SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
 		}
 
-		// border
 		SDL_SetRenderDrawColor(rend, colors::grid_border.r, colors::grid_border.g,
 		                       colors::grid_border.b, colors::grid_border.a);
 		SDL_RenderRect(rend, &dst);
@@ -446,7 +417,6 @@ void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	}
 
 	if(ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_A)) {
-		// reset view
 		m_psi_history.clear();
 		m_pot_history.clear();
 		m_psi_history.resize(m_history_depth * m_axis_points, psi_t(0, 0));

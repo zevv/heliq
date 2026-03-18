@@ -1,20 +1,32 @@
 #include "simcontext.hpp"
+#include "experiment.hpp"
 #include <cstdio>
+#include <memory>
+
+struct SimContext::Impl {
+	Experiment exp{};
+	int generation{};
+};
+
+SimContext::SimContext() : m_impl(std::make_unique<Impl>()) {}
+SimContext::~SimContext() = default;
 
 
 void SimContext::poll(double wall_dt)
 {
+	auto &exp = m_impl->exp;
+
 	// drain all pending commands
 	m_cmds.drain([&](SimCommand cmd) { handle(cmd); });
 
 	// advance if running
-	if(m_state.running && !m_exp.simulations.empty()) {
-		m_exp.running = true;
-		m_exp.advance(wall_dt);
+	if(m_state.running && !exp.simulations.empty()) {
+		exp.running = true;
+		exp.advance(wall_dt);
 	}
 
 	// extract and publish
-	if(!m_exp.simulations.empty()) {
+	if(!exp.simulations.empty()) {
 		extract();
 		publish();
 	}
@@ -26,48 +38,50 @@ void SimContext::poll(double wall_dt)
 
 void SimContext::handle(SimCommand &cmd)
 {
+	auto &exp = m_impl->exp;
+
 	std::visit([&](auto &c) {
 		using T = std::decay_t<decltype(c)>;
 
 		if constexpr (std::is_same_v<T, CmdLoad>) {
-			if(m_exp.load(std::move(c.setup))) {
-				m_generation++;
+			if(exp.load(std::move(c.setup))) {
+				m_impl->generation++;
 			} else {
 				m_state.error = "load failed";
 			}
 			m_state.running = false;
-			m_state.generation = m_generation;
+			m_state.generation = m_impl->generation;
 		}
 		else if constexpr (std::is_same_v<T, CmdAdvance>) {
-			// handled in poll() via m_exp.advance()
+			// handled in poll() via exp.advance()
 		}
 		else if constexpr (std::is_same_v<T, CmdSingleStep>) {
-			for(auto &sim : m_exp.simulations)
+			for(auto &sim : exp.simulations)
 				sim->step();
-			if(!m_exp.simulations.empty())
-				m_exp.sim_time = m_exp.simulations[0]->time();
+			if(!exp.simulations.empty())
+				exp.sim_time = exp.simulations[0]->time();
 		}
 		else if constexpr (std::is_same_v<T, CmdSetDt>) {
-			for(auto &sim : m_exp.simulations)
+			for(auto &sim : exp.simulations)
 				sim->set_dt(c.dt);
 		}
 		else if constexpr (std::is_same_v<T, CmdSetTimescale>) {
-			m_exp.timescale = c.ts;
+			exp.timescale = c.ts;
 		}
 		else if constexpr (std::is_same_v<T, CmdSetRunning>) {
 			m_state.running = c.run;
-			m_exp.running = c.run;
+			exp.running = c.run;
 		}
 		else if constexpr (std::is_same_v<T, CmdMeasure>) {
-			for(auto &sim : m_exp.simulations)
+			for(auto &sim : exp.simulations)
 				sim->measure(c.axis);
 		}
 		else if constexpr (std::is_same_v<T, CmdDecohere>) {
-			for(auto &sim : m_exp.simulations)
+			for(auto &sim : exp.simulations)
 				sim->decohere(c.axis);
 		}
 		else if constexpr (std::is_same_v<T, CmdSetAbsorb>) {
-			for(auto &sim : m_exp.simulations) {
+			for(auto &sim : exp.simulations) {
 				sim->set_absorbing_boundary(c.on);
 				sim->absorb_width = c.width;
 				sim->absorb_strength = c.strength;
@@ -80,7 +94,8 @@ void SimContext::handle(SimCommand &cmd)
 
 void SimContext::extract()
 {
-	auto &sim = *m_exp.simulations[0];
+	auto &exp = m_impl->exp;
+	auto &sim = *exp.simulations[0];
 	m_state.n_results = 0;
 
 	for(int i = 0; i < m_requests.count; i++) {
@@ -157,16 +172,17 @@ void SimContext::extract()
 
 void SimContext::publish()
 {
-	auto &sim = *m_exp.simulations[0];
+	auto &exp = m_impl->exp;
+	auto &sim = *exp.simulations[0];
 
-	m_state.sim_time = m_exp.sim_time;
+	m_state.sim_time = exp.sim_time;
 	m_state.step_count = sim.step_count;
 	m_state.total_probability = sim.total_probability();
 	m_state.phase_v = sim.max_potential_phase;
 	m_state.phase_k = sim.max_kinetic_phase;
 	m_state.dt = sim.dt;
-	m_state.timescale = m_exp.timescale;
-	m_state.generation = m_generation;
+	m_state.timescale = exp.timescale;
+	m_state.generation = m_impl->generation;
 	m_state.error.clear();
 
 	for(int d = 0; d < sim.grid.rank; d++)
@@ -177,7 +193,7 @@ void SimContext::publish()
 		m_state.grid.axes[d] = sim.grid.axes[d];
 	m_state.grid.cs = sim.cs;
 
-	m_state.setup = m_exp.setup;
+	m_state.setup = exp.setup;
 
 	m_state.absorbing_boundary = sim.absorbing_boundary;
 	m_state.absorb_width = sim.absorb_width;
