@@ -404,6 +404,8 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
 	auto &st = ctx.state();
 	auto &gm = st.grid;
+		
+	ImGui::SameLine();
 
 	SDL_SetRenderDrawColor(rend, colors::bg_grid.r, colors::bg_grid.g, colors::bg_grid.b, colors::bg_grid.a);
 	SDL_RenderFillRect(rend, nullptr);
@@ -427,20 +429,15 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		ImGui::SameLine();
 		if(ImGui::Button(m_marginal ? "Marginal" : "Slice"))
 			m_marginal = !m_marginal;
-		ImGui::SameLine();
 	}
 
-	// Measure button
-	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-	if(ImGui::Button("Measure")) {
-		ctx.push(CmdMeasure{m_axis_x});
-		ctx.push(CmdMeasure{m_axis_y});
-	}
-	ImGui::PopStyleColor(3);
+	// Measure button + M key (right-aligned)
+	int mact = ImGui::MeasureButton();
+	if(mact == 1) { ctx.push(CmdMeasure{m_axis_x}); ctx.push(CmdMeasure{m_axis_y}); }
+	if(mact == 2) { ctx.push(CmdDecohere{m_axis_x}); ctx.push(CmdDecohere{m_axis_y}); }
 
-	draw_controls(m_overlays, N_OVERLAYS);
+	if(ImGui::IsWindowFocused())
+		draw_controls(m_overlays, N_OVERLAYS);
 	float ctrl_h = ImGui::GetCursorPosY();
 
 	int tw = gm.axes[m_axis_x].points;

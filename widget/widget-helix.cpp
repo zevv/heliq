@@ -233,15 +233,17 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 
 	m_camera.handle_mouse(r);
 
-	// GL render
-	m_gl.resize(r.w, r.h);
+	// GL render — fixed aspect, width-anchored
+	int gl_w = r.w;
+	int gl_h = r.w;  // square: helix size depends only on width
+	m_gl.resize(gl_w, gl_h);
 	m_gl.begin(rend);
 
 	glClearColor(colors::bg_gl.r, colors::bg_gl.g, colors::bg_gl.b, colors::bg_gl.a);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glLineWidth(m_thick_lines ? 3.0f : 1.0f);
 
-	mat4 vp = m_camera.build(r.w, r.h);
+	mat4 vp = m_camera.build(gl_w, gl_h);
 	float mvp[16];
 	mvp_to_float(vp, mvp);
 	m_gl.set_mvp(mvp);
@@ -265,9 +267,11 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	// need to restore SDL renderer state after GL context switch
 	SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
 
-	// blit GL texture
+	// blit GL texture — centered vertically, cropped to panel
+	float src_y = (gl_h - r.h) * 0.5f;
+	SDL_FRect src = { 0, src_y, (float)gl_w, (float)r.h };
 	SDL_FRect dst = { (float)r.x, (float)r.y, (float)r.w, (float)r.h };
-	SDL_RenderTexture(rend, m_gl.texture(), nullptr, &dst);
+	SDL_RenderTexture(rend, m_gl.texture(), &src, &dst);
 
 	// hover cursor: mouse screen X → grid index on current axis
 	if(ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -808,25 +812,15 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 {
 	auto &state = ctx.state();
 
+	ImGui::SameLine();
 	ImGui::ToggleButton("L", &m_view.lock);
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth(60);
 	ImGui::SliderFloat("##amp", &m_amplitude, 0.0f, 0.2f, "%.3f");
-	ImGui::SameLine();
-
-	// Measure button — stands out with accent color
-	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-	if(ImGui::Button("Measure")) {
-		ctx.push(CmdMeasure{m_slice.axis});
-	}
-	ImGui::PopStyleColor(3);
-	ImGui::SameLine();
 
 	if(state.grid.rank > 1) {
 		ImGui::SameLine();
-		// Inline axis combo (can't use ImGui::AxisCombo since we have GridMeta not Grid)
+		// Inline axis combo
 		const char *preview = (m_slice.axis >= 0 && m_slice.axis < state.grid.rank && state.grid.axes[m_slice.axis].label[0])
 			? state.grid.axes[m_slice.axis].label : "?";
 		ImGui::SetNextItemWidth(60);
@@ -853,7 +847,12 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 		}
 	}
 
-	if(ImGui::BeginTable("layers", 5, ImGuiTableFlags_SizingStretchProp)) {
+	// Measure button + M key (right-aligned)
+	int mact = ImGui::MeasureButton();
+	if(mact == 1) ctx.push(CmdMeasure{m_slice.axis});
+	if(mact == 2) ctx.push(CmdDecohere{m_slice.axis});
+
+	if(ImGui::IsWindowFocused() && ImGui::BeginTable("layers", 5, ImGuiTableFlags_SizingStretchProp)) {
 		ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthFixed, 30);
 		ImGui::TableSetupColumn("en", ImGuiTableColumnFlags_WidthFixed, 20);
 		ImGui::TableSetupColumn("alpha", ImGuiTableColumnFlags_WidthFixed, 60);

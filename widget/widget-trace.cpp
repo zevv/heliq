@@ -266,6 +266,8 @@ void WidgetTrace::update_overlays(SDL_Renderer *rend, int tw, int th, bool horiz
 void WidgetTrace::draw_controls(SimContext &ctx)
 {
 	auto &gm = ctx.state().grid;
+	
+	ImGui::SameLine();
 
 	// axis combo — inline since we have GridMeta not Grid
 	if(gm.rank > 1) {
@@ -298,17 +300,14 @@ void WidgetTrace::draw_controls(SimContext &ctx)
 			m_history_count = 0;
 		}
 	}
-	ImGui::SameLine();
 
-	// Measure button
-	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-	if(ImGui::Button("Measure"))
-		ctx.push(CmdMeasure{m_axis});
-	ImGui::PopStyleColor(3);
+	// Measure button + M key (right-aligned)
+	int mact = ImGui::MeasureButton();
+	if(mact == 1) ctx.push(CmdMeasure{m_axis});
+	if(mact == 2) ctx.push(CmdDecohere{m_axis});
 
-	draw_overlay_controls(m_overlays, N_OVERLAYS);
+	if(ImGui::IsWindowFocused())
+		draw_overlay_controls(m_overlays, N_OVERLAYS);
 }
 
 void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)

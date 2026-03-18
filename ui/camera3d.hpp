@@ -51,7 +51,9 @@ struct Camera3D {
 			drag_x = mp.x; drag_y = mp.y;
 		}
 		if(panning && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-			double scale = dist * 0.002;
+			double hfov_half = 0.4;  // half of 0.8 rad horizontal FOV
+			double visible_w = ortho ? dist * 0.5 * 2.0 : 2.0 * dist * tan(hfov_half);
+			double scale = visible_w / r.w;
 			pan_x -= (mp.x - drag_x) * scale * cos(yaw);
 			pan_y += (mp.y - drag_y) * scale;
 			drag_x = mp.x; drag_y = mp.y;

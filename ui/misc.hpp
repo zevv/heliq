@@ -22,4 +22,6 @@ namespace ImGui {
     bool SliderDouble(const char* label, double* v, double v_min, double v_max, const char* format = "%.3f", int flags = 0);
     bool DragDouble(const char* label, double* v, double v_speed = 1.0f, double v_min = 0.0f, double v_max = 0.0f, const char* format = "%.3f", int flags = 0);
     bool AxisCombo(const char* label, int* axis, const Grid& grid);
+    // Returns: 1 = measure, 2 = decohere (shift+M), 0 = nothing
+    int MeasureButton(const char* label = "Measure");
 }

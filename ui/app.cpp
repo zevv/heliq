@@ -398,15 +398,6 @@ void App::run()
 			m_ctx.push(CmdLoad{std::move(s)});
 		}
 
-		// M/N to measure, Shift+M/N to decohere
-		bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
-		if(ImGui::IsKeyPressed(ImGuiKey_M)) {
-			if(shift) m_ctx.push(CmdDecohere{0}); else m_ctx.push(CmdMeasure{0});
-		}
-		if(ImGui::IsKeyPressed(ImGuiKey_N)) {
-			if(shift) m_ctx.push(CmdDecohere{1}); else m_ctx.push(CmdMeasure{1});
-		}
-
 		// B to toggle absorbing boundary
 		if(ImGui::IsKeyPressed(ImGuiKey_B))
 			m_ctx.push(CmdSetAbsorb{!st.absorbing_boundary, (float)st.absorb_width, (float)st.absorb_strength});

@@ -157,5 +157,25 @@ bool DragDouble(const char* label, double* v, double v_speed, double v_min, doub
 	return changed;
 }
 
+
+int MeasureButton(const char* label)
+{
+	bool shift = IsKeyDown(ImGuiKey_LeftShift) || IsKeyDown(ImGuiKey_RightShift);
+
+	// right-align
+	float btn_w = CalcTextSize(label).x + GetStyle().FramePadding.x * 2;
+	SameLine(GetWindowWidth() - btn_w - GetStyle().WindowPadding.x);
+
+	PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+	PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+	PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+	bool pressed = Button(label);
+	PopStyleColor(3);
+	bool key = IsWindowFocused() && IsKeyPressed(ImGuiKey_M);
+	if(pressed || key)
+		return shift ? 2 : 1;
+	return 0;
+}
+
 }
 
