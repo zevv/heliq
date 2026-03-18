@@ -26,6 +26,17 @@ double Solver::total_probability(const Grid &grid)
 	return sum * dv;
 }
 
+void Solver::read_slice_1d(const Grid &grid, int axis,
+                            const int *cursor, psi_t *out)
+{
+	std::vector<psi_t> tmp(m_total);
+	flush();
+	read_psi(tmp.data());
+	auto view = grid.axis_view(axis, cursor, tmp.data());
+	for(auto val : view)
+		*out++ = val;
+}
+
 void Solver::read_slice_2d(const Grid &grid, int ax_x, int ax_y,
                             const int *cursor, psi_t *out)
 {
@@ -37,6 +48,25 @@ void Solver::read_slice_2d(const Grid &grid, int ax_x, int ax_y,
 	for(int x = 0; x < nx; x++)
 		for(int y = 0; y < ny; y++)
 			out[x * ny + y] = view.at(x, y);
+}
+
+void Solver::read_marginal_1d(const Grid &grid, int axis, float *out)
+{
+	std::vector<psi_t> tmp(m_total);
+	flush();
+	read_psi(tmp.data());
+	int n = grid.axes[axis].points;
+	std::fill_n(out, n, 0.0f);
+
+	int coords[MAX_RANK]{};
+	for(size_t idx = 0; idx < m_total; idx++) {
+		int i = coords[axis];
+		out[i] += std::norm(tmp[idx]);
+		for(int d = grid.rank - 1; d >= 0; d--) {
+			if(++coords[d] < grid.axes[d].points) break;
+			coords[d] = 0;
+		}
+	}
 }
 
 void Solver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out)

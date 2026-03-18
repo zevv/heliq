@@ -160,9 +160,19 @@ double Simulation::total_probability()
 	return m_solver->total_probability(grid);
 }
 
+void Simulation::read_slice_1d(int axis, const int *cursor, psi_t *out)
+{
+	m_solver->read_slice_1d(grid, axis, cursor, out);
+}
+
 void Simulation::read_slice_2d(int ax_x, int ax_y, const int *cursor, psi_t *out)
 {
 	m_solver->read_slice_2d(grid, ax_x, ax_y, cursor, out);
+}
+
+void Simulation::read_marginal_1d(int axis, float *out)
+{
+	m_solver->read_marginal_1d(grid, axis, out);
 }
 
 void Simulation::read_marginal_2d(int ax_x, int ax_y, float *out)

@@ -73,7 +73,9 @@ public:
 	double total_probability();    // should be ~1.0
 
 	// GPU-side data extraction (avoids full readback)
+	void read_slice_1d(int axis, const int *cursor, psi_t *out);
 	void read_slice_2d(int ax_x, int ax_y, const int *cursor, psi_t *out);
+	void read_marginal_1d(int axis, float *out);
 	void read_marginal_2d(int ax_x, int ax_y, float *out);
 
 private:

@@ -139,19 +139,19 @@ static void handle_mouse(SDL_Rect &r, float ctrl_h, float &zoom, float &pan_x, f
 	ImVec2 mp = ImGui::GetMousePos();
 	bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
 	               mp.y >= r.y + ctrl_h && mp.y < r.y + r.h;
-	// MMB drag to pan
-	if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
+	// RMB drag to pan
+	if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
 		dragging = true;
 		drag_x = mp.x;
 		drag_y = mp.y;
 	}
-	if(dragging && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+	if(dragging && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
 		pan_x += mp.x - drag_x;
 		pan_y += mp.y - drag_y;
 		drag_x = mp.x;
 		drag_y = mp.y;
 	}
-	if(ImGui::IsMouseReleased(ImGuiMouseButton_Middle))
+	if(ImGui::IsMouseReleased(ImGuiMouseButton_Right))
 		dragging = false;
 
 	// scroll wheel to zoom

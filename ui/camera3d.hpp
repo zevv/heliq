@@ -37,25 +37,26 @@ struct Camera3D {
 		               mp.y >= r.y && mp.y < r.y + r.h;
 		bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 
-		if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
-			if(shift) panning = true;
-			else      orbiting = true;
+		// Shift+RMB = orbit, RMB = pan
+		if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+			if(shift) orbiting = true;
+			else      panning = true;
 			drag_x = mp.x; drag_y = mp.y;
 		}
-		if(orbiting && ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !shift) {
+		if(orbiting && ImGui::IsMouseDown(ImGuiMouseButton_Right) && shift) {
 			yaw   -= (mp.x - drag_x) * 0.005;
 			pitch += (mp.y - drag_y) * 0.005;
 			if(pitch >  CAM_PITCH_LIMIT) pitch =  CAM_PITCH_LIMIT;
 			if(pitch < -CAM_PITCH_LIMIT) pitch = -CAM_PITCH_LIMIT;
 			drag_x = mp.x; drag_y = mp.y;
 		}
-		if(panning && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+		if(panning && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
 			double scale = dist * 0.002;
 			pan_x -= (mp.x - drag_x) * scale * cos(yaw);
 			pan_y += (mp.y - drag_y) * scale;
 			drag_x = mp.x; drag_y = mp.y;
 		}
-		if(ImGui::IsMouseReleased(ImGuiMouseButton_Middle)) {
+		if(ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
 			orbiting = false; panning = false;
 		}
 
