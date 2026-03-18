@@ -60,6 +60,7 @@ private:
 	} m_helix;
 
 	bool m_thick_lines{false};
+	double m_global_max{1e-30};
 
 	struct {
 		bool on{false};
@@ -217,11 +218,28 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	for(int d = 0; d < MAX_RANK; d++)
 		req.cursor[d] = m_slice.pos[d];
 
+	// get result from previous frame (before building request so auto-track can update cursor)
+	auto *result = state.find(req);
+
+	// auto-track: find peak in previous result, update cursor for this frame's request
+	if(m_slice.auto_track && m_slice.mode != Marginal && state.grid.rank > 1
+		&& result && !result->psi.empty()) {
+		double best = -1;
+		int best_i = n / 2;
+		for(int i = 0; i < n; i++) {
+			double v = std::norm(result->psi[i]);
+			if(v > best) { best = v; best_i = i; }
+		}
+		m_view.cursor[m_slice.axis] = best_i;
+	}
+
+	// rebuild request with updated cursor
+	for(int d = 0; d < MAX_RANK; d++)
+		req.cursor[d] = m_view.cursor[d];
+
 	// declare interest (for next frame)
 	ctx.request(req);
 
-	// get result from previous frame
-	auto *result = state.find(req);
 	if(!result) {
 		ImGui::Text("Waiting for data...");
 		return;
@@ -318,18 +336,18 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 
 double WidgetHelix::compute_max_amp(const psi_t *psi, int n)
 {
+	// find local max
 	double max_amp = 1e-30;
-	if(m_slice.mode != Slice || m_slice.normalize) {
-		for(int i = 0; i < n; i++) {
-			double a = std::abs(psi[i]);
-			if(a > max_amp) max_amp = a;
-		}
-	} else {
-		// TODO: global max across all axes — for now use local max
-		for(int i = 0; i < n; i++) {
-			double a = std::abs(psi[i]);
-			if(a > max_amp) max_amp = a;
-		}
+	for(int i = 0; i < n; i++) {
+		double a = std::abs(psi[i]);
+		if(a > max_amp) max_amp = a;
+	}
+
+	if(m_slice.mode == Slice && !m_slice.normalize) {
+		// non-normalized: track global max, decay slowly so it stays stable
+		if(max_amp > m_global_max) m_global_max = max_amp;
+		else m_global_max *= 0.999;  // slow decay
+		return m_global_max;
 	}
 	return max_amp;
 }
@@ -899,16 +917,8 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 	}
 
 	if(m_slice.mode != Marginal) {
-		if(m_slice.auto_track && state.grid.rank > 1) {
-			for(int d = 0; d < state.grid.rank; d++) {
-				if(d == m_slice.axis) continue;
-				m_slice.pos[d] = state.marginal_peaks[d];
-				m_view.cursor[d] = state.marginal_peaks[d];
-			}
-		} else {
-			for(int d = 0; d < state.grid.rank; d++)
-				m_slice.pos[d] = m_view.cursor[d];
-		}
+		for(int d = 0; d < state.grid.rank; d++)
+			m_slice.pos[d] = m_view.cursor[d];
 		m_view.add_slice(m_slice.axis, m_slice.pos);
 	}
 }
