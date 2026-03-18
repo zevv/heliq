@@ -13,7 +13,7 @@ SRC += ui/misc.cpp
 SRC += ui/config.cpp
 SRC += ui/style.cpp
 SRC += ui/glview.cpp
-SRC += model/loader.cpp
+SRC += lua/loader.cpp
 SRC += model/experiment.cpp
 SRC += model/simulation.cpp
 SRC += model/solver.cpp
@@ -23,7 +23,7 @@ SRC += model/simcontext.cpp
 SRC += widget/widget-dummy.cpp
 SRC += widget/widget-info.cpp
 SRC += widget/widget-grid.cpp
-SRC += widget/widget-helix2.cpp
+SRC += widget/widget-helix.cpp
 SRC += widget/widget-trace.cpp
 SRC += $(IMGUI_DIR)/imgui.cpp 
 SRC += $(IMGUI_DIR)/imgui_demo.cpp
@@ -49,7 +49,7 @@ CXXFLAGS += -Wno-unused-but-set-variable -Wno-unused-variable -Wno-format-trunca
 CXXFLAGS += -O3 -ffast-math
 CXXFLAGS += -march=native
 CXXFLAGS += -MMD
-CXXFLAGS += -Iui -Imodel -Iwidget
+CXXFLAGS += -Iui -Imodel -Iwidget -Ilua
 CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 CXXFLAGS += -DVKFFT_BACKEND=3
 CXXFLAGS += $(PKG_CFLAGS)
@@ -76,7 +76,7 @@ CXXFLAGS += -flto
 LDFLAGS += -flto
 endif
 
-CCACHE := $(shell which ccache)
+CCACHE ?= $(shell which ccache)
 ifneq ($(CCACHE),)
 CXX := $(CCACHE) $(CXX)
 endif

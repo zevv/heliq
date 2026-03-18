@@ -2,16 +2,16 @@
 
 #include "simtypes.hpp"
 #include "simqueue.hpp"
+#include "triplebuf.hpp"
 
 // Async API facade for the simulation model.
 //
-// Phase 1: synchronous. poll() executes inline on the calling thread.
-// Phase 2: poll() swaps in latest state from a real sim thread.
-//
 // All widget/app access to the model goes through this class.
 // The model internals (Experiment, Simulation, Solver) are hidden.
-
-class Experiment;  // forward decl, private implementation detail
+//
+// PublishedState is triple-buffered. Model writes to write_buf,
+// publishes via atomic swap. UI reads latest via read().
+// Ready for Phase 2 (sim thread) — no API change needed.
 
 class SimContext {
 public:
@@ -26,7 +26,7 @@ public:
 	void poll(double wall_dt);
 
 	// UI reads: latest published state (always valid after first poll)
-	const PublishedState &state() const { return m_state; }
+	const PublishedState &state() { return *m_tbuf.read(); }
 
 private:
 	void handle(SimCommand &cmd);
@@ -35,7 +35,7 @@ private:
 
 	SimCommandQueue m_cmds;
 	ExtractionSet m_requests{};
-	PublishedState m_state{};
+	TripleBuffer<PublishedState> m_tbuf;
 
 	// opaque model state — only accessed by simcontext.cpp
 	struct Impl;

@@ -6,6 +6,7 @@
 struct SimContext::Impl {
 	Experiment exp{};
 	int generation{};
+	int last_published_gen{-1};
 };
 
 SimContext::SimContext() : m_impl(std::make_unique<Impl>()) {}
@@ -15,12 +16,13 @@ SimContext::~SimContext() = default;
 void SimContext::poll(double wall_dt)
 {
 	auto &exp = m_impl->exp;
+	auto &st = m_tbuf.write_buf();
 
 	// drain all pending commands
 	m_cmds.drain([&](SimCommand cmd) { handle(cmd); });
 
 	// advance if running
-	if(m_state.running && !exp.simulations.empty()) {
+	if(st.running && !exp.simulations.empty()) {
 		exp.running = true;
 		exp.advance(wall_dt);
 	}
@@ -30,6 +32,8 @@ void SimContext::poll(double wall_dt)
 		extract();
 		publish();
 	}
+
+	m_tbuf.publish();
 
 	// clear requests for next frame
 	m_requests = {};
@@ -47,10 +51,10 @@ void SimContext::handle(SimCommand &cmd)
 			if(exp.load(std::move(c.setup))) {
 				m_impl->generation++;
 			} else {
-				m_state.error = "load failed";
+				m_tbuf.write_buf().error = "load failed";
 			}
-			m_state.running = false;
-			m_state.generation = m_impl->generation;
+			m_tbuf.write_buf().running = false;
+			m_tbuf.write_buf().generation = m_impl->generation;
 		}
 		else if constexpr (std::is_same_v<T, CmdAdvance>) {
 			// handled in poll() via exp.advance()
@@ -69,7 +73,7 @@ void SimContext::handle(SimCommand &cmd)
 			exp.timescale = c.ts;
 		}
 		else if constexpr (std::is_same_v<T, CmdSetRunning>) {
-			m_state.running = c.run;
+			m_tbuf.write_buf().running = c.run;
 			exp.running = c.run;
 		}
 		else if constexpr (std::is_same_v<T, CmdMeasure>) {
@@ -96,11 +100,11 @@ void SimContext::extract()
 {
 	auto &exp = m_impl->exp;
 	auto &sim = *exp.simulations[0];
-	m_state.n_results = 0;
+	m_tbuf.write_buf().n_results = 0;
 
 	for(int i = 0; i < m_requests.count; i++) {
 		auto &req = m_requests.req[i];
-		auto &res = m_state.results[m_state.n_results];
+		auto &res = m_tbuf.write_buf().results[m_tbuf.write_buf().n_results];
 
 		// count free axes
 		int n_axes = 0;
@@ -165,7 +169,7 @@ void SimContext::extract()
 			}
 		}
 
-		m_state.n_results++;
+		m_tbuf.write_buf().n_results++;
 	}
 }
 
@@ -175,29 +179,33 @@ void SimContext::publish()
 	auto &exp = m_impl->exp;
 	auto &sim = *exp.simulations[0];
 
-	m_state.sim_time = exp.sim_time;
-	m_state.step_count = sim.step_count;
-	m_state.total_probability = sim.total_probability();
-	m_state.phase_v = sim.max_potential_phase;
-	m_state.phase_k = sim.max_kinetic_phase;
-	m_state.dt = sim.dt;
-	m_state.timescale = exp.timescale;
-	m_state.generation = m_impl->generation;
-	m_state.error.clear();
+	m_tbuf.write_buf().sim_time = exp.sim_time;
+	m_tbuf.write_buf().step_count = sim.step_count;
+	m_tbuf.write_buf().total_probability = sim.total_probability();
+	m_tbuf.write_buf().phase_v = sim.max_potential_phase;
+	m_tbuf.write_buf().phase_k = sim.max_kinetic_phase;
+	m_tbuf.write_buf().dt = sim.dt;
+	m_tbuf.write_buf().timescale = exp.timescale;
+	m_tbuf.write_buf().generation = m_impl->generation;
+	m_tbuf.write_buf().error.clear();
 
 	for(int d = 0; d < sim.grid.rank; d++)
-		m_state.k_nyquist_ratio[d] = sim.k_nyquist_ratio[d];
+		m_tbuf.write_buf().k_nyquist_ratio[d] = sim.k_nyquist_ratio[d];
 
-	m_state.grid.rank = sim.grid.rank;
+	m_tbuf.write_buf().grid.rank = sim.grid.rank;
 	for(int d = 0; d < sim.grid.rank; d++)
-		m_state.grid.axes[d] = sim.grid.axes[d];
-	m_state.grid.cs = sim.cs;
+		m_tbuf.write_buf().grid.axes[d] = sim.grid.axes[d];
+	m_tbuf.write_buf().grid.cs = sim.cs;
 
-	m_state.setup = exp.setup;
+	// setup only changes on load, avoid per-frame copy
+	if(m_tbuf.write_buf().generation != m_impl->last_published_gen) {
+		m_tbuf.write_buf().setup = exp.setup;
+		m_impl->last_published_gen = m_tbuf.write_buf().generation;
+	}
 
-	m_state.absorbing_boundary = sim.absorbing_boundary;
-	m_state.absorb_width = sim.absorb_width;
-	m_state.absorb_strength = sim.absorb_strength;
+	m_tbuf.write_buf().absorbing_boundary = sim.absorbing_boundary;
+	m_tbuf.write_buf().absorb_width = sim.absorb_width;
+	m_tbuf.write_buf().absorb_strength = sim.absorb_strength;
 
 	// TODO: marginal peaks from extraction results
 }

@@ -1,7 +1,6 @@
 
 #include <imgui.h>
 #include <SDL3/SDL.h>
-#include <fftw3.h>
 #include <math.h>
 #include <complex>
 #include <vector>
@@ -23,24 +22,24 @@
 #include "camera3d.hpp"
 
 enum class Envelope { Amplitude, ProbDensity, Real, Imaginary, COUNT };
-enum class HelixColor { Default, Gray, Rainbow, Flame, Spatial, COUNT };
+enum class HelixColor { Default, Gray, Rainbow, Flame, COUNT };
 
 static const char *envelope_names[] = { "|psi|", "|psi|^2", "Re(psi)", "Im(psi)" };
-static const char *helix_color_names[] = { "default", "gray", "rainbow", "flame", "spatial" };
+static const char *helix_color_names[] = { "default", "gray", "rainbow", "flame" };
 
 
-class WidgetHelixGL : public Widget {
+class WidgetHelix : public Widget {
 
 public:
-	WidgetHelixGL(Widget::Info &info);
-	~WidgetHelixGL() override;
+	WidgetHelix(Widget::Info &info);
+	~WidgetHelix() override;
 
 private:
 	void do_save(ConfigWriter &cfg) override;
 	void do_load(ConfigReader::Node *node) override;
 	void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override;
 
-	enum SliceMode { Slice, Marginal, Momentum };
+	enum SliceMode { Slice, Marginal };
 
 	Camera3D m_camera;
 
@@ -82,41 +81,15 @@ private:
 		bool auto_track{false};
 	} m_slice;
 
-
-
-	// data
-	std::vector<psi_t> m_slice_data;
-	std::vector<psi_t> m_fft_buf;
-	std::vector<double> m_marginals[MAX_RANK];  // probability marginals per axis
-	std::vector<psi_t> m_coherent_marginals[MAX_RANK]; // coherent ∑ψ per axis
-	std::vector<double> m_potential_marginal;   // potential marginal for current axis
-	int m_marginal_peak[MAX_RANK]{};            // argmax per axis
-
-	// spatial hue marginals: circular mean of position-hue weighted by |ψ|²
-	struct HueMarginal {
-		std::vector<double> hue;   // [0,1] circular mean hue per bin
-		std::vector<double> sat;   // [0,1] saturation (1 = pure, 0 = mixed)
-	} m_hue_marginals[MAX_RANK];
-	fftwf_plan m_fft_plan{};
-	int m_fft_n{0};
-
 	// GL
 	GLView m_gl;
 	std::vector<float> m_vbuf;  // temp vertex buffer
 
-	// data extraction (same as widget-helix.cpp)
-	void clamp_slice_positions(const Simulation &sim);
-	void extract_data(const Simulation &sim, const psi_t *psi_all, int n);
-	void extract_slice(const Simulation &sim, const psi_t *psi_all, int n);
-	void extract_marginal(const Simulation &sim, const psi_t *psi_all, int n);
-	void extract_momentum(const Simulation &sim, const psi_t *psi_all, int n);
-	void compute_marginals(const Simulation &sim, const psi_t *psi_all);
-	double compute_max_amp(const Simulation &sim, const psi_t *psi,
-	                       const psi_t *psi_all, int n);
+	// helpers
+	double compute_max_amp(const psi_t *psi, int n);
 	double envelope_value(psi_t psi, double max_amp);
 
 	// camera
-
 	void mvp_to_float(const mat4 &m, float *out);
 
 	// GL drawing
@@ -125,34 +98,29 @@ private:
 	void gl_draw_helix(const psi_t *psi, double max_amp, int n);
 	void gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 	                       const mat4 &vp);
-	void gl_draw_potentials(const Simulation &sim, int n);
-	void gl_draw_potential_marginal(const Simulation &sim, int n);
-	void gl_draw_absorb_zones(const Simulation &sim, int n);
-	void gl_draw_cursor(const Simulation &sim);
+	void gl_draw_potentials(const psi_t *pot, int n);
+	void gl_draw_potential_marginal(const psi_t *pot, int n);
+	void gl_draw_cursor(const GridMeta &gm);
 	std::tuple<float,float,float> color_for_vert(int color_mode, int idx, float amp, const psi_t *psi, float def_r, float def_g, float def_b);
 
 	// SDL drawing (overlays on top of GL texture)
-	void draw_controls(Experiment &exp);
-
-
-
+	void draw_controls(SimContext &ctx);
 };
 
 
 
-WidgetHelixGL::WidgetHelixGL(Widget::Info &info)
+WidgetHelix::WidgetHelix(Widget::Info &info)
 	: Widget(info)
 {
 }
 
 
-WidgetHelixGL::~WidgetHelixGL()
+WidgetHelix::~WidgetHelix()
 {
-	if(m_fft_plan) fftwf_destroy_plan(m_fft_plan);
 }
 
 
-void WidgetHelixGL::do_save(ConfigWriter &cfg)
+void WidgetHelix::do_save(ConfigWriter &cfg)
 {
 	m_camera.save(cfg);
 	cfg.write("amplitude", m_amplitude);
@@ -179,7 +147,7 @@ void WidgetHelixGL::do_save(ConfigWriter &cfg)
 }
 
 
-void WidgetHelixGL::do_load(ConfigReader::Node *node)
+void WidgetHelix::do_load(ConfigReader::Node *node)
 {
 	if(!node) return;
 	m_camera.load(node);
@@ -207,9 +175,8 @@ void WidgetHelixGL::do_load(ConfigReader::Node *node)
 }
 
 
-void WidgetHelixGL::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
+void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
-	auto &exp = ctx.experiment();
 	// sync from shared view when locked
 	if(m_view.lock) {
 		m_camera = m_view.camera;
@@ -223,24 +190,46 @@ void WidgetHelixGL::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		ImGui::Text("GL not available");
 		return;
 	}
-	if(exp.simulations.empty()) {
+
+	auto &state = ctx.state();
+	if(state.grid.rank < 1) {
 		ImGui::Text("No simulation");
 		return;
 	}
 
-	auto &sim = *exp.simulations[0];
-	if(sim.grid.rank < 1) return;
+	// clamp slice axis
+	if(m_slice.axis >= state.grid.rank) m_slice.axis = 0;
+	int n = state.grid.axes[m_slice.axis].points;
 
-	auto *psi_all = sim.psi_front();
-	if(m_slice.axis >= sim.grid.rank) m_slice.axis = 0;
-	int n = sim.grid.axes[m_slice.axis].points;
+	// clamp slice positions
+	for(int d = 0; d < state.grid.rank; d++) {
+		if(m_slice.pos[d] == 0 && d != m_slice.axis)
+			m_slice.pos[d] = state.grid.axes[d].points / 2;
+		if(m_slice.pos[d] >= state.grid.axes[d].points)
+			m_slice.pos[d] = state.grid.axes[d].points - 1;
+	}
 
-	clamp_slice_positions(sim);
-	if(sim.grid.rank > 1) compute_marginals(sim, psi_all);
-	extract_data(sim, psi_all, n);
+	// build extraction request
+	ExtractionRequest req{};
+	req.axes[0] = m_slice.axis;
+	req.axes[1] = -1;  // 1D extraction
+	req.marginal = (m_slice.mode == Marginal);
+	for(int d = 0; d < MAX_RANK; d++)
+		req.cursor[d] = m_slice.pos[d];
 
-	auto *psi = m_slice_data.data();
-	double max_amp = compute_max_amp(sim, psi, psi_all, n);
+	// declare interest (for next frame)
+	ctx.request(req);
+
+	// get result from previous frame
+	auto *result = state.find(req);
+	if(!result) {
+		ImGui::Text("Waiting for data...");
+		return;
+	}
+
+	auto *psi = result->psi.data();
+	auto *pot = result->pot.data();
+	double max_amp = compute_max_amp(psi, n);
 
 	m_camera.handle_mouse(r);
 
@@ -259,18 +248,16 @@ void WidgetHelixGL::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 
 	if(m_potential.on) {
 		if(m_slice.mode == Slice) {
-			gl_draw_potentials(sim, n);
-			gl_draw_absorb_zones(sim, n);
+			gl_draw_potentials(pot, n);
 		} else if(m_slice.mode == Marginal) {
-			gl_draw_potential_marginal(sim, n);
-			gl_draw_absorb_zones(sim, n);
+			gl_draw_potential_marginal(pot, n);
 		}
 	}
 	if(m_surface.on) gl_draw_surface(psi, max_amp, n);
 	gl_draw_axis(vp);
 	if(m_helix.on) gl_draw_helix(psi, max_amp, n);
 	if(m_envelope.on) gl_draw_envelope(psi, max_amp, n, vp);
-	gl_draw_cursor(sim);
+	gl_draw_cursor(state.grid);
 	glLineWidth(1.0f);
 
 	m_gl.end(rend);
@@ -310,7 +297,7 @@ void WidgetHelixGL::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		if(ImGui::IsKeyPressed(ImGuiKey_W))
 			m_thick_lines = !m_thick_lines;
 	}
-	draw_controls(exp);
+	draw_controls(ctx);
 
 	// sync camera back to shared view when locked
 	if(m_view.lock) {
@@ -322,195 +309,10 @@ void WidgetHelixGL::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 }
 
 
-// --- data extraction (identical to widget-helix.cpp) ---
+// --- helpers ---
 
 
-void WidgetHelixGL::clamp_slice_positions(const Simulation &sim)
-{
-	for(int d = 0; d < sim.grid.rank; d++) {
-		if(m_slice.pos[d] == 0 && d != m_slice.axis)
-			m_slice.pos[d] = sim.grid.axes[d].points / 2;
-		if(m_slice.pos[d] >= sim.grid.axes[d].points)
-			m_slice.pos[d] = sim.grid.axes[d].points - 1;
-	}
-}
-
-void WidgetHelixGL::compute_marginals(const Simulation &sim, const psi_t *psi_all)
-{
-	// generic path for any rank: compute marginal for each axis
-	if(sim.grid.rank > 2) {
-		size_t total = sim.grid.total_points();
-		for(int d = 0; d < sim.grid.rank; d++) {
-			int nd = sim.grid.axes[d].points;
-			m_marginals[d].assign(nd, 0);
-			m_marginal_peak[d] = nd / 2;
-		}
-		int coords[MAX_RANK]{};
-		for(size_t idx = 0; idx < total; idx++) {
-			double v = std::norm(psi_all[idx]);
-			for(int d = 0; d < sim.grid.rank; d++)
-				m_marginals[d][coords[d]] += v;
-			// increment coords (last axis fastest)
-			for(int d = sim.grid.rank - 1; d >= 0; d--) {
-				if(++coords[d] < sim.grid.axes[d].points) break;
-				coords[d] = 0;
-			}
-		}
-		// find peaks
-		for(int d = 0; d < sim.grid.rank; d++) {
-			double best = -1;
-			for(int i = 0; i < (int)m_marginals[d].size(); i++) {
-				if(m_marginals[d][i] > best) {
-					best = m_marginals[d][i];
-					m_marginal_peak[d] = i;
-				}
-			}
-		}
-		// skip spatial hue and potential marginal for rank > 2 for now
-		return;
-	}
-
-	// fast path for rank 2
-	if(sim.grid.rank == 2) {
-		int n0 = sim.grid.axes[0].points;
-		int n1 = sim.grid.axes[1].points;
-		m_marginals[0].assign(n0, 0);
-		m_marginals[1].assign(n1, 0);
-		m_coherent_marginals[0].assign(n0, {0, 0});
-		m_coherent_marginals[1].assign(n1, {0, 0});
-		int zero_cursor[MAX_RANK]{};
-		auto psi_view = sim.grid.slice_view(0, 1, zero_cursor, psi_all);
-		for(int i = 0; i < n0; i++) {
-			for(int j = 0; j < n1; j++) {
-				auto psi = psi_view.at(i, j);
-				double v = std::norm(psi);
-				m_marginals[0][i] += v;
-				m_marginals[1][j] += v;
-				m_coherent_marginals[0][i] += psi;
-				m_coherent_marginals[1][j] += psi;
-			}
-		}
-		// spatial hue marginals: circular mean weighted by |ψ|²
-		std::vector<double> hsin0(n0, 0), hcos0(n0, 0);
-		std::vector<double> hsin1(n1, 0), hcos1(n1, 0);
-		for(int i = 0; i < n0; i++) {
-			for(int j = 0; j < n1; j++) {
-				double w = std::norm(psi_view.at(i, j));
-				double cx = (double)i / (n0 - 1) - 0.5;
-				double cy = (double)j / (n1 - 1) - 0.5;
-				double hue = atan2(cy, cx);
-				hsin0[i] += w * sin(hue);
-				hcos0[i] += w * cos(hue);
-				hsin1[j] += w * sin(hue);
-				hcos1[j] += w * cos(hue);
-			}
-		}
-		for(int d = 0; d < 2; d++) {
-			auto &hm = m_hue_marginals[d];
-			int nd = (d == 0) ? n0 : n1;
-			auto &hs = (d == 0) ? hsin0 : hsin1;
-			auto &hc = (d == 0) ? hcos0 : hcos1;
-			auto &mg = m_marginals[d];
-			hm.hue.resize(nd);
-			hm.sat.resize(nd);
-			for(int k = 0; k < nd; k++) {
-				if(mg[k] > 1e-30) {
-					double s = hs[k] / mg[k];
-					double c = hc[k] / mg[k];
-					hm.hue[k] = fmod(atan2(s, c) / (2.0 * M_PI) + 1.0, 1.0);
-					hm.sat[k] = sqrt(s*s + c*c);
-				} else {
-					hm.hue[k] = 0;
-					hm.sat[k] = 0;
-				}
-			}
-		}
-
-		// find marginal peak positions (argmax of each marginal)
-		for(int d = 0; d < 2; d++) {
-			auto &mg = m_marginals[d];
-			int nd = (d == 0) ? n0 : n1;
-			double best = -1;
-			m_marginal_peak[d] = nd / 2;
-			for(int k = 0; k < nd; k++) {
-				if(mg[k] > best) {
-					best = mg[k];
-					m_marginal_peak[d] = k;
-				}
-			}
-		}
-
-		// potential marginal for current slice axis, weighted by |ψ|²
-		// this makes the interaction barrier track the wavefunction position
-		int ax = m_slice.axis;
-		int na = sim.grid.axes[ax].points;
-		m_potential_marginal.assign(na, 0);
-		auto pot_view = sim.grid.slice_view(0, 1, zero_cursor, sim.potential.data());
-		for(int i = 0; i < n0; i++) {
-			for(int j = 0; j < n1; j++) {
-				double w = std::norm(psi_view.at(i, j));
-				double v = fabs(pot_view.at(i, j).real()) * w;
-				if(ax == 0) m_potential_marginal[i] += v;
-				else        m_potential_marginal[j] += v;
-			}
-		}
-	}
-}
-
-
-void WidgetHelixGL::extract_slice(const Simulation &sim, const psi_t *psi_all, int n)
-{
-	auto view = sim.grid.axis_view(m_slice.axis, m_slice.pos, psi_all);
-	for(int i = 0; i < n; i++)
-		m_slice_data[i] = view[i];
-}
-
-void WidgetHelixGL::extract_marginal(const Simulation &sim, const psi_t *psi_all, int n)
-{
-	double dv = 1.0;
-	for(int d = 0; d < sim.grid.rank; d++)
-		if(d != m_slice.axis) dv *= sim.grid.axes[d].dx();
-	auto &marg = m_marginals[m_slice.axis];
-	for(int i = 0; i < n; i++)
-		m_slice_data[i] = psi_t(sqrt(marg[i] * dv), 0);
-}
-
-void WidgetHelixGL::extract_momentum(const Simulation &sim, const psi_t *psi_all, int n)
-{
-	if(sim.grid.rank == 1)
-		for(int i = 0; i < n; i++) m_slice_data[i] = psi_all[i];
-	else
-		extract_slice(sim, psi_all, n);
-
-	if(m_fft_n != n) {
-		if(m_fft_plan) fftwf_destroy_plan(m_fft_plan);
-		m_fft_buf.resize(n);
-		m_fft_plan = fftwf_plan_dft_1d(n,
-			(fftwf_complex *)m_slice_data.data(), (fftwf_complex *)m_fft_buf.data(),
-			FFTW_FORWARD, FFTW_ESTIMATE);
-		m_fft_n = n;
-	}
-	fftwf_execute_dft(m_fft_plan,
-		(fftwf_complex *)m_slice_data.data(), (fftwf_complex *)m_fft_buf.data());
-	for(int i = 0; i < n; i++) m_slice_data[i] = m_fft_buf[(i + n/2) % n];
-}
-
-void WidgetHelixGL::extract_data(const Simulation &sim, const psi_t *psi_all, int n)
-{
-	m_slice_data.resize(n);
-	switch(m_slice.mode) {
-		case Marginal:  extract_marginal(sim, psi_all, n); break;
-		case Momentum:  extract_momentum(sim, psi_all, n); break;
-		default:
-			if(sim.grid.rank == 1)
-				for(int i = 0; i < n; i++) m_slice_data[i] = psi_all[i];
-			else extract_slice(sim, psi_all, n);
-			break;
-	}
-}
-
-double WidgetHelixGL::compute_max_amp(const Simulation &sim, const psi_t *psi,
-                                       const psi_t *psi_all, int n)
+double WidgetHelix::compute_max_amp(const psi_t *psi, int n)
 {
 	double max_amp = 1e-30;
 	if(m_slice.mode != Slice || m_slice.normalize) {
@@ -519,16 +321,16 @@ double WidgetHelixGL::compute_max_amp(const Simulation &sim, const psi_t *psi,
 			if(a > max_amp) max_amp = a;
 		}
 	} else {
-		size_t total = sim.grid.total_points();
-		for(size_t i = 0; i < total; i++) {
-			double a = std::abs(psi_all[i]);
+		// TODO: global max across all axes — for now use local max
+		for(int i = 0; i < n; i++) {
+			double a = std::abs(psi[i]);
 			if(a > max_amp) max_amp = a;
 		}
 	}
 	return max_amp;
 }
 
-double WidgetHelixGL::envelope_value(psi_t psi, double max_amp)
+double WidgetHelix::envelope_value(psi_t psi, double max_amp)
 {
 	switch((Envelope)m_envelope.mode) {
 		case Envelope::Amplitude:   return std::abs(psi) / max_amp;
@@ -543,7 +345,7 @@ double WidgetHelixGL::envelope_value(psi_t psi, double max_amp)
 // --- camera ---
 
 
-void WidgetHelixGL::mvp_to_float(const mat4 &m, float *out)
+void WidgetHelix::mvp_to_float(const mat4 &m, float *out)
 {
 	for(int i = 0; i < 16; i++) out[i] = (float)m.m[i];
 }
@@ -552,7 +354,7 @@ void WidgetHelixGL::mvp_to_float(const mat4 &m, float *out)
 // --- GL drawing ---
 
 
-void WidgetHelixGL::gl_draw_axis(const mat4 &vp)
+void WidgetHelix::gl_draw_axis(const mat4 &vp)
 {
 	float a = m_amplitude;
 	glUseProgram(m_gl.solid_shader());
@@ -590,7 +392,7 @@ void WidgetHelixGL::gl_draw_axis(const mat4 &vp)
 
 // shared color lookup for helix/surface/envelope
 // def_r/g/b are the "Default" color at full amplitude
-std::tuple<float,float,float> WidgetHelixGL::color_for_vert(
+std::tuple<float,float,float> WidgetHelix::color_for_vert(
 	int color_mode, int idx, float amp,
 	const psi_t *psi,
 	float def_r, float def_g, float def_b)
@@ -609,15 +411,6 @@ std::tuple<float,float,float> WidgetHelixGL::color_for_vert(
 			fminf(1.0f, amp * 2.0f) * amp + 0.16f * (1 - amp),
 			fminf(1.0f, fmaxf(0.0f, amp * 2.0f - 1.0f)) * amp + 0.08f * (1 - amp)
 		};
-	case HelixColor::Spatial: {
-		auto &hm = m_hue_marginals[m_slice.axis];
-		if(idx < (int)hm.hue.size()) {
-			uint8_t rr, gg, bb;
-			hsv_to_rgb(hm.hue[idx], hm.sat[idx] * 0.8, 0.2 + 0.8 * amp, rr, gg, bb);
-			return {rr/255.0f, gg/255.0f, bb/255.0f};
-		}
-		return {0.5f, 0.5f, 0.5f};
-	}
 	case HelixColor::Gray:
 		return {
 			0.78f * amp + 0.16f * (1 - amp),
@@ -634,7 +427,7 @@ std::tuple<float,float,float> WidgetHelixGL::color_for_vert(
 }
 
 
-void WidgetHelixGL::gl_draw_surface(const psi_t *psi, double max_amp, int n)
+void WidgetHelix::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 {
 	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, colors::surface_default.r, colors::surface_default.g, colors::surface_default.b); };
 	// triangle strip with per-vertex color: base[i], helix[i], ...
@@ -681,7 +474,7 @@ void WidgetHelixGL::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 }
 
 
-void WidgetHelixGL::gl_draw_helix(const psi_t *psi, double max_amp, int n)
+void WidgetHelix::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 {
 	// per-vertex colored line strip: 3 pos + 4 color per vertex
 	m_vbuf.resize(n * 7);
@@ -713,7 +506,7 @@ void WidgetHelixGL::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 }
 
 
-void WidgetHelixGL::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
+void WidgetHelix::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
                                       const mat4 &vp)
 {
 	bool rotational = (Envelope)m_envelope.mode == Envelope::Amplitude ||
@@ -853,18 +646,15 @@ static void gl_draw_cap(float x, float a, const float col[4])
 }
 
 
-void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
+void WidgetHelix::gl_draw_potentials(const psi_t *pot, int n)
 {
-	auto *pot = sim.potential.data();
 	float a = m_amplitude;
-
-	auto pot_view = sim.grid.axis_view(m_slice.axis, m_slice.pos, pot);
 
 	// find max potential for alpha scaling
 	double v_max = 1e-30;
 	bool any = false;
 	for(int i = 0; i < n; i++) {
-		double v = fabs(pot_view[i].real());
+		double v = fabs(pot[i].real());
 		if(v > v_max) v_max = v;
 		if(v > 0) any = true;
 	}
@@ -878,7 +668,7 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 	bool prev_on = false;
 	float prev_alpha = 0;
 	for(int i = 0; i < n; i++) {
-		double v = fabs(pot_view[i].real());
+		double v = fabs(pot[i].real());
 		float alpha = (v > 1e-30) ? (float)(v / v_max) * m_potential.alpha : 0;
 		bool on = alpha > 1e-4f;
 
@@ -915,17 +705,16 @@ void WidgetHelixGL::gl_draw_potentials(const Simulation &sim, int n)
 }
 
 
-void WidgetHelixGL::gl_draw_potential_marginal(const Simulation &sim, int n)
+void WidgetHelix::gl_draw_potential_marginal(const psi_t *pot, int n)
 {
-	if(m_potential_marginal.empty()) return;
-
 	float a = m_amplitude;
 
 	double v_max = 1e-30;
 	bool any = false;
 	for(int i = 0; i < n; i++) {
-		if(m_potential_marginal[i] > v_max) v_max = m_potential_marginal[i];
-		if(m_potential_marginal[i] > 0) any = true;
+		double v = fabs(pot[i].real());
+		if(v > v_max) v_max = v;
+		if(v > 0) any = true;
 	}
 	if(!any) return;
 
@@ -937,7 +726,7 @@ void WidgetHelixGL::gl_draw_potential_marginal(const Simulation &sim, int n)
 	float prev_alpha = 0;
 	bool prev_on = false;
 	for(int i = 0; i < n; i++) {
-		double v = m_potential_marginal[i];
+		double v = fabs(pot[i].real());
 		float alpha = (v > 1e-30) ? (float)(v / v_max) * m_potential.alpha : 0;
 		bool on = alpha > 1e-4f;
 		float x = -1.0f + dx * i;
@@ -973,35 +762,10 @@ void WidgetHelixGL::gl_draw_potential_marginal(const Simulation &sim, int n)
 }
 
 
-void WidgetHelixGL::gl_draw_absorb_zones(const Simulation &sim, int n)
-{
-	if(!sim.absorbing_boundary) return;
-	float w = (float)sim.absorb_width;
-	float a = m_amplitude;
-	float xl = -1.0f + 2.0f * w;
-	float xr = 1.0f - 2.0f * w;
-	float peak = 1.00f;
-
-	glUseProgram(m_gl.vcol_shader());
-	glEnableVertexAttribArray(0);
-	glEnableVertexAttribArray(1);
-
-	// left: edge opaque, onset transparent
-	float col_edge[] = { colors::absorb_gl_edge.r, colors::absorb_gl_edge.g, colors::absorb_gl_edge.b, peak };
-	float col_zero[] = { colors::absorb_gl_zero.r, colors::absorb_gl_zero.g, colors::absorb_gl_zero.b, colors::absorb_gl_zero.a };
-	gl_draw_box(-1.0f, xl, a, col_edge, col_zero);
-
-	// right: onset transparent, edge opaque
-	gl_draw_box(xr, 1.0f, a, col_zero, col_edge);
-
-	glDisableVertexAttribArray(1);
-	glDisableVertexAttribArray(0);
-}
-
-void WidgetHelixGL::gl_draw_cursor(const Simulation &sim)
+void WidgetHelix::gl_draw_cursor(const GridMeta &gm)
 {
 	int ax = m_slice.axis;
-	int n = sim.grid.axes[ax].points;
+	int n = gm.axes[ax].points;
 	int ci = m_view.cursor[ax];
 	if(ci < 0 || ci >= n) return;
 
@@ -1037,12 +801,12 @@ void WidgetHelixGL::gl_draw_cursor(const Simulation &sim)
 }
 
 
-// --- controls (identical to widget-helix.cpp) ---
+// --- controls ---
 
 
-void WidgetHelixGL::draw_controls(Experiment &exp)
+void WidgetHelix::draw_controls(SimContext &ctx)
 {
-	auto &sim = *exp.simulations[0];
+	auto &state = ctx.state();
 
 	ImGui::ToggleButton("L", &m_view.lock);
 	ImGui::SameLine();
@@ -1055,28 +819,38 @@ void WidgetHelixGL::draw_controls(Experiment &exp)
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
 	if(ImGui::Button("Measure")) {
-		for(auto &s : exp.simulations)
-			s->measure(m_slice.axis);
+		ctx.push(CmdMeasure{m_slice.axis});
 	}
 	ImGui::PopStyleColor(3);
 	ImGui::SameLine();
 
-	if(sim.grid.rank > 1) {
+	if(state.grid.rank > 1) {
 		ImGui::SameLine();
-		ImGui::AxisCombo("##slice_ax", &m_slice.axis, sim.grid);
+		// Inline axis combo (can't use ImGui::AxisCombo since we have GridMeta not Grid)
+		const char *preview = (m_slice.axis >= 0 && m_slice.axis < state.grid.rank && state.grid.axes[m_slice.axis].label[0])
+			? state.grid.axes[m_slice.axis].label : "?";
+		ImGui::SetNextItemWidth(60);
+		if(ImGui::BeginCombo("##slice_ax", preview, ImGuiComboFlags_NoArrowButton)) {
+			for(int d = 0; d < state.grid.rank; d++) {
+				const char *lbl = state.grid.axes[d].label[0] ? state.grid.axes[d].label : nullptr;
+				char fb[8]; snprintf(fb, sizeof(fb), "%d", d);
+				bool selected = (m_slice.axis == d);
+				if(ImGui::Selectable(lbl ? lbl : fb, selected))
+					m_slice.axis = d;
+				if(selected) ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
 		ImGui::SameLine();
-		static const char *mode_names[] = { "Slice", "Marginal", "Momentum" };
+		static const char *mode_names[] = { "Slice", "Marginal" };
 		if(ImGui::Button(mode_names[m_slice.mode]))
-			m_slice.mode = (m_slice.mode + 1) % 3;
+			m_slice.mode = (m_slice.mode + 1) % 2;
 		if(m_slice.mode == Slice) {
 			ImGui::SameLine();
 			ImGui::Checkbox("Norm", &m_slice.normalize);
 			ImGui::SameLine();
 			ImGui::Checkbox("Auto", &m_slice.auto_track);
 		}
-	} else {
-		if(ImGui::Button(m_slice.mode == Momentum ? "Momentum" : "Position"))
-			m_slice.mode = (m_slice.mode == Momentum) ? Slice : Momentum;
 	}
 
 	if(ImGui::BeginTable("layers", 5, ImGuiTableFlags_SizingStretchProp)) {
@@ -1126,28 +900,23 @@ void WidgetHelixGL::draw_controls(Experiment &exp)
 	}
 
 	if(m_slice.mode != Marginal) {
-		if(m_slice.auto_track && sim.grid.rank > 1) {
-			for(int d = 0; d < sim.grid.rank; d++) {
+		if(m_slice.auto_track && state.grid.rank > 1) {
+			for(int d = 0; d < state.grid.rank; d++) {
 				if(d == m_slice.axis) continue;
-				m_slice.pos[d] = m_marginal_peak[d];
-				m_view.cursor[d] = m_marginal_peak[d];
+				m_slice.pos[d] = state.marginal_peaks[d];
+				m_view.cursor[d] = state.marginal_peaks[d];
 			}
 		} else {
-			for(int d = 0; d < sim.grid.rank; d++)
+			for(int d = 0; d < state.grid.rank; d++)
 				m_slice.pos[d] = m_view.cursor[d];
 		}
 		m_view.add_slice(m_slice.axis, m_slice.pos);
 	}
-
-
 }
 
 
-// --- input (identical to widget-helix.cpp) ---
-
-
-REGISTER_WIDGET(WidgetHelixGL,
+REGISTER_WIDGET(WidgetHelix,
 	.name = "helix",
 	.description = "3D helix wavefunction viewer",
-	.hotkey = ImGuiKey_F2,
+	.hotkey = ImGuiKey_F3,
 );

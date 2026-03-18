@@ -4,7 +4,6 @@
 #include <math.h>
 
 #include "experiment.hpp"
-#include "loader.hpp"
 
 
 bool Experiment::load(Setup new_setup)
@@ -39,17 +38,6 @@ bool Experiment::load(Setup new_setup)
 	running = false;
 
 	return true;
-}
-
-
-bool Experiment::load_script(const std::string& path)
-{
-	Setup s{};
-	if(!load_setup(path.c_str(), s, true)) {
-		fprintf(stderr, "failed to load experiment from %s\n", path.c_str());
-		return false;
-	}
-	return load(std::move(s));
 }
 
 

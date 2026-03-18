@@ -16,11 +16,8 @@ public:
 	double timescale{1e-15};         // sim seconds per wall second (default 1 fs/s)
 	bool running{false};
 
-	// load from pre-parsed Setup (model-side, no Lua dependency)
+	// load from pre-parsed Setup (no Lua dependency)
 	bool load(Setup new_setup);
-
-	// load from script path (convenience, calls loader + load(Setup))
-	bool load_script(const std::string& path);
 
 	// advance simulations within budget
 	void advance(double wall_dt, double budget_ms = 12.0);
