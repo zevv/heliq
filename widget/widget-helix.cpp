@@ -817,16 +817,7 @@ void WidgetHelix::gl_draw_cursor(const GridMeta &gm)
 	glUseProgram(m_gl.solid_shader());
 	glEnableVertexAttribArray(0);
 
-	// filled plane perpendicular to X axis
-	glUniform4f(m_gl.color_loc(), colors::cursor_fill.r, colors::cursor_fill.g, colors::cursor_fill.b, colors::cursor_fill.a);
-	float quad[] = {
-		x, -a, -a,  x, a, -a,  x, a, a,
-		x, -a, -a,  x, a,  a,  x, -a, a,
-	};
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, quad);
-	glDrawArrays(GL_TRIANGLES, 0, 6);
-
-	// outline
+	// outline only
 	glUniform4f(m_gl.color_loc(), colors::cursor_edge.r, colors::cursor_edge.g, colors::cursor_edge.b, colors::cursor_edge.a);
 	float outline[] = {
 		x, -a, -a,  x, a, -a,

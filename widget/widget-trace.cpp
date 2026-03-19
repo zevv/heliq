@@ -98,6 +98,7 @@ private:
 	int m_axis_points{0};
 
 	size_t m_last_step{0};
+	float m_ctrl_h{0};
 
 	SDL_FRect m_dst{};
 };
@@ -309,6 +310,9 @@ void WidgetTrace::draw_controls(SimContext &ctx)
 	if(mact == 1) ctx.push(CmdMeasure{m_axis});
 	if(mact == 2) ctx.push(CmdDecohere{m_axis});
 
+	// capture first-row height before optional secondary controls
+	m_ctrl_h = ImGui::GetCursorPosY();
+
 	if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
 		draw_overlay_controls(m_overlays, N_OVERLAYS);
 }
@@ -387,7 +391,7 @@ void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	}
 
 	draw_controls(ctx);
-	float ctrl_h = ImGui::GetCursorPosY();
+	float ctrl_h = m_ctrl_h;
 
 	if(m_axis_points > 0) {
 		bool horiz = (gm.cs.dim_of(m_axis) == 0);
