@@ -2,13 +2,13 @@
 #include <fftw3.h>
 #include <algorithm>
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <thread>
 #include <sys/stat.h>
 
 #include "solver_cpu.hpp"
+#include "log.hpp"
 
 static bool fftwf_threads_init = false;
 
@@ -40,7 +40,7 @@ CpuSolver::CpuSolver(const Grid &grid)
 	char wpath[512];
 	wisdom_path(wpath, sizeof(wpath));
 	if(fftwf_import_wisdom_from_filename(wpath))
-		fprintf(stderr, "fftwf: loaded wisdom from %s\n", wpath);
+		ldbg("loaded wisdom from %s", wpath);
 
 	m_rank = grid.rank;
 	for(int i = 0; i < grid.rank; i++)
@@ -68,7 +68,7 @@ CpuSolver::CpuSolver(const Grid &grid)
 
 	// save wisdom (includes new plans)
 	if(fftwf_export_wisdom_to_filename(wpath))
-		fprintf(stderr, "fftwf: saved wisdom to %s\n", wpath);
+		ldbg("saved wisdom to %s", wpath);
 }
 
 

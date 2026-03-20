@@ -1,11 +1,11 @@
 
-#include <stdio.h>
 #include <string.h>
 
 #include <SDL3/SDL.h>
 #include <GLES3/gl3.h>
 
 #include "glview.hpp"
+#include "log.hpp"
 
 
 static GLuint compile_shader(GLenum type, const char *src)
@@ -18,7 +18,7 @@ static GLuint compile_shader(GLenum type, const char *src)
 	if(!ok) {
 		char log[512];
 		glGetShaderInfoLog(s, sizeof(log), nullptr, log);
-		fprintf(stderr, "glview: shader compile error: %s\n", log);
+		lerr("shader compile error: %s", log);
 		glDeleteShader(s);
 		return 0;
 	}
@@ -39,7 +39,7 @@ static GLuint link_program(GLuint vs, GLuint fs)
 	if(!ok) {
 		char log[512];
 		glGetProgramInfoLog(p, sizeof(log), nullptr, log);
-		fprintf(stderr, "glview: program link error: %s\n", log);
+		lerr("program link error: %s", log);
 		glDeleteProgram(p);
 		return 0;
 	}
@@ -108,7 +108,7 @@ bool GLView::init(SDL_Renderer *rend)
 
 	SDL_Window *win = SDL_GetRenderWindow(rend);
 	if(!win) {
-		fprintf(stderr, "glview: no window from renderer\n");
+		lerr("no window from renderer");
 		return false;
 	}
 
@@ -118,11 +118,11 @@ bool GLView::init(SDL_Renderer *rend)
 
 	m_gl_ctx = SDL_GL_CreateContext(win);
 	if(!m_gl_ctx) {
-		fprintf(stderr, "glview: SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+		lerr("SDL_GL_CreateContext failed: %s", SDL_GetError());
 		return false;
 	}
 
-	fprintf(stderr, "glview: GL: %s\n", glGetString(GL_RENDERER));
+	linf("GL: %s", glGetString(GL_RENDERER));
 
 	if(!init_shaders()) {
 		SDL_GL_DestroyContext(m_gl_ctx);
@@ -134,7 +134,7 @@ bool GLView::init(SDL_Renderer *rend)
 	SDL_GL_MakeCurrent(win, nullptr);
 
 	m_valid = true;
-	fprintf(stderr, "glview: initialized\n");
+	ldbg("initialized");
 	return true;
 }
 
@@ -211,7 +211,7 @@ void GLView::begin(SDL_Renderer *rend)
 
 		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 		if(status != GL_FRAMEBUFFER_COMPLETE)
-			fprintf(stderr, "glview: MSAA FBO incomplete: 0x%x\n", status);
+			lerr("MSAA FBO incomplete: 0x%x", status);
 
 		// Resolve FBO (non-MSAA for reading pixels)
 		glGenRenderbuffers(1, &m_rbo_resolve_color);
@@ -224,7 +224,7 @@ void GLView::begin(SDL_Renderer *rend)
 
 		status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 		if(status != GL_FRAMEBUFFER_COMPLETE)
-			fprintf(stderr, "glview: resolve FBO incomplete: 0x%x\n", status);
+			lerr("resolve FBO incomplete: 0x%x", status);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);

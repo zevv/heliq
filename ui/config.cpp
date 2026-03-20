@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include "config.hpp"
+#include "log.hpp"
 
 ConfigWriter::ConfigWriter() 
 	: m_f(nullptr)
@@ -16,7 +17,7 @@ void ConfigWriter::open(const char *fname)
 {
 	m_f = fopen(fname, "w");
 	if(m_f == nullptr) {
-		fprintf(stderr, "Could not open config file for writing: %s\n", fname);
+		lwrn("could not open config for writing: %s", fname);
 		return;
 	}
 }
@@ -108,7 +109,7 @@ void ConfigReader::open(const char *fname)
 {
 	FILE *f = fopen(fname, "r");
 	if(f == nullptr) {
-		fprintf(stderr, "Could not open config file for reading: %s\n", fname);
+		ldbg("no config file: %s", fname);
 		return;
 	}
 

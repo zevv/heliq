@@ -9,6 +9,7 @@
 #include "config.hpp"
 #include "misc.hpp"
 #include "style.hpp"
+#include "log.hpp"
 
 // color palettes: value [0..1] -> RGBA
 // alpha carries intensity, color is always full brightness
@@ -378,7 +379,7 @@ void WidgetGrid::dump_result(const ExtractionResult &res, int tw, int th)
 		fputc('\n', f);
 	}
 	fclose(f);
-	fprintf(stderr, "dumped to dump.txt (%dx%d)\n", ox, oy);
+	linf("dumped to dump.txt (%dx%d)", ox, oy);
 }
 
 

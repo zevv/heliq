@@ -7,7 +7,6 @@
 #define VKFFT_BACKEND 3
 #include <vkFFT.h>
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -16,6 +15,7 @@
 
 #include "solver_gpu.hpp"
 #include "grid.hpp"
+#include "log.hpp"
 
 // OpenCL kernel source for split-step operations
 // All data is float2 (complex float) on device
@@ -237,7 +237,7 @@ struct GpuSolverImpl {
 static void check_cl(cl_int err, const char *msg)
 {
 	if(err != CL_SUCCESS) {
-		fprintf(stderr, "OpenCL error %d: %s\n", err, msg);
+		lerr("OpenCL error %d: %s", err, msg);
 	}
 }
 
@@ -293,14 +293,14 @@ GpuSolver::GpuSolver(const Grid &grid)
 	}
 
 	if(!m->device) {
-		fprintf(stderr, "solver: no GPU device found\n");
+		lwrn("no GPU device found");
 		return;
 	}
 
 	// log device name
 	char dev_name[256]{};
 	clGetDeviceInfo(m->device, CL_DEVICE_NAME, sizeof(dev_name), dev_name, nullptr);
-	fprintf(stderr, "solver: using GPU: %s\n", dev_name);
+	linf("using GPU: %s", dev_name);
 
 	// context and queue
 	m->ctx = clCreateContext(nullptr, 1, &m->device, nullptr, nullptr, &err);
@@ -318,7 +318,7 @@ GpuSolver::GpuSolver(const Grid &grid)
 	if(err != CL_SUCCESS) {
 		char log[4096]{};
 		clGetProgramBuildInfo(m->program, m->device, CL_PROGRAM_BUILD_LOG, sizeof(log), log, nullptr);
-		fprintf(stderr, "OpenCL build error:\n%s\n", log);
+		lerr("OpenCL build error:\n%s", log);
 	}
 
 	m->k_phase_multiply = clCreateKernel(m->program, "phase_multiply", &err);
@@ -374,7 +374,7 @@ GpuSolver::GpuSolver(const Grid &grid)
 
 		VkFFTResult r = initializeVkFFT(&m->fft_app, m->fft_config);
 		if(r != VKFFT_SUCCESS)
-			fprintf(stderr, "VkFFT init failed: %d\n", (int)r);
+			lerr("VkFFT init failed: %d", (int)r);
 		else
 			m->fft_initialized = true;
 	} else {
@@ -408,7 +408,7 @@ GpuSolver::GpuSolver(const Grid &grid)
 
 		VkFFTResult r1 = initializeVkFFT(&m->fft_app, cfg1);
 		if(r1 != VKFFT_SUCCESS) {
-			fprintf(stderr, "VkFFT 1D init failed: %d\n", (int)r1);
+			lerr("VkFFT 1D init failed: %d", (int)r1);
 			return;
 		}
 
@@ -428,14 +428,14 @@ GpuSolver::GpuSolver(const Grid &grid)
 
 		VkFFTResult r3 = initializeVkFFT(&m->fft_app_3d, cfg3);
 		if(r3 != VKFFT_SUCCESS) {
-			fprintf(stderr, "VkFFT 3D init failed: %d\n", (int)r3);
+			lerr("VkFFT 3D init failed: %d", (int)r3);
 			deleteVkFFT(&m->fft_app);
 			return;
 		}
 
 		m->fft_initialized = true;
 		m->fft_decomposed = true;
-		fprintf(stderr, "solver: using 4D decomposition (1D + transpose + 3D)\n");
+		linf("using 4D decomposition (1D + transpose + 3D)");
 	}
 }
 

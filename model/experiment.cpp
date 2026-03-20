@@ -1,9 +1,9 @@
 
-#include <stdio.h>
 #include <chrono>
 #include <math.h>
 
 #include "experiment.hpp"
+#include "log.hpp"
 
 
 bool Experiment::load(Setup new_setup)
@@ -16,7 +16,7 @@ bool Experiment::load(Setup new_setup)
 	simulations.clear();
 	setup = std::move(new_setup);
 
-	fprintf(stderr, "loaded: %dD, %zu particles, %zu potentials, %zu sims\n",
+	linf("loaded: %dD, %zu particles, %zu potentials, %zu sims",
 		setup.spatial_dims, setup.particles.size(),
 		setup.potentials.size(), setup.simulations.size());
 

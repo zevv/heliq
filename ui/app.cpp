@@ -14,6 +14,7 @@
 #include "style.hpp"
 #include "loader.hpp"
 #include "misc.hpp"
+#include "log.hpp"
 
 
 App::App()
@@ -140,16 +141,16 @@ void App::init_video()
     SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     m_win = SDL_CreateWindow("Quantum Simulator", (int)(1280 * main_scale), (int)(800 * main_scale), window_flags);
     if(m_win == nullptr) {
-        fprintf(stderr, "Error: SDL_CreateWindow(): %s\n", SDL_GetError());
+        lerr("SDL_CreateWindow: %s", SDL_GetError());
         ::exit(1);
     }
     m_rend = SDL_CreateRenderer(m_win, nullptr);
     SDL_SetRenderVSync(m_rend, 1);
     if(m_rend == nullptr) {
-        fprintf(stderr, "Error: SDL_CreateRenderer(): %s\n", SDL_GetError());
+        lerr("SDL_CreateRenderer: %s", SDL_GetError());
         ::exit(1);
     }
-    fprintf(stderr, "SDL renderer: %s\n", SDL_GetRendererName(m_rend));
+    linf("SDL renderer: %s", SDL_GetRendererName(m_rend));
     SDL_SetWindowPosition(m_win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(m_win);
 

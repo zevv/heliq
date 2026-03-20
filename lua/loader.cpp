@@ -1,10 +1,10 @@
 
-#include <stdio.h>
 #include <string.h>
 
 #include <lua5.4/lua.hpp>
 
 #include "loader.hpp"
+#include "log.hpp"
 
 
 static double getfield_number(lua_State *L, int idx, const char *key, double def = 0.0)
@@ -53,7 +53,7 @@ static bool load_domain(lua_State *L, Setup &setup)
 {
 	lua_getfield(L, -1, "domain");
 	if(!lua_istable(L, -1)) {
-		fprintf(stderr, "loader: missing 'domain' table\n");
+		lerr("missing 'domain' table");
 		lua_pop(L, 1);
 		return false;
 	}
@@ -125,7 +125,7 @@ static bool load_potentials(lua_State *L, Setup &setup)
 				else if(strcmp(type, "well") == 0) pot.type = Potential::Type::Well;
 				else if(strcmp(type, "harmonic") == 0) pot.type = Potential::Type::Harmonic;
 				else if(strcmp(type, "absorbing") == 0) pot.type = Potential::Type::Absorbing;
-				else fprintf(stderr, "loader: unknown potential type '%s'\n", type);
+				else lerr("unknown potential type '%s'", type);
 			}
 
 			pot.height = getfield_number(L, -1, "height");
@@ -163,7 +163,7 @@ static bool load_interactions(lua_State *L, Setup &setup)
 			if(type) {
 				if(strcmp(type, "coulomb") == 0) inter.type = Interaction::Type::Coulomb;
 				else if(strcmp(type, "contact") == 0) inter.type = Interaction::Type::Contact;
-				else fprintf(stderr, "loader: unknown interaction type '%s'\n", type);
+				else lerr("unknown interaction type '%s'", type);
 			}
 
 			// particle indices (1-based in Lua, 0-based in C++)
@@ -240,13 +240,13 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 
 	// run prelude (which runs the user script internally)
 	if(luaL_dofile(L, "lua/prelude.lua") != LUA_OK) {
-		fprintf(stderr, "loader: %s\n", lua_tostring(L, -1));
+		lerr("%s", lua_tostring(L, -1));
 		lua_close(L);
 		return false;
 	}
 
 	if(!lua_istable(L, -1)) {
-		fprintf(stderr, "loader: prelude did not return a table\n");
+		lerr("prelude did not return a table");
 		lua_close(L);
 		return false;
 	}
