@@ -129,7 +129,7 @@ model (doc/model.md) into concrete types. Key constraints from the model:
   interior). Spin-matrix potential is a future concern.
 
 - DEC-004: Physical constants are constexpr in a header (constants.hpp).
-  Universal constants only: hbar, eV, elementary_charge. Particle-specific
+  Universal constants only: hbar, eV. Particle-specific
   properties (electron mass, proton mass, etc.) live in the Lua primitive
   library as part of the species definitions — electron() knows its own
   mass. C++ reads mass from the Lua table per-particle, doesn't hardcode

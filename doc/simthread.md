@@ -126,25 +126,22 @@ solver uses for stepping. This must be untangled.
   marginal always bundled with psi in every extraction result.
 - DEC-007: Trace widget accumulates whenever new data arrives (check
   step_count changed in published state). No per-step guarantee.
-  Captures at frame rate at best. step_interval slider dropped —
-  trace captures every new published state. Resolves TBD-002.
+  Captures at frame rate at best. step_interval slider controls
+  capture decimation (default 1 = every frame). Resolves TBD-002.
 - DEC-008: Single-step is CmdSingleStep{}. One frame latency.
   Acceptable for interactive use at 60fps. Resolves TBD-003.
 - DEC-009: Generation counter in published state. Incremented on
   load/reload. Widgets compare against their cached generation —
   changed → reconfigure (reset trace buffer, clamp axis indices,
   etc). Cheap, no string compare. Resolves TBD-004.
-- DEC-010: Log infrastructure shared between UI and model. 5 levels
-  (err/wrn/inf/dbg/dmp), tag from __FILE__, stderr with color.
-  Both threads use same log macros. No printfs/fprintfs for regular
-  logging. fprintf to stderr is thread-safe on POSIX.
-  Errors in published state: string field for fatal/blocking errors
-  (load failure, GPU init failure). Log for everything else.
-  Resolves TBD-005.
+- DEC-010: Errors in published state: string field for fatal/blocking
+  errors (load failure, GPU init failure). Regular logging uses
+  fprintf(stderr, ...) directly. A structured log system (levels,
+  tags, macros) is deferred. Resolves TBD-005.
 - DEC-011: FFTW is safe for this design. Plan creation (not thread-safe)
   only happens on sim thread during solver init. fftwf_execute (thread-
-  safe) can be called concurrently from UI (helix momentum FFT) and sim
-  thread with separate plans. No issue. Resolves TBD-006.
+  safe) only called from sim thread. No cross-thread FFT usage.
+  Resolves TBD-006.
 - DEC-012: total_probability is part of published state, computed by
   the sim thread every batch (not every step — one GPU reduction per
   batch is enough). Resolves TBD-007.

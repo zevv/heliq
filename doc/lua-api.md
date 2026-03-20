@@ -49,10 +49,12 @@ document, not just at creation.
 ## Rationale
 
 The Lua script is the primary user interface for defining experiments.
-It must feel natural, readable, and self-documenting. The user is not a
-programmer — they are a physicist (or aspiring one) describing an
-experiment. The script should read like a lab notebook, not like C++ config
-serialization.
+It must feel natural, readable, and self-documenting.
+
+The user is a technically proficient developer with DSP experience and
+linear algebra basics, learning QM by building tools. The script should
+read like a lab notebook — real SI units, clear parameter names, minimal
+boilerplate.
 
 The script builds up a world description through function calls that
 accumulate state. At the end, the accumulated state is returned as the
@@ -83,8 +85,8 @@ experiment definition for C++ ingestion.
 
 - TBD-001: ~~Global world object vs module functions~~ Resolved → DEC-001.
 
-- TBD-002: ~~Slits~~ Build from barriers for now. Convenience functions
-  (double_slit, etc.) can be added as Lua helpers later.
+- TBD-002: ~~Slits~~ Resolved: built from barriers in prelude.lua.
+  Convenience functions slit{} and double_slit{} available.
 
 - TBD-003: ~~What does the script return?~~ Resolved → DEC-002.
 
@@ -104,12 +106,14 @@ experiment definition for C++ ingestion.
 
 ## Actionable Items
 
-- ACT-001: Draft the API — function signatures, naming, calling convention.
-- ACT-002: Write the first experiment script using the API.
-- ACT-003: Implement the Lua-side library (pure Lua, accumulates state).
-- ACT-004: Implement the C++ loader that reads the accumulated state.
+(all current items done — see Done section)
 
 ## Done
+
+- ACT-001: API drafted — global functions in prelude.lua (domain, def_particle, particle, barrier, well, harmonic, interaction, absorbing_boundary, simulate).
+- ACT-002: 24 experiment scripts (010 through 200), ordered for learning progression.
+- ACT-003: Lua-side library (prelude.lua, 362 lines) — accumulates state, validates, computes defaults (dt, timescale, Nyquist checks).
+- ACT-004: C++ loader (lua/loader.cpp) — traverses Lua table, builds Setup struct.
 
 ## Scratch
 

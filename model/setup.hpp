@@ -23,8 +23,8 @@ struct Potential {
 	double from[MAX_RANK]{};         // meters
 	double to[MAX_RANK]{};           // meters
 	double center[MAX_RANK]{};       // meters (harmonic)
-	double height{};                 // eV (barrier/absorbing)
-	double depth{};                  // eV (well, stored as positive)
+	double height{};                 // J (barrier/absorbing)
+	double depth{};                  // J (well, stored as positive)
 	double k{};                      // N/m (harmonic spring constant)
 };
 
