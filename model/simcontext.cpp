@@ -143,8 +143,24 @@ void SimContext::extract()
 			for(int j = 0; j < total; j++)
 				res.psi[j] = psi_t(marg[j], 0);
 
-			// TODO: |ψ|²-weighted potential marginal
+			// max-projection of |V| over hidden axes
 			std::fill(res.pot.begin(), res.pot.end(), psi_t(0, 0));
+			{
+				const psi_t *V = sim.potential.data();
+				int out_strides[MAX_RANK] = {};
+				if(n_axes >= 1) out_strides[n_axes - 1] = 1;
+				for(int a = n_axes - 2; a >= 0; a--)
+					out_strides[a] = out_strides[a + 1] * res.shape[a + 1];
+
+				sim.grid.each([&](size_t idx, const int *coords, const double *) {
+					int oi = 0;
+					for(int a = 0; a < n_axes; a++)
+						oi += coords[req.axes[a]] * out_strides[a];
+					float v = std::abs(V[idx].real());
+					float cur = res.pot[oi].real();
+					if(v > cur) res.pot[oi] = psi_t(v, 0);
+				});
+			}
 
 			// TODO: coherent marginal ∫ψ
 			res.coherent.resize(total, psi_t(0, 0));

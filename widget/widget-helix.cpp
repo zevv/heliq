@@ -47,10 +47,10 @@ private:
 
 	// visual layers
 	struct {
-		bool on{false};
+		bool on{true};
 		int mode{0};
 		float alpha{0.7f};
-		int color{0};  // HelixColor
+		int color{(int)HelixColor::Default};
 	} m_envelope;
 
 	struct {
@@ -63,9 +63,9 @@ private:
 	double m_global_max{1e-30};
 
 	struct {
-		bool on{false};
+		bool on{true};
 		float alpha{0.3f};
-		int color{0};  // HelixColor
+		int color{(int)HelixColor::Rainbow};
 	} m_surface;
 
 	struct {
@@ -198,9 +198,10 @@ static int auto_track(const psi_t *psi, int n, int cur)
 
 void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
-	// sync from shared view when locked
+	// sync from shared view when locked (X pan + zoom, not Y)
 	if(m_view.lock) {
-		m_camera = m_view.camera;
+		m_camera.pan_x = m_view.camera.pan_x;
+		m_camera.dist = m_view.camera.dist;
 		m_amplitude = m_view.amplitude;
 		m_slice.normalize = m_view.normalize;
 		m_slice.auto_track = m_view.auto_track;
@@ -339,9 +340,10 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	}
 	draw_controls(ctx);
 
-	// sync camera back to shared view when locked
+	// sync back to shared view when locked (X pan + zoom, not Y)
 	if(m_view.lock) {
-		m_view.camera = m_camera;
+		m_view.camera.pan_x = m_camera.pan_x;
+		m_view.camera.dist = m_camera.dist;
 		m_view.amplitude = m_amplitude;
 		m_view.normalize = m_slice.normalize;
 		m_view.auto_track = m_slice.auto_track;
@@ -936,5 +938,5 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 REGISTER_WIDGET(WidgetHelix,
 	.name = "helix",
 	.description = "3D helix wavefunction viewer",
-	.hotkey = ImGuiKey_F3,
+	.hotkey = ImGuiKey_F2,
 );

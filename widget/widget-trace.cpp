@@ -351,9 +351,11 @@ void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)
 
 void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 {
-	// sync camera from shared view when locked
-	if(m_view.lock)
-		m_camera = m_view.camera;
+	// sync X pan + zoom from shared view when locked (not Y)
+	if(m_view.lock) {
+		m_camera.pan_x = m_view.camera.pan_x;
+		m_camera.dist = m_view.camera.dist;
+	}
 
 	auto &st = ctx.state();
 	auto &gm = st.grid;
@@ -450,9 +452,11 @@ void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		m_camera = Camera3D{};
 	}
 
-	// write back camera to shared view when locked
-	if(m_view.lock)
-		m_view.camera = m_camera;
+	// write back X pan + zoom to shared view when locked (not Y)
+	if(m_view.lock) {
+		m_view.camera.pan_x = m_camera.pan_x;
+		m_view.camera.dist = m_camera.dist;
+	}
 }
 
 
