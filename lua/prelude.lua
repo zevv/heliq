@@ -86,12 +86,27 @@ function env.def_particle(spec)
 end
 
 function env.particle(species, spec)
+    local pos = spec.position or error("particle: position required")
+    local w = spec.width or error("particle: width required")
+    -- width: number → same for all dims; table → per dim
+    local width
+    if type(w) == "number" then
+        width = {}
+        for i = 1, #pos do width[i] = w end
+    elseif type(w) == "table" then
+        width = w
+        if #width ~= #pos then
+            error("particle: width table must have same length as position")
+        end
+    else
+        error("particle: width must be a number or table")
+    end
     world.particles[#world.particles + 1] = {
         mass     = species.mass,
         charge   = species.charge,
-        position = spec.position or error("particle: position required"),
+        position = pos,
         momentum = spec.momentum or error("particle: momentum required"),
-        width    = spec.width or error("particle: width required"),
+        width    = width,
     }
 end
 
@@ -194,9 +209,11 @@ local function dump()
             for _, v in ipairs(p.position) do pos[#pos+1] = humanize(v) .. "m" end
             local mom = {}
             for _, v in ipairs(p.momentum) do mom[#mom+1] = humanize(v) .. " kg·m/s" end
-            print(string.format("  %d: mass=%skg  pos={%s}  mom={%s}  width=%sm",
+            local wid = {}
+            for _, v in ipairs(p.width) do wid[#wid+1] = humanize(v) .. "m" end
+            print(string.format("  %d: mass=%skg  pos={%s}  mom={%s}  w={%s}",
                 i, humanize(p.mass), table.concat(pos, ", "),
-                table.concat(mom, ", "), humanize(p.width)))
+                table.concat(mom, ", "), table.concat(wid, ", ")))
         end
     end
     if #world.potentials > 0 then
@@ -302,9 +319,13 @@ local function compute_defaults()
     end
     local dt_potential = (v_max > 0) and (math.pi * 2 * hbar / v_max) or math.huge
 
-    -- check wavefunction resolvability
+    -- check wavefunction resolvability (per-particle axes only)
+    local ax_offset = 1
     for i, p in ipairs(world.particles) do
-        for d, ax in ipairs(world.domain) do
+        local ndims = #p.position
+        for d = 1, ndims do
+            local ax = world.domain[ax_offset + d - 1]
+            if not ax then break end
             local dx = (ax.max - ax.min) / ax.points
             -- Nyquist: phase per cell must be < pi
             local mom = p.momentum[d] or 0
@@ -314,12 +335,14 @@ local function compute_defaults()
                 print(string.format("  phase/cell = %.1f rad (max pi), need %d points or lower momentum",
                     phase_per_cell, math.ceil(ax.points * phase_per_cell / math.pi)))
             end
-            -- width check
-            if p.width < 2 * dx then
-                print(string.format("WARNING: particle %d: width %.2e m < 2*dx = %.2e m, poorly resolved",
-                    i, p.width, 2 * dx))
+            -- width check (per-axis)
+            local w = p.width[d] or p.width[1]
+            if w < 2 * dx then
+                print(string.format("WARNING: particle %d axis %d: width %.2e m < 2*dx = %.2e m, poorly resolved",
+                    i, d, w, 2 * dx))
             end
         end
+        ax_offset = ax_offset + ndims
     end
 
     -- take the smaller limit, then 10% safety margin

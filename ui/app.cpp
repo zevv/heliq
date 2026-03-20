@@ -223,8 +223,8 @@ int App::draw_topbar()
 	if(slider_w < 80) slider_w = 80;
 	if(slider_w > 300) slider_w = 300;
 	ImGui::SetNextItemWidth(slider_w);
-	float log_ts = log10f(fabs(st.timescale));
-	float log_ts_def = log10f(fabs(st.setup.default_timescale));
+	float log_ts = (st.timescale != 0) ? log10f(fabs(st.timescale)) : -15.0f;
+	float log_ts_def = (st.setup.default_timescale != 0) ? log10f(fabs(st.setup.default_timescale)) : log_ts;
 	char ts_label[64];
 	snprintf(ts_label, sizeof(ts_label), "speed: ");
 	humanize_unit(fabs(st.timescale), "s/s", ts_label + 7, sizeof(ts_label) - 7);
@@ -234,7 +234,7 @@ int App::draw_topbar()
 	// dt slider
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth(slider_w);
-	float log_dt = log10f(fabs(st.dt));
+	float log_dt = (st.dt != 0) ? log10f(fabs(st.dt)) : -15.0f;
 	float log_dt_def = (st.setup.default_dt > 0) ? log10f(st.setup.default_dt) : log_dt;
 	char dt_label[64];
 	snprintf(dt_label, sizeof(dt_label), "dt: ");

@@ -77,7 +77,7 @@ void WidgetInfo::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 			auto &p = s.particles[i];
 			ImGui::Text("  %zu: mass=%.3e kg", i, p.mass);
 			ImGui::Text("     pos=[%.2e]  mom=[%.2e]  w=%.2e",
-				p.position[0], p.momentum[0], p.width);
+				p.position[0], p.momentum[0], p.width[0]);
 		}
 	}
 

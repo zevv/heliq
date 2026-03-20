@@ -21,7 +21,7 @@ TEST_CASE("load 1d-barrier experiment") {
 		CHECK(p.charge == doctest::Approx(-1.602e-19).epsilon(0.001));
 		CHECK(p.position[0] == doctest::Approx(-2e-6));
 		CHECK(p.momentum[0] > 0);
-		CHECK(p.width == doctest::Approx(0.2e-6));
+		CHECK(p.width[0] == doctest::Approx(0.2e-6));
 	}
 
 	SUBCASE("potentials") {

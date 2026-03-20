@@ -14,7 +14,7 @@ struct Particle {
 	double charge{};                 // C
 	double position[MAX_RANK]{};     // meters, per spatial dim
 	double momentum[MAX_RANK]{};     // kg·m/s
-	double width{};                  // meters, Gaussian spread
+	double width[MAX_RANK]{};        // meters, Gaussian spread per spatial dim
 };
 
 struct Potential {

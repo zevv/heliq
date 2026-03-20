@@ -92,9 +92,9 @@ static bool load_particles(lua_State *L, Setup &setup)
 			Particle p{};
 			p.mass   = getfield_number(L, -1, "mass");
 			p.charge = getfield_number(L, -1, "charge");
-			p.width  = getfield_number(L, -1, "width");
 			read_array_field(L, -1, "position", p.position, MAX_RANK);
 			read_array_field(L, -1, "momentum", p.momentum, MAX_RANK);
+			read_array_field(L, -1, "width", p.width, MAX_RANK);
 			setup.particles.push_back(p);
 		}
 		lua_pop(L, 1);

@@ -515,7 +515,7 @@ void Simulation::sample_wavefunction(const Setup &setup)
 			for(int d = 0; d < cs.spatial_dims; d++) {
 				int ax = cs.axis(p, d);
 				double dx = pos[ax] - part.position[d];
-				envelope += dx * dx / (4.0 * part.width * part.width);
+				envelope += dx * dx / (4.0 * part.width[d] * part.width[d]);
 				phase += part.momentum[d] * pos[ax] / hbar;
 			}
 			double amp = exp(-envelope);
