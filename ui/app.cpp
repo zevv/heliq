@@ -433,7 +433,12 @@ void App::run()
 			m_ui_scale /= 1.2f;
 		if(m_ui_scale < 0.4f) m_ui_scale = 0.4f;
 		if(m_ui_scale > 4.0f) m_ui_scale = 4.0f;
-		ImGui::GetIO().FontGlobalScale = m_ui_scale;
+		ImGui::GetIO().FontGlobalScale = m_ui_scale * Style::font_scale();
+
+		// P to toggle presentation mode
+		if(ctrl && ImGui::IsKeyPressed(ImGuiKey_P)) {
+			Style::toggle_mode();
+		}
 
 		// single step with right arrow
 		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !st.running)

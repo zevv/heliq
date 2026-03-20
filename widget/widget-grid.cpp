@@ -8,7 +8,7 @@
 #include "simcontext.hpp"
 #include "config.hpp"
 #include "misc.hpp"
-#include "colors.hpp"
+#include "style.hpp"
 
 // color palettes: value [0..1] -> RGBA
 // alpha carries intensity, color is always full brightness
@@ -293,11 +293,12 @@ void WidgetGrid::draw_absorb_boundary(SDL_Renderer *rend, const PublishedState &
 	if(n_strips < 1) n_strips = 1;
 	SDL_SetRenderDrawBlendMode(rend, SDL_BLENDMODE_BLEND);
 
+	auto ac = Style::color(Style::Absorb);
 	float strip_w = m_dst.w * w / n_strips;
 	for(int i = 0; i < n_strips; i++) {
 		float t = cosf(0.5f * M_PI * (i + 1) / n_strips);
 		uint8_t alpha = (uint8_t)(t * t * 80);
-		SDL_SetRenderDrawColor(rend, colors::absorb.r, colors::absorb.g, colors::absorb.b, alpha);
+		SDL_SetRenderDrawColor(rend, (uint8_t)(ac.r*255), (uint8_t)(ac.g*255), (uint8_t)(ac.b*255), alpha);
 		SDL_FRect rl = { m_dst.x + i * strip_w, m_dst.y, strip_w + 1, m_dst.h };
 		SDL_FRect rr = { m_dst.x + m_dst.w - (i + 1) * strip_w, m_dst.y, strip_w + 1, m_dst.h };
 		SDL_RenderFillRect(rend, &rl);
@@ -308,7 +309,7 @@ void WidgetGrid::draw_absorb_boundary(SDL_Renderer *rend, const PublishedState &
 		for(int i = 0; i < n_strips; i++) {
 			float t = cosf(0.5f * M_PI * (i + 1) / n_strips);
 			uint8_t alpha = (uint8_t)(t * t * 80);
-			SDL_SetRenderDrawColor(rend, colors::absorb.r, colors::absorb.g, colors::absorb.b, alpha);
+			SDL_SetRenderDrawColor(rend, (uint8_t)(ac.r*255), (uint8_t)(ac.g*255), (uint8_t)(ac.b*255), alpha);
 			SDL_FRect rt = { m_dst.x, m_dst.y + i * strip_h, m_dst.w, strip_h + 1 };
 			SDL_FRect rb = { m_dst.x, m_dst.y + m_dst.h - (i + 1) * strip_h, m_dst.w, strip_h + 1 };
 			SDL_RenderFillRect(rend, &rt);
@@ -333,7 +334,7 @@ void WidgetGrid::draw_cursor(SDL_Renderer *rend, const Grid &grid)
 	}
 
 	// draw crosshairs
-	SDL_SetRenderDrawColor(rend, colors::cursor_cross.r, colors::cursor_cross.g, colors::cursor_cross.b, colors::cursor_cross.a);
+	SDL_SetRenderDrawColor(rend, Style::color(Style::CursorCross));
 	float sx, sy;
 	grid_to_screen(m_dst, m_grid_w, m_grid_h, m_view.cursor[m_axis_x], m_view.cursor[m_axis_y], sx, sy);
 	SDL_RenderLine(rend, sx, m_dst.y, sx, m_dst.y + m_dst.h);
@@ -407,7 +408,7 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		
 	ImGui::SameLine();
 
-	SDL_SetRenderDrawColor(rend, colors::bg_grid.r, colors::bg_grid.g, colors::bg_grid.b, colors::bg_grid.a);
+	SDL_SetRenderDrawColor(rend, Style::color(Style::BgGrid));
 	SDL_RenderFillRect(rend, nullptr);
 
 	if(gm.rank == 0) { ImGui::Text("No simulation"); return; }
@@ -469,7 +470,7 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 
 	draw_absorb_boundary(rend, st, tw);
 
-	SDL_SetRenderDrawColor(rend, colors::grid_border.r, colors::grid_border.g, colors::grid_border.b, colors::grid_border.a);
+	SDL_SetRenderDrawColor(rend, Style::color(Style::GridBorder));
 	SDL_RenderRect(rend, &m_dst);
 
 	Grid grid_tmp{};

@@ -19,20 +19,48 @@ public:
 	};
 
 	enum ColorId {
+		// UI chrome
 		Background,
 		Cursor,
 		Grid1,
 		PanelBorder,
 		ToggleButtonOff,
 		ToggleButtonOn,
+		// GL backgrounds
+		BgGl,
+		BgGrid,
+		// cursors
+		CursorEdge,
+		CursorCross,
+		// borders/grid
+		GridBorder,
+		Absorb,
+		Gridline0,
+		Gridline1,
+		Gridline2,
+		// helix defaults
+		HelixDefault,
+		SurfaceDefault,
+		EnvelopeDefault,
+		// potential
+		PotentialMarginal,
 		COUNT,
 	};
+
+	enum Mode { Normal, Presentation };
 
 	static void load(ConfigReader::Node *node);
 	static void save(ConfigWriter &cfg);
 
 	static Color color(int cid);
 	static void set_color(int cid, const Color &color);
+
+	static Mode mode();
+	static void set_mode(Mode m);
+	static void toggle_mode();
+
+	static float line_width();
+	static float font_scale();
 
 };
 

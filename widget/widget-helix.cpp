@@ -17,7 +17,7 @@
 #include "constants.hpp"
 #include "misc.hpp"
 #include "glview.hpp"
-#include "colors.hpp"
+#include "style.hpp"
 
 #include "camera3d.hpp"
 
@@ -270,9 +270,12 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	m_gl.resize(gl_w, gl_h);
 	m_gl.begin(rend);
 
-	glClearColor(colors::bg_gl.r, colors::bg_gl.g, colors::bg_gl.b, colors::bg_gl.a);
+	{
+		auto c = Style::color(Style::BgGl);
+		glClearColor(c.r, c.g, c.b, c.a);
+	}
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glLineWidth(m_thick_lines ? 3.0f : 1.5f);
+	glLineWidth((m_thick_lines ? 3.0f : 1.5f) * Style::line_width());
 
 	mat4 vp = m_camera.build(gl_w, gl_h);
 	float mvp[16];
@@ -291,7 +294,7 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	if(m_helix.on) gl_draw_helix(psi, max_amp, n);
 	if(m_envelope.on) gl_draw_envelope(psi, max_amp, n, vp);
 	gl_draw_cursor(state.grid);
-	glLineWidth(1.0f);
+	glLineWidth(1.0f * Style::line_width());
 
 	m_gl.end(rend);
 
@@ -403,7 +406,10 @@ void WidgetHelix::gl_draw_axis(const mat4 &vp)
 	glEnableVertexAttribArray(0);
 
 	// bounding box edges
-	glUniform4f(m_gl.color_loc(), colors::gridline_0.r, colors::gridline_0.g, colors::gridline_0.b, colors::gridline_0.a);
+	{
+		auto c = Style::color(Style::Gridline0);
+		glUniform4f(m_gl.color_loc(), c.r, c.g, c.b, c.a);
+	}
 	float box[] = {
 		// bottom face (y=-a)
 		-1,-a,-a, 1,-a,-a,  1,-a,-a, 1,-a,a,  1,-a,a, -1,-a,a,  -1,-a,a, -1,-a,-a,
@@ -416,13 +422,19 @@ void WidgetHelix::gl_draw_axis(const mat4 &vp)
 	glDrawArrays(GL_LINES, 0, 24);
 
 	// x-axis line
-	glUniform4f(m_gl.color_loc(), colors::gridline_1.r, colors::gridline_1.g, colors::gridline_1.b, colors::gridline_1.a);
+	{
+		auto c = Style::color(Style::Gridline1);
+		glUniform4f(m_gl.color_loc(), c.r, c.g, c.b, c.a);
+	}
 	float axis[] = { -1,0,0, 1,0,0 };
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, axis);
 	glDrawArrays(GL_LINES, 0, 2);
 
 	// origin cross clamped to bounding box
-	glUniform4f(m_gl.color_loc(), colors::gridline_2.r, colors::gridline_2.g, colors::gridline_2.b, colors::gridline_2.a);
+	{
+		auto c = Style::color(Style::Gridline2);
+		glUniform4f(m_gl.color_loc(), c.r, c.g, c.b, c.a);
+	}
 	float c = 0.25f * a;
 	float cross[] = { 0,-c,0, 0,c,0, 0,0,-c, 0,0,c };
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, cross);
@@ -471,7 +483,8 @@ std::tuple<float,float,float> WidgetHelix::color_for_vert(
 
 void WidgetHelix::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 {
-	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, colors::surface_default.r, colors::surface_default.g, colors::surface_default.b); };
+	auto sc = Style::color(Style::SurfaceDefault);
+	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, sc.r, sc.g, sc.b); };
 	// triangle strip with per-vertex color: base[i], helix[i], ...
 
 	// 7 floats per vert: pos(3) + col(4)
@@ -518,6 +531,7 @@ void WidgetHelix::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 
 void WidgetHelix::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 {
+	auto hc = Style::color(Style::HelixDefault);
 	// per-vertex colored line strip: 3 pos + 4 color per vertex
 	m_vbuf.resize(n * 7);
 	for(int i = 0; i < n; i++) {
@@ -530,7 +544,7 @@ void WidgetHelix::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 		m_vbuf[i*7+2] = z;
 
 		float amp = (float)(std::abs(psi[i]) / max_amp);
-		auto [cr, cg, cb] = color_for_vert(m_helix.color, i, amp, psi, colors::helix_default.r, colors::helix_default.g, colors::helix_default.b);
+		auto [cr, cg, cb] = color_for_vert(m_helix.color, i, amp, psi, hc.r, hc.g, hc.b);
 		m_vbuf[i*7+3] = cr;
 		m_vbuf[i*7+4] = cg;
 		m_vbuf[i*7+5] = cb;
@@ -551,6 +565,7 @@ void WidgetHelix::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 void WidgetHelix::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
                                       const mat4 &vp)
 {
+	auto ec = Style::color(Style::EnvelopeDefault);
 	bool rotational = (Envelope)m_envelope.mode == Envelope::Amplitude ||
 	                  (Envelope)m_envelope.mode == Envelope::ProbDensity;
 
@@ -570,7 +585,7 @@ void WidgetHelix::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 				float x = -1.0f + 2.0f * t;
 				float a = (float)(envelope_value(psi[i], max_amp) * m_amplitude);
 				float amp = (float)(std::abs(psi[i]) / max_amp);
-				auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, colors::envelope_default.r, colors::envelope_default.g, colors::envelope_default.b);
+				auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, ec.r, ec.g, ec.b);
 				m_vbuf[i*7+0] = x;
 				m_vbuf[i*7+1] = a * cy;
 				m_vbuf[i*7+2] = a * cz;
@@ -597,7 +612,7 @@ void WidgetHelix::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 			if(rad < 1e-6f) continue;
 			float x = -1.0f + 2.0f * i / n;
 			float amp = (float)(std::abs(psi[i]) / max_amp);
-			auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, colors::envelope_default.r, colors::envelope_default.g, colors::envelope_default.b);
+			auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, ec.r, ec.g, ec.b);
 			for(int s = 0; s < circle_segs; s++) {
 				float a = 2.0f * M_PI * s / circle_segs;
 				circle[s*7+0] = x;
@@ -624,7 +639,7 @@ void WidgetHelix::gl_draw_envelope(const psi_t *psi, double max_amp, int n,
 		float x = -1.0f + 2.0f * t;
 		float a = (float)(envelope_value(psi[i], max_amp) * m_amplitude);
 		float amp = (float)(std::abs(psi[i]) / max_amp);
-		auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, colors::envelope_default.r, colors::envelope_default.g, colors::envelope_default.b);
+		auto [cr, cg, cb] = color_for_vert(m_envelope.color, i, amp, psi, ec.r, ec.g, ec.b);
 		m_vbuf[i*7+0] = x;
 		m_vbuf[i*7+1] = on_z ? 0 : a;
 		m_vbuf[i*7+2] = on_z ? a : 0;
@@ -690,6 +705,7 @@ static void gl_draw_cap(float x, float a, const float col[4])
 
 void WidgetHelix::gl_draw_potentials(const psi_t *pot, int n)
 {
+	auto pc = Style::color(Style::PotentialMarginal);
 	float a = m_amplitude;
 
 	// find max potential for alpha scaling
@@ -717,7 +733,7 @@ void WidgetHelix::gl_draw_potentials(const psi_t *pot, int n)
 		if(on) {
 			float x0 = -1.0f + dx * i;
 			float x1 = x0 + dx;
-			float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
+			float col[] = { pc.r, pc.g, pc.b, alpha };
 			gl_draw_box(x0, x1, a, col, col);
 
 			// cap at rising edge
@@ -728,7 +744,7 @@ void WidgetHelix::gl_draw_potentials(const psi_t *pot, int n)
 		// cap at falling edge
 		if(prev_on && !on) {
 			float px1 = -1.0f + dx * i;
-			float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
+			float pcol[] = { pc.r, pc.g, pc.b, prev_alpha };
 			gl_draw_cap(px1, a, pcol);
 		}
 
@@ -738,7 +754,7 @@ void WidgetHelix::gl_draw_potentials(const psi_t *pot, int n)
 
 	// cap at domain edge if last cell has potential
 	if(prev_on) {
-		float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
+		float pcol[] = { pc.r, pc.g, pc.b, prev_alpha };
 		gl_draw_cap(1.0f, a, pcol);
 	}
 
@@ -749,6 +765,7 @@ void WidgetHelix::gl_draw_potentials(const psi_t *pot, int n)
 
 void WidgetHelix::gl_draw_potential_marginal(const psi_t *pot, int n)
 {
+	auto pc = Style::color(Style::PotentialMarginal);
 	float a = m_amplitude;
 
 	double v_max = 1e-30;
@@ -776,17 +793,17 @@ void WidgetHelix::gl_draw_potential_marginal(const psi_t *pot, int n)
 		// cap at any significant alpha change (not just on/off)
 		float delta = alpha - prev_alpha;
 		if(on && (!prev_on || delta > 0.05f * m_potential.alpha)) {
-			float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
+			float col[] = { pc.r, pc.g, pc.b, alpha };
 			gl_draw_cap(x, a, col);
 		}
 		if((prev_on && !on) || (prev_on && on && delta < -0.05f * m_potential.alpha)) {
-			float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
+			float pcol[] = { pc.r, pc.g, pc.b, prev_alpha };
 			gl_draw_cap(x, a, pcol);
 		}
 
 		if(on) {
 			float x1 = x + dx;
-			float col[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, alpha };
+			float col[] = { pc.r, pc.g, pc.b, alpha };
 			gl_draw_box(x, x1, a, col, col);
 		}
 
@@ -795,7 +812,7 @@ void WidgetHelix::gl_draw_potential_marginal(const psi_t *pot, int n)
 	}
 
 	if(prev_on) {
-		float pcol[] = { colors::potential_marginal.r, colors::potential_marginal.g, colors::potential_marginal.b, prev_alpha };
+		float pcol[] = { pc.r, pc.g, pc.b, prev_alpha };
 		gl_draw_cap(1.0f, a, pcol);
 	}
 
@@ -820,7 +837,10 @@ void WidgetHelix::gl_draw_cursor(const GridMeta &gm)
 	glEnableVertexAttribArray(0);
 
 	// outline only
-	glUniform4f(m_gl.color_loc(), colors::cursor_edge.r, colors::cursor_edge.g, colors::cursor_edge.b, colors::cursor_edge.a);
+	{
+		auto c = Style::color(Style::CursorEdge);
+		glUniform4f(m_gl.color_loc(), c.r, c.g, c.b, c.a);
+	}
 	float outline[] = {
 		x, -a, -a,  x, a, -a,
 		x,  a, -a,  x, a,  a,

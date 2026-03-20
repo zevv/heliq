@@ -8,7 +8,7 @@
 #include "simcontext.hpp"
 #include "config.hpp"
 #include "misc.hpp"
-#include "colors.hpp"
+#include "style.hpp"
 #include "datasource.hpp"
 
 struct Overlay {
@@ -337,8 +337,7 @@ void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)
 		}
 	}
 
-	SDL_SetRenderDrawColor(rend, colors::cursor_cross.r, colors::cursor_cross.g,
-	                       colors::cursor_cross.b, colors::cursor_cross.a);
+	SDL_SetRenderDrawColor(rend, Style::color(Style::CursorCross));
 	int c = m_view.cursor[m_axis];
 	if(horiz) {
 		float sx = m_dst.x + ((float)c + 0.5f) / m_axis_points * m_dst.w;
@@ -434,8 +433,7 @@ void WidgetTrace::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 			SDL_RenderTexture(rend, ov.tex, nullptr, &dst);
 		}
 
-		SDL_SetRenderDrawColor(rend, colors::grid_border.r, colors::grid_border.g,
-		                       colors::grid_border.b, colors::grid_border.a);
+		SDL_SetRenderDrawColor(rend, Style::color(Style::GridBorder));
 		SDL_RenderRect(rend, &dst);
 
 		m_dst = dst;
