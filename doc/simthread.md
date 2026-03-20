@@ -189,8 +189,7 @@ publish. System stays working at every step during migration.
 Replace the synchronous `poll()` with a real thread. The API surface
 does not change — widgets don't know the difference.
 
-- ACT-009: Replace all fprintf/printf logging with log macros
-  across codebase.
+(all current items done — see Done section)
 
 ## Done
 
@@ -202,6 +201,7 @@ does not change — widgets don't know the difference.
 - ACT-006: All widgets migrated to extraction pipeline (info, grid, helix, trace).
 - ACT-007: Direct Simulation/Experiment access removed from widgets. SimContext is sole interface.
 - ACT-008: Sim thread implemented. std::thread in SimContext, own wall clock, CmdExtract/CmdStop commands. poll() swaps triple buffer + sends extraction requests. SDL user event wakes main loop on new results.
+- ACT-009: Log macros (ui/log.hpp). 5 levels, ANSI color, tag from __FILE__. All fprintf(stderr) replaced across codebase.
 
 ## Scratch
 
