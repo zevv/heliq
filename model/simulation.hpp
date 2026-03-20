@@ -75,8 +75,8 @@ public:
 	// GPU-side data extraction (avoids full readback)
 	void read_slice_1d(int axis, const int *cursor, psi_t *out);
 	void read_slice_2d(int ax_x, int ax_y, const int *cursor, psi_t *out);
-	void read_marginal_1d(int axis, float *out);
-	void read_marginal_2d(int ax_x, int ax_y, float *out);
+	void read_marginal_1d(int axis, float *out, psi_t *coherent = nullptr);
+	void read_marginal_2d(int ax_x, int ax_y, float *out, psi_t *coherent = nullptr);
 
 private:
 	void sample_potential(const Setup &setup);

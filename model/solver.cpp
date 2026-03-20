@@ -50,18 +50,20 @@ void Solver::read_slice_2d(const Grid &grid, int ax_x, int ax_y,
 			out[x * ny + y] = view.at(x, y);
 }
 
-void Solver::read_marginal_1d(const Grid &grid, int axis, float *out)
+void Solver::read_marginal_1d(const Grid &grid, int axis, float *out, psi_t *coherent)
 {
 	std::vector<psi_t> tmp(m_total);
 	flush();
 	read_psi(tmp.data());
 	int n = grid.axes[axis].points;
 	std::fill_n(out, n, 0.0f);
+	if(coherent) std::fill_n(coherent, n, psi_t(0, 0));
 
 	int coords[MAX_RANK]{};
 	for(size_t idx = 0; idx < m_total; idx++) {
 		int i = coords[axis];
 		out[i] += std::norm(tmp[idx]);
+		if(coherent) coherent[i] += tmp[idx];
 		for(int d = grid.rank - 1; d >= 0; d--) {
 			if(++coords[d] < grid.axes[d].points) break;
 			coords[d] = 0;
@@ -69,20 +71,24 @@ void Solver::read_marginal_1d(const Grid &grid, int axis, float *out)
 	}
 }
 
-void Solver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out)
+void Solver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out, psi_t *coherent)
 {
 	std::vector<psi_t> tmp(m_total);
 	flush();
 	read_psi(tmp.data());
 	int nx = grid.axes[ax_x].points;
 	int ny = grid.axes[ax_y].points;
-	std::fill_n(out, nx * ny, 0.0f);
+	int ntot = nx * ny;
+	std::fill_n(out, ntot, 0.0f);
+	if(coherent) std::fill_n(coherent, ntot, psi_t(0, 0));
 
 	int coords[MAX_RANK]{};
 	for(size_t idx = 0; idx < m_total; idx++) {
 		int ix = coords[ax_x];
 		int iy = coords[ax_y];
-		out[ix * ny + iy] += std::norm(tmp[idx]);
+		int oi = ix * ny + iy;
+		out[oi] += std::norm(tmp[idx]);
+		if(coherent) coherent[oi] += tmp[idx];
 		for(int d = grid.rank - 1; d >= 0; d--) {
 			if(++coords[d] < grid.axes[d].points) break;
 			coords[d] = 0;

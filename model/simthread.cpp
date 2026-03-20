@@ -194,21 +194,18 @@ void SimThread::do_extract()
 		res.coherent.clear();
 
 		if(req.marginal) {
-			// |ψ|² marginal
+			// |ψ|² marginal + coherent marginal ∫ψ
+			res.coherent.resize(total);
 			std::vector<float> marg(total);
-			if(n_axes == 1) {
-				sim.read_marginal_1d(req.axes[0], marg.data());
-			} else if(n_axes == 2) {
-				sim.read_marginal_2d(req.axes[0], req.axes[1], marg.data());
-			}
+			if(n_axes == 1)
+				sim.read_marginal_1d(req.axes[0], marg.data(), res.coherent.data());
+			else if(n_axes == 2)
+				sim.read_marginal_2d(req.axes[0], req.axes[1], marg.data(), res.coherent.data());
 			for(int j = 0; j < total; j++)
 				res.psi[j] = psi_t(marg[j], 0);
 
 			// TODO: |ψ|²-weighted potential marginal
 			std::fill(res.pot.begin(), res.pot.end(), psi_t(0, 0));
-
-			// TODO: coherent marginal ∫ψ
-			res.coherent.resize(total, psi_t(0, 0));
 		} else {
 			// psi slice
 			if(n_axes == 1) {

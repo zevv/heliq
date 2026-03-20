@@ -22,8 +22,8 @@ public:
 	                   const int *cursor, psi_t *out) override;
 	void read_slice_2d(const Grid &grid, int ax_x, int ax_y,
 	                   const int *cursor, psi_t *out) override;
-	void read_marginal_1d(const Grid &grid, int axis, float *out) override;
-	void read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out) override;
+	void read_marginal_1d(const Grid &grid, int axis, float *out, psi_t *coherent = nullptr) override;
+	void read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out, psi_t *coherent = nullptr) override;
 
 	// returns true if an OpenCL GPU device is available
 	static bool available();

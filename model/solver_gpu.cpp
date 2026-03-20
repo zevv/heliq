@@ -85,8 +85,9 @@ __kernel void extract_slice_2d(__global const float2 *psi, __global float2 *out,
 }
 
 // compute 1D marginal: one work item per output point
-// each work item sums |psi|^2 over all other axes for its i
+// each work item sums |psi|^2 and psi over all other axes for its i
 __kernel void marginal_1d(__global const float2 *psi, __global float *out,
+                           __global float2 *out_coherent,
                            uint total,
                            uint stride,
                            uint n,
@@ -100,6 +101,7 @@ __kernel void marginal_1d(__global const float2 *psi, __global float *out,
 
     uint base = i * stride;
     float sum = 0;
+    float2 coh = (float2)(0, 0);
 
     // iterate over all combinations of hidden axes
     for(uint h = 0; h < hidden_count; h++) {
@@ -112,14 +114,17 @@ __kernel void marginal_1d(__global const float2 *psi, __global float *out,
         }
         float2 v = psi[offset];
         sum += v.x * v.x + v.y * v.y;
+        coh += v;
     }
 
     out[i] = sum;
+    out_coherent[i] = coh;
 }
 
 // compute 2D marginal: one work item per output pixel
-// each work item sums |psi|^2 over all hidden axes for its (ix, iy)
+// each work item sums |psi|^2 and psi over all hidden axes for its (ix, iy)
 __kernel void marginal_2d(__global const float2 *psi, __global float *out,
+                           __global float2 *out_coherent,
                            uint total,
                            uint stride_x, uint stride_y,
                            uint nx, uint ny,
@@ -134,6 +139,7 @@ __kernel void marginal_2d(__global const float2 *psi, __global float *out,
 
     uint base = ix * stride_x + iy * stride_y;
     float sum = 0;
+    float2 coh = (float2)(0, 0);
 
     // iterate over all combinations of hidden axes
     for(uint h = 0; h < hidden_count; h++) {
@@ -146,9 +152,11 @@ __kernel void marginal_2d(__global const float2 *psi, __global float *out,
         }
         float2 v = psi[offset];
         sum += v.x * v.x + v.y * v.y;
+        coh += v;
     }
 
     out[ix * ny + iy] = sum;
+    out_coherent[ix * ny + iy] = coh;
 }
 
 // parallel reduction for total probability
@@ -216,6 +224,8 @@ struct GpuSolverImpl {
 	cl_mem d_reduce_partial{};        // partial sums for reduction
 	cl_mem d_marginal_out{};          // marginal output (1D or 2D)
 	size_t d_marginal_out_size{};     // current allocation size
+	cl_mem d_coherent_out{};          // coherent marginal output (float2)
+	size_t d_coherent_out_size{};
 	cl_mem d_strides{};               // constant buffer for grid strides
 	int n_reduce_groups{};
 
@@ -444,6 +454,7 @@ GpuSolver::~GpuSolver()
 	if(m->k_transpose_inv) clReleaseKernel(m->k_transpose_inv);
 	if(m->d_reduce_partial) clReleaseMemObject(m->d_reduce_partial);
 	if(m->d_marginal_out) clReleaseMemObject(m->d_marginal_out);
+	if(m->d_coherent_out) clReleaseMemObject(m->d_coherent_out);
 	if(m->d_strides) clReleaseMemObject(m->d_strides);
 	if(m->k_extract_slice_1d) clReleaseKernel(m->k_extract_slice_1d);
 	if(m->k_extract_slice_2d) clReleaseKernel(m->k_extract_slice_2d);
@@ -696,12 +707,13 @@ void GpuSolver::read_slice_2d(const Grid &grid, int ax_x, int ax_y,
 }
 
 
-void GpuSolver::read_marginal_1d(const Grid &grid, int axis, float *out)
+void GpuSolver::read_marginal_1d(const Grid &grid, int axis, float *out, psi_t *coherent)
 {
 	clFinish(m->queue);
 
 	cl_uint n = grid.axes[axis].points;
 	size_t out_bytes = n * sizeof(float);
+	size_t coh_bytes = n * sizeof(psi_t);
 	cl_int err;
 
 	// allocate or reallocate output buffer if size changed
@@ -709,6 +721,11 @@ void GpuSolver::read_marginal_1d(const Grid &grid, int axis, float *out)
 		if(m->d_marginal_out) clReleaseMemObject(m->d_marginal_out);
 		m->d_marginal_out = clCreateBuffer(m->ctx, CL_MEM_READ_WRITE, out_bytes, nullptr, &err);
 		m->d_marginal_out_size = out_bytes;
+	}
+	if(coh_bytes != m->d_coherent_out_size) {
+		if(m->d_coherent_out) clReleaseMemObject(m->d_coherent_out);
+		m->d_coherent_out = clCreateBuffer(m->ctx, CL_MEM_READ_WRITE, coh_bytes, nullptr, &err);
+		m->d_coherent_out_size = coh_bytes;
 	}
 
 	// collect hidden axes info
@@ -735,31 +752,36 @@ void GpuSolver::read_marginal_1d(const Grid &grid, int axis, float *out)
 
 	clSetKernelArg(m->k_marginal_1d, 0, sizeof(cl_mem), &m->d_psi);
 	clSetKernelArg(m->k_marginal_1d, 1, sizeof(cl_mem), &m->d_marginal_out);
-	clSetKernelArg(m->k_marginal_1d, 2, sizeof(cl_uint), &total);
-	clSetKernelArg(m->k_marginal_1d, 3, sizeof(cl_uint), &stride);
-	clSetKernelArg(m->k_marginal_1d, 4, sizeof(cl_uint), &n);
-	clSetKernelArg(m->k_marginal_1d, 5, sizeof(cl_uint), &hidden_count);
-	clSetKernelArg(m->k_marginal_1d, 6, sizeof(cl_mem), &d_hidden_strides);
-	clSetKernelArg(m->k_marginal_1d, 7, sizeof(cl_mem), &d_hidden_sizes);
-	clSetKernelArg(m->k_marginal_1d, 8, sizeof(cl_uint), &n_hidden);
+	clSetKernelArg(m->k_marginal_1d, 2, sizeof(cl_mem), &m->d_coherent_out);
+	clSetKernelArg(m->k_marginal_1d, 3, sizeof(cl_uint), &total);
+	clSetKernelArg(m->k_marginal_1d, 4, sizeof(cl_uint), &stride);
+	clSetKernelArg(m->k_marginal_1d, 5, sizeof(cl_uint), &n);
+	clSetKernelArg(m->k_marginal_1d, 6, sizeof(cl_uint), &hidden_count);
+	clSetKernelArg(m->k_marginal_1d, 7, sizeof(cl_mem), &d_hidden_strides);
+	clSetKernelArg(m->k_marginal_1d, 8, sizeof(cl_mem), &d_hidden_sizes);
+	clSetKernelArg(m->k_marginal_1d, 9, sizeof(cl_uint), &n_hidden);
 
 	size_t global = ((n + 255) / 256) * 256;
 	size_t local = 256;
 	clEnqueueNDRangeKernel(m->queue, m->k_marginal_1d, 1, nullptr, &global, &local, 0, nullptr, nullptr);
 
 	clEnqueueReadBuffer(m->queue, m->d_marginal_out, CL_TRUE, 0, out_bytes, out, 0, nullptr, nullptr);
+	if(coherent)
+		clEnqueueReadBuffer(m->queue, m->d_coherent_out, CL_TRUE, 0, coh_bytes, coherent, 0, nullptr, nullptr);
 
 	clReleaseMemObject(d_hidden_strides);
 	clReleaseMemObject(d_hidden_sizes);
 }
 
-void GpuSolver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out)
+void GpuSolver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out, psi_t *coherent)
 {
 	clFinish(m->queue);
 
 	cl_uint nx = grid.axes[ax_x].points;
 	cl_uint ny = grid.axes[ax_y].points;
-	size_t out_bytes = nx * ny * sizeof(float);
+	size_t ntot = (size_t)nx * ny;
+	size_t out_bytes = ntot * sizeof(float);
+	size_t coh_bytes = ntot * sizeof(psi_t);
 	cl_int err;
 
 	// allocate or reallocate output buffer if size changed
@@ -767,6 +789,11 @@ void GpuSolver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *ou
 		if(m->d_marginal_out) clReleaseMemObject(m->d_marginal_out);
 		m->d_marginal_out = clCreateBuffer(m->ctx, CL_MEM_READ_WRITE, out_bytes, nullptr, &err);
 		m->d_marginal_out_size = out_bytes;
+	}
+	if(coh_bytes != m->d_coherent_out_size) {
+		if(m->d_coherent_out) clReleaseMemObject(m->d_coherent_out);
+		m->d_coherent_out = clCreateBuffer(m->ctx, CL_MEM_READ_WRITE, coh_bytes, nullptr, &err);
+		m->d_coherent_out_size = coh_bytes;
 	}
 
 	// collect hidden axes info
@@ -794,21 +821,24 @@ void GpuSolver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *ou
 
 	clSetKernelArg(m->k_marginal_2d, 0, sizeof(cl_mem), &m->d_psi);
 	clSetKernelArg(m->k_marginal_2d, 1, sizeof(cl_mem), &m->d_marginal_out);
-	clSetKernelArg(m->k_marginal_2d, 2, sizeof(cl_uint), &total);
-	clSetKernelArg(m->k_marginal_2d, 3, sizeof(cl_uint), &stride_x);
-	clSetKernelArg(m->k_marginal_2d, 4, sizeof(cl_uint), &stride_y);
-	clSetKernelArg(m->k_marginal_2d, 5, sizeof(cl_uint), &nx);
-	clSetKernelArg(m->k_marginal_2d, 6, sizeof(cl_uint), &ny);
-	clSetKernelArg(m->k_marginal_2d, 7, sizeof(cl_uint), &hidden_count);
-	clSetKernelArg(m->k_marginal_2d, 8, sizeof(cl_mem), &d_hidden_strides);
-	clSetKernelArg(m->k_marginal_2d, 9, sizeof(cl_mem), &d_hidden_sizes);
-	clSetKernelArg(m->k_marginal_2d, 10, sizeof(cl_uint), &n_hidden);
+	clSetKernelArg(m->k_marginal_2d, 2, sizeof(cl_mem), &m->d_coherent_out);
+	clSetKernelArg(m->k_marginal_2d, 3, sizeof(cl_uint), &total);
+	clSetKernelArg(m->k_marginal_2d, 4, sizeof(cl_uint), &stride_x);
+	clSetKernelArg(m->k_marginal_2d, 5, sizeof(cl_uint), &stride_y);
+	clSetKernelArg(m->k_marginal_2d, 6, sizeof(cl_uint), &nx);
+	clSetKernelArg(m->k_marginal_2d, 7, sizeof(cl_uint), &ny);
+	clSetKernelArg(m->k_marginal_2d, 8, sizeof(cl_uint), &hidden_count);
+	clSetKernelArg(m->k_marginal_2d, 9, sizeof(cl_mem), &d_hidden_strides);
+	clSetKernelArg(m->k_marginal_2d, 10, sizeof(cl_mem), &d_hidden_sizes);
+	clSetKernelArg(m->k_marginal_2d, 11, sizeof(cl_uint), &n_hidden);
 
 	size_t global2d[2] = { ((nx + 15) / 16) * 16, ((ny + 15) / 16) * 16 };
 	size_t local2d[2] = { 16, 16 };
 	clEnqueueNDRangeKernel(m->queue, m->k_marginal_2d, 2, nullptr, global2d, local2d, 0, nullptr, nullptr);
 
 	clEnqueueReadBuffer(m->queue, m->d_marginal_out, CL_TRUE, 0, out_bytes, out, 0, nullptr, nullptr);
+	if(coherent)
+		clEnqueueReadBuffer(m->queue, m->d_coherent_out, CL_TRUE, 0, coh_bytes, coherent, 0, nullptr, nullptr);
 
 	clReleaseMemObject(d_hidden_strides);
 	clReleaseMemObject(d_hidden_sizes);

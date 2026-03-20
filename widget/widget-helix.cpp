@@ -39,7 +39,8 @@ private:
 	void do_load(ConfigReader::Node *node) override;
 	void do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r) override;
 
-	enum SliceMode { Slice, Marginal };
+	enum SliceMode { Slice, Marginal, MODE_COUNT };
+	static const char *slice_mode_names[];
 
 	Camera3D m_camera;
 
@@ -108,7 +109,7 @@ private:
 	void draw_controls(SimContext &ctx);
 };
 
-
+const char *WidgetHelix::slice_mode_names[] = { "Slice", "Marginal" };
 
 WidgetHelix::WidgetHelix(Widget::Info &info)
 	: Widget(info)
@@ -242,7 +243,7 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	// get result from previous frame (before building request so auto-track can update cursor)
 	auto *result = state.find(req);
 
-	if(m_slice.auto_track && m_slice.mode != Marginal && state.grid.rank > 1
+	if(m_slice.auto_track && m_slice.mode == Slice && state.grid.rank > 1
 		&& result && !result->psi.empty())
 		m_view.cursor[m_slice.axis] = auto_track(result->psi.data(), n, m_view.cursor[m_slice.axis]);
 
@@ -285,7 +286,7 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	if(m_potential.on) {
 		if(m_slice.mode == Slice) {
 			gl_draw_potentials(pot, n);
-		} else if(m_slice.mode == Marginal) {
+		} else {
 			gl_draw_potential_marginal(pot, n);
 		}
 	}
@@ -885,9 +886,8 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 			ImGui::EndCombo();
 		}
 		ImGui::SameLine();
-		static const char *mode_names[] = { "Slice", "Marginal" };
-		if(ImGui::Button(mode_names[m_slice.mode]))
-			m_slice.mode = (m_slice.mode + 1) % 2;
+		ImGui::SetNextItemWidth(80);
+		ImGui::Combo("##mode", &m_slice.mode, slice_mode_names, MODE_COUNT);
 		if(m_slice.mode == Slice) {
 			ImGui::SameLine();
 			ImGui::Checkbox("Norm", &m_slice.normalize);
@@ -947,7 +947,7 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 		ImGui::EndTable();
 	}
 
-	if(m_slice.mode != Marginal) {
+	if(m_slice.mode == Slice) {
 		for(int d = 0; d < state.grid.rank; d++)
 			m_slice.pos[d] = m_view.cursor[d];
 		m_view.add_slice(m_slice.axis, m_slice.pos);

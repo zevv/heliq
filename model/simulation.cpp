@@ -170,14 +170,14 @@ void Simulation::read_slice_2d(int ax_x, int ax_y, const int *cursor, psi_t *out
 	m_solver->read_slice_2d(grid, ax_x, ax_y, cursor, out);
 }
 
-void Simulation::read_marginal_1d(int axis, float *out)
+void Simulation::read_marginal_1d(int axis, float *out, psi_t *coherent)
 {
-	m_solver->read_marginal_1d(grid, axis, out);
+	m_solver->read_marginal_1d(grid, axis, out, coherent);
 }
 
-void Simulation::read_marginal_2d(int ax_x, int ax_y, float *out)
+void Simulation::read_marginal_2d(int ax_x, int ax_y, float *out, psi_t *coherent)
 {
-	m_solver->read_marginal_2d(grid, ax_x, ax_y, out);
+	m_solver->read_marginal_2d(grid, ax_x, ax_y, out, coherent);
 }
 
 

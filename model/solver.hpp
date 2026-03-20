@@ -47,10 +47,10 @@ public:
 	                           const int *cursor, psi_t *out);
 
 	// compute 1D marginal (sum over all other axes) into out[n], default: read_psi + CPU sum
-	virtual void read_marginal_1d(const Grid &grid, int axis, float *out);
+	virtual void read_marginal_1d(const Grid &grid, int axis, float *out, psi_t *coherent = nullptr);
 
 	// compute 2D marginal (sum over hidden axes) into out[nx*ny], default: read_psi + CPU sum
-	virtual void read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out);
+	virtual void read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out, psi_t *coherent = nullptr);
 
 	// grid point count
 	size_t total_points() const { return m_total; }
