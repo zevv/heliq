@@ -220,6 +220,10 @@ void Panel::draw(View &view, SimContext &ctx, SDL_Renderer *rend, int x, int y, 
 	m_last_h = h;
 
 	if(m_type == Type::Root) {
+		if(m_fullscreen) {
+			m_fullscreen->draw(view, ctx, rend, x, y, w, h);
+			return;
+		}
 		if(m_kids.size() == 1) {
 			m_kids[0]->draw(view, ctx, rend, x, y, w, h);
 		}
@@ -313,6 +317,10 @@ void Panel::draw(View &view, SimContext &ctx, SDL_Renderer *rend, int x, int y, 
 				if(m_parent && m_parent->type() != Type::Root) {
 					m_parent->remove(this);
 				}
+			}
+			if(ImGui::IsKeyPressed(ImGuiKey_F)) {
+				Panel *root = find_root();
+				root->m_fullscreen = (root->m_fullscreen == this) ? nullptr : this;
 			}
 		}
 

@@ -17,8 +17,8 @@ Measure B (N key): A collapses to transmitted or reflected.
 The outcomes are always correlated.]])
 
 domain {
-    { min = -120 * nm, max = 80 * nm, points = 512 },
-    { min = -20 * nm, max = 180 * nm, points = 512 },
+    { min = -150 * nm, max = 150 * nm, points = 512 },
+    { min = -150 * nm, max = 150 * nm, points = 512 },
 }
 
 electron = def_particle {
@@ -31,7 +31,7 @@ local momentum = math.sqrt(2 * m_electron * energy)
 
 -- particle A: signal, moving right toward the beam splitter
 particle(electron, {
-    position = { -30 * nm },
+    position = { -40 * nm },
     momentum = { momentum },
     width    = 5 * nm,
 })
@@ -45,9 +45,9 @@ particle(electron, {
 
 -- beam splitter: ~50% transmission
 barrier {
-    from   = { -10.5 * nm, -200 * nm },
-    to     = { -9.5 * nm,   200 * nm },
-    height = energy * 1.1,
+    from   = { -21.5 * nm, -200 * nm },
+    to     = { -18.5 * nm,   200 * nm },
+    height = energy * 0.85,
 }
 
 -- which-path marker: contact interaction

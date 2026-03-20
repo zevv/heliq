@@ -55,4 +55,11 @@ private:
 	std::vector<AddRequest> m_add_requests{};
 	bool m_has_focus{};
 	float m_background_alpha{0};
+	Panel *m_fullscreen{};  // root only: if set, only this panel renders
+
+	Panel *find_root() {
+		Panel *p = this;
+		while(p->m_parent) p = p->m_parent;
+		return p;
+	}
 };
