@@ -87,7 +87,8 @@ experiments/*.lua  →  lua/prelude.lua  →  model/loader.cpp  →  Setup
   and 64^4 (see test/test_vkfft4d_transpose.cpp).
 
   Also contains GPU-side extraction kernels: `extract_slice_2d` (2D kernel),
-  `marginal_2d` (per-output-pixel reduction), `reduce_norm_sq` (parallel
+  `marginal_1d`/`marginal_2d` (per-output-pixel reduction, computes both
+  `Σ|ψ|²` and coherent `Σψ` in a single pass), `reduce_norm_sq` (parallel
   reduction for total probability).
 
 - `solver_cpu.cpp` — FFTW float (fftwf) backend. Supports arbitrary rank
@@ -100,7 +101,11 @@ experiments/*.lua  →  lua/prelude.lua  →  model/loader.cpp  →  Setup
 ### ui/ — Application framework
 
 - `app.cpp` — Main loop, event handling, panel management. Per-experiment
-  config saved to `~/.config/heliq/<experiment-name>`.
+  config saved to `~/.config/heliq/<experiment-name>`. Idle-when-paused:
+  main loop blocks on `SDL_WaitEvent` when sim is paused and no user
+  input; `m_redraw` counter tracks settle frames after wake. `draw()`
+  runs before key handling so `ImGui::NewFrame()` processes events
+  before `IsKeyPressed` queries.
 
 - `view.hpp` — Shared state across widgets: cursor positions (int per axis),
   Camera3D, amplitude. Widgets with `lock=true` sync their camera with the
@@ -125,10 +130,10 @@ experiments/*.lua  →  lua/prelude.lua  →  model/loader.cpp  →  Setup
 - `widget-helix.cpp` — The flagship widget. 3D helix view of 1D slices:
   x-axis = position, y = Re(psi), z = Im(psi). Multiple layers: helix line,
   surface fill, envelope, potential overlay. Each layer has its own color
-  palette (default/gray/rainbow/flame/spatial). Supports Slice/Marginal/Momentum
-  modes. The spatial color mode maps config-space position to hue, with
-  saturation indicating entanglement (low saturation = mixed origins in the
-  marginal = entangled).
+  palette (default/gray/rainbow/flame). Supports Slice/Marginal modes via
+  combo dropdown (extensible for future modes). The spatial color mode maps
+  config-space position to hue, with saturation indicating entanglement
+  (low saturation = mixed origins in the marginal = entangled).
 
 - `widget-grid.cpp` — 2D grid view with SDL texture overlays. For rank > 2,
   allows axis pair selection (which 2 of N axes to display). Slice mode shows
@@ -183,7 +188,12 @@ shows title + explanation in the info widget.
 
 ## What is NOT done yet
 
-- Sim thread (simulation still blocks UI during step)
+- Sim thread (simulation still blocks UI during step — Phase 1 async
+  facade done, Phase 2 thread detach pending. SimThread skeleton exists
+  but run loop incomplete.)
+- Coherent marginal visualization (data computed and available in
+  ExtractionResult.coherent, no UI exposure yet — needs a meaningful
+  diagnostic display, not raw Σψ)
 - Time-dependent potentials
 - Spin (TBD-008 in model.md)
 - Magnetic fields (TBD-009)

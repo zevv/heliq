@@ -103,9 +103,9 @@ solver uses for stepping. This must be untangled.
 - DEC-001: UI posts wall_dt to sim thread via CmdAdvance each frame.
   Sim thread uses it with timescale to compute step count. Sim thread
   has no clock of its own. More testable — can feed synthetic wall_dt.
-- DEC-002: CmdLoad carries Lua source string, not filename. UI owns
-  filesystem I/O. Sim thread never touches files. This enables a future
-  in-UI Lua editor without changing the sim thread interface.
+- DEC-002: (revised) CmdLoad carries a Setup struct (pure data from
+  Lua ingestion), not source string or filename. UI owns Lua loading
+  and filesystem I/O. Sim thread never touches files or Lua state.
 - DEC-003: Sim thread is the sole owner of all GPU state and all model
   state. Share-nothing. UI communicates exclusively through command
   queue (UI→sim) and published state (sim→UI).
@@ -202,8 +202,13 @@ does not change — widgets don't know the difference.
 
 ## Done
 
-(none — proto implementations exist for ACT-001/002/003 but are
-not validated or integrated)
+- ACT-001: simtypes.hpp — SimCommand variant, ExtractionRequest/Result/Set, PublishedState, GridMeta.
+- ACT-002: triplebuf.hpp — lock-free triple buffer with overwrite semantics.
+- ACT-003: simqueue.hpp — thread-safe command queue with condvar wake.
+- ACT-004: simcontext.hpp/cpp — synchronous facade, poll() drains/steps/extracts/publishes.
+- ACT-005: App wired to SimContext. Load, advance, transport all through push().
+- ACT-006: All widgets migrated to extraction pipeline (info, grid, helix, trace).
+- ACT-007: Direct Simulation/Experiment access removed from widgets. SimContext is sole interface.
 
 ## Scratch
 
@@ -250,8 +255,25 @@ the result.
 
 - psi never crosses the API boundary. Widgets never see raw psi_t*.
 - Camera, cursor, panel state — purely UI-side, no change needed.
-- CmdLoad carries source string. UI reads file / editor buffer.
+- CmdLoad carries Setup struct. UI reads file, runs Lua, passes result.
 - Pacing: timescale controls sim-time per wall-second. Auto-computed
   by prelude.lua. No new mechanism needed.
 - Auto-track: model computes marginal peaks, publishes in state.
   UI moves cursor if auto_track enabled. No model→UI callback.
+
+### Idle-when-paused
+
+Main loop blocks on SDL_WaitEvent when m_redraw <= 0. Any SDL event
+(user input, window expose) wakes the loop and sets m_redraw = 2 for
+settle frames. Sim running keeps m_redraw = 2 continuously. draw()
+runs before key handling (NewFrame must precede IsKeyPressed). When
+sim thread is implemented, it pushes SDL user events to wake the
+main loop on new results.
+
+### Timescale zero guard
+
+CmdSetTimescale handler clamps magnitude to minimum 1e-30. If
+incoming magnitude is zero, falls back to current timescale magnitude;
+if that's also zero, defaults to 1e-15. Prevents timescale=0 deadlock
+where sign-flip operations (,/. keys) cannot recover. Config save
+uses fabs(timescale) to never persist negative sign.
