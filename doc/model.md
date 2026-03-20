@@ -160,9 +160,8 @@ a black box.
 
 - TBD-001: ~~Threading model.~~ Resolved → DEC-004.
 
-- TBD-002: How is the initial wavefunction specified? Gaussian wave packet
-  parameters? Arbitrary function? Loaded from file? Narrowed by Lua scripting
-  decision — will be specified in experiment scripts.
+- TBD-002: ~~How is the initial wavefunction specified?~~ Resolved by
+  DEC-008: Gaussian wave packets in Lua scripts (position, momentum, width).
 
 - TBD-008: Spin. Each grid point could carry a small vector of 2s+1 complex
   components instead of a scalar. Spin-½ = 2 components, spin-1 = 3, etc.
@@ -181,22 +180,22 @@ a black box.
 
 - TBD-003: ~~Boundary conditions.~~ Resolved → DEC-009.
 
-- TBD-010: 3D rendering approach for helix visualization (FR-015) and
-  potential future 3D surface plots. Start with manual projection
-  (rotation matrix + perspective divide + SDL_RenderLines). Switch to
-  GLES if needed — SDL supports it, keeps things portable.
+- TBD-010: ~~3D rendering approach.~~ Resolved: GLES3 with 4x MSAA via
+  EGL/SDL. Custom mat4/vec3 math (math3d.hpp), camera with orbit/pan/zoom
+  (camera3d.hpp). No external 3D library.
 
 - TBD-004: ~~What physical units~~ Resolved → DEC-005.
 
-- TBD-005: How does the Simulation expose state to widgets? Raw pointer to the
-  complex grid? A snapshot/copy? Read-lock? This is the critical interface.
+- TBD-005: ~~How does the Simulation expose state to widgets?~~ Resolved:
+  SimContext extraction pipeline. Widgets declare ExtractionRequests,
+  model computes slices/marginals, results published via triple buffer.
+  Widgets never see raw psi. See doc/simthread.md.
 
 - TBD-006: ~~FFTW plan management.~~ Resolved → DEC-006.
 
 - TBD-007: ~~Memory layout for multi-particle systems.~~ Resolved by DEC-002
-  and grid design discussion: flat contiguous array of complex<double> with
-  precomputed strides. Per-axis descriptor carries size, physical extent,
-  and spatial/internal flag (for future spin support per TBD-008).
+  and DEC-010: flat contiguous array of complex<float> with precomputed
+  strides. Per-axis descriptor carries size, physical extent, and label.
   Max rank capped at 8 (fixed arrays, no heap allocation for axis metadata).
 
 ## Decisions
@@ -216,10 +215,11 @@ a black box.
   wavefunctions are specified as Gaussian wave packets in the Lua script
   (position, momentum, width). More complex initial states can be added later.
 
-- DEC-001: C++ / FFTW3 (double precision) / SDL3 / Dear ImGui. Rationale:
-  FFTW is the gold standard for FFTs, double precision needed to preserve
-  unitarity over thousands of timesteps, SDL3+ImGui already proven in the
-  fft project.
+- DEC-001: (revised) C++23 / SDL3 / Dear ImGui / GLES3. GPU solver via
+  VkFFT + OpenCL (primary), CPU fallback via FFTW float (fftwf).
+  Float32 throughout — psi_t = complex<float>. GPU operates in float32
+  natively, no conversion. Half the memory, adequate precision for
+  visualization. See DEC-010.
 
 - DEC-002: The solver is grid-rank-agnostic. It operates on an N-dimensional
   complex array. FFTW handles arbitrary-rank transforms. The interpretation
@@ -227,25 +227,22 @@ a black box.
   the solver. Narrows TBD-007: the solver itself doesn't care about the
   semantics, it just needs rank + dimensions + contiguous memory.
 
-- DEC-003: (revised) The Experiment (which owns all running Simulations) is
-  threaded through Panel→Widget→do_draw. Widgets receive the full set of
-  simulation states and decide what to render — one simulation, an overlay
-  of two, a difference, whatever. Widgets read, never mutate. Relates to
-  TBD-005.
+- DEC-003: (revised) Widgets receive SimContext, not Experiment. They
+  declare extraction requests and read results from PublishedState.
+  No direct access to Simulation or Experiment internals. Resolves
+  TBD-005. See doc/simthread.md for extraction pipeline details.
 
-- DEC-004: Solver runs on its own thread, decoupled from the UI. Double-buffer
-  scheme: solver writes to a back buffer, atomically swaps a pointer on step
-  completion. Widgets always read the front buffer — no locks, no contention.
-  Cost is 2× wavefunction memory; acceptable at 1D/2D scales, revisit if the
-  4D case demands it. Resolves TBD-001. Narrows TBD-005: the "read interface"
-  is simply a pointer to the front buffer, valid until the next swap.
+- DEC-004: (revised) Simulation decoupled from UI via SimContext async
+  facade. Currently synchronous (poll() on main thread). Triple-buffered
+  PublishedState for sim→UI data flow. Phase 2 will move to a real thread.
+  Resolves TBD-001. See doc/simthread.md.
 
-- DEC-006: FFT abstraction is handle-based. Caller creates an opaque plan
-  handle at setup (specifying rank and dimensions), then passes it to
-  execute() with data and direction. The handle is created once per grid
-  configuration and reused every step. The backend owns plan internals —
-  FFTW stuffs fftw_plan in there, a GPU backend would put cuFFT handles.
-  The solver never touches backend-specific types. Resolves TBD-006.
+- DEC-006: (revised) FFT abstraction is via Solver base class with
+  virtual step()/init(). CPU backend (solver_cpu.cpp) uses fftwf plans.
+  GPU backend (solver_gpu.cpp) uses VkFFT + OpenCL. For rank > 3,
+  GPU decomposes into batched 1D + transpose + batched 3D (VkFFT caps
+  at 3D). Solver also owns extraction kernels (slices, marginals,
+  norm reduction). Resolves TBD-006.
 
 - DEC-009: Boundary conditions. FFT imposes periodicity (pacman wraparound).
   Default is periodic. Absorbing boundaries are available as a Lua-configurable
@@ -259,27 +256,27 @@ a black box.
 - DEC-005: SI units throughout. No natural units, no grid units. Positions in
   meters (displayed as nm/μm by humanize()), potentials in eV, time in seconds
   (displayed as fs/ps), mass in kg, momentum in kg·m/s. The Schrödinger
-  equation is evaluated with the real physical constants ℏ and m. Double
-  precision handles the magnitudes fine — the tiny numbers (10⁻³⁴) appear as
-  ratios and cancel to give reasonable-scale results. Every axis, every
-  parameter, every readout must be in real physical units so the user develops
-  intuition for the actual scales involved. Resolves TBD-004.
+  equation is evaluated with the real physical constants ℏ and m. Float32
+  handles the magnitudes fine — the tiny numbers (10⁻³⁴) appear as ratios
+  and cancel to give reasonable-scale results. Resolves TBD-004.
+
+- DEC-010: Float32 throughout. psi_t = std::complex<float>. GPU is float32
+  natively — no double support on most consumer GPUs. Half the memory vs
+  double (critical for 4D: 64⁴ × 8 bytes = 134MB vs 268MB). Precision is
+  adequate for visualization and learning. Unitarity drift is visible over
+  very long runs — instructive, not a bug. FFTW uses fftwf (float) plans.
+  All buffers are std::vector<psi_t>, no fftw_malloc.
 
 ## Actionable Items
 
-- ACT-001: Define the Simulation class interface — what it holds (grid,
-  potential, FFTW plan, dt, step count) and what it exposes to widgets.
-  Blocked by TBD-005, TBD-006.
-
-- ACT-002: Implement split-step Fourier solver core. Input: grid + potential +
-  dt. Output: grid evolved by one step. Pure function on data, no UI coupling.
-
-- ACT-003: Wire simulation tick into the main loop (depends on TBD-001).
-
-- ACT-004: First real widget — 1D probability density plot. |ψ(x)|² as a
-  line graph. Proves the pipeline works end to end.
+(all current items done — see Done section)
 
 ## Done
+
+- ACT-001: Simulation class — grid, potential, solver, psi vectors, dt, step count. Exposes state via SimContext extraction pipeline.
+- ACT-002: Split-step Fourier solver — CPU (fftwf) and GPU (VkFFT+OpenCL) backends. Arbitrary rank. 4D decomposition for VkFFT 3D limit.
+- ACT-003: Simulation tick wired via SimContext::poll() on main thread.
+- ACT-004: Multiple visualization widgets — helix (3D complex), grid (2D density), info (status), trace (time series).
 
 ## Scratch
 

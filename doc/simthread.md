@@ -100,9 +100,10 @@ solver uses for stepping. This must be untangled.
 
 ## Decisions
 
-- DEC-001: UI posts wall_dt to sim thread via CmdAdvance each frame.
-  Sim thread uses it with timescale to compute step count. Sim thread
-  has no clock of its own. More testable — can feed synthetic wall_dt.
+- DEC-001: (revised) SimContext::poll(wall_dt) receives wall_dt as a
+  parameter and calls exp.advance(wall_dt) directly. CmdAdvance exists
+  in the command variant but is unused in the synchronous facade.
+  SimThread (Phase 2) will use CmdAdvance or its own wall clock.
 - DEC-002: (revised) CmdLoad carries a Setup struct (pure data from
   Lua ingestion), not source string or filename. UI owns Lua loading
   and filesystem I/O. Sim thread never touches files or Lua state.
@@ -174,9 +175,8 @@ publish. System stays working at every step during migration.
   This is the only interface widgets and app use.
 
 - ACT-005: Wire SimContext into App. App owns SimContext.
-  Load goes through `push(CmdLoad{source})`. Advance goes through
-  `push(CmdAdvance{wall_dt})`. App calls `poll()` each frame.
-  Widgets still read from Experiment directly (transitional).
+  Load goes through `push(CmdLoad{setup})`. Advance driven by
+  `poll(wall_dt)` directly. App calls `poll()` each frame.
 
 - ACT-006: Migrate widgets to read from `state()` instead of
   poking Simulation. One widget at a time: info → grid → trace → helix.

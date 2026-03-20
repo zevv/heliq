@@ -83,26 +83,23 @@ model (doc/model.md) into concrete types. Key constraints from the model:
   The FFTW implementation owns fftw_plan internally. The solver never
   sees FFTW types.
 
-- FR-005: Wavefunction data is a flat contiguous array of
-  std::complex<double>, allocated via fftw_malloc (alignment matters for
-  SIMD). Size is product of all axis dimensions. Accessed via precomputed
-  strides.
+- FR-005: (revised) Wavefunction data is a flat contiguous array of
+  psi_t (std::complex<float>), stored as std::vector<psi_t>. Size is
+  product of all axis dimensions. Grid strides are private — all access
+  goes through axis_view()/slice_view() to prevent raw indexing bugs.
 
 ## To Be Decided
 
 - TBD-001: ~~Intermediate representation between Lua and C++.~~ Resolved →
-  DEC-002. The Lua table *is* the intermediate representation. C++ walks
-  the validated table directly. No C++ struct zoo for potential types.
-  Simulation setup code reads from the table to sample potentials and
-  initial wavefunctions onto its grid.
+  DEC-002. Lua script produces a table, prelude.lua validates/transforms
+  it, loader.cpp converts to Setup struct (pure C++ data). Setup is the IR.
+  Simulation reads from Setup, never from Lua state.
 
 - TBD-002: ~~Potential representation.~~ Resolved → DEC-003.
 
-- TBD-003: Double buffer swap mechanism. Atomic pointer swap, or something
-  more structured? The solver thread writes to the back buffer, then swaps.
-  The UI thread reads the front buffer. Need to ensure the UI never reads
-  a partially-written buffer. A single atomic<int> ping-ponging between 0
-  and 1 is probably sufficient.
+- TBD-003: ~~Double buffer swap mechanism.~~ Resolved: triple-buffered
+  PublishedState (model/triplebuf.hpp). Writer never blocks, reader
+  always gets latest. See doc/simthread.md.
 
 - TBD-004: ~~Where do physical constants live?~~ Resolved → DEC-004.
 
@@ -113,25 +110,23 @@ model (doc/model.md) into concrete types. Key constraints from the model:
 
 ## Decisions
 
-- DEC-002: Lua is embedded (liblua linked, lua_State in-process). Pipeline:
-  user script runs and returns a table → our Lua transform/validation
-  scripts process that table (sanity checks, unit conversions, expanding
-  shorthand, computing derived values) → C++ traverses the final clean
-  table. All in one lua_State. Lua state may be discarded after ingestion
-  or kept alive (TBD-005). We ship a small Lua library of validation/transform
-  functions alongside the binary.
+- DEC-002: (revised) Lua is embedded (liblua linked, lua_State in-process).
+  Pipeline: user script runs → prelude.lua validates, transforms, computes
+  defaults (dt, timescale, Nyquist checks) → loader.cpp traverses the Lua
+  table and builds a Setup struct (pure C++ data, setup.hpp). Lua state
+  discarded after ingestion. Setup is the single IR between Lua and model.
+  Keeping Lua alive is deferred (TBD-005).
 
-- DEC-001: C++23. `unique_ptr` for the ownership graph (Experiment→Simulation,
-  Simulation→buffers) and anywhere error paths could leak. Raw pointers for
-  non-owning references (widget receives Experiment&). No `shared_ptr` — if
-  ownership is ambiguous, fix the design. `fftw_malloc`/`fftw_free` for
-  wavefunction and potential arrays (SIMD alignment). Resolves nothing,
-  constrains everything.
+- DEC-001: (revised) C++23. `unique_ptr` for the ownership graph
+  (Experiment→Simulation, Simulation→Solver). No `shared_ptr`.
+  Wavefunction/potential arrays are std::vector<psi_t> — no fftw_malloc
+  (GPU backend manages its own device buffers). Widgets receive
+  SimContext&, not raw Experiment/Simulation references.
 
-- DEC-003: Potential is complex<double>* from the start, same shape as the
-  grid. Real part is the physical potential (barriers, wells). Imaginary
-  part is the absorbing boundary layer (zero in the interior). Spin-matrix
-  potential is a future concern, refactor when needed.
+- DEC-003: (revised) Potential is std::vector<psi_t> (complex<float>),
+  same shape as the grid. Real part is the physical potential (barriers,
+  wells). Imaginary part is the absorbing boundary layer (zero in the
+  interior). Spin-matrix potential is a future concern.
 
 - DEC-004: Physical constants are constexpr in a header (constants.hpp).
   Universal constants only: hbar, eV, elementary_charge. Particle-specific
@@ -143,15 +138,16 @@ model (doc/model.md) into concrete types. Key constraints from the model:
 
 ## Actionable Items
 
-- ACT-001: Define Grid struct and axis descriptors.
-- ACT-002: Define FFT backend interface (Plan, forward, inverse).
-- ACT-003: Define Simulation class — members, lifetime, interface to widgets.
-- ACT-004: Define Experiment class — owns Simulations, holds definition, clock.
-- ACT-005: Physical constants header.
-- ACT-006: Rename Simulation& → Experiment& in the panel/widget call chain
-  (currently simulation.hpp is an empty placeholder).
+(all current items done — see Done section)
 
 ## Done
+
+- ACT-001: Grid struct (grid.hpp) — N-dimensional, private strides, axis_view/slice_view accessors.
+- ACT-002: Solver base class (solver.hpp) — virtual step/init, CPU and GPU backends.
+- ACT-003: Simulation class (simulation.hpp) — owns psi, potential, solver, grid, configspace.
+- ACT-004: Experiment class (experiment.hpp) — owns N simulations, advance loop, timescale.
+- ACT-005: Physical constants (constants.hpp) — hbar, eV, elementary_charge as constexpr.
+- ACT-006: Widget interface uses SimContext, not Simulation/Experiment references.
 
 ## Scratch
 
@@ -165,12 +161,11 @@ into FR/TBD/ACT entries, and confer with the user when needed.
   differs from defaults. Our validation/transform pass fills in derived
   values and catches errors. The library is just Lua — user can read it,
   override it, extend it.
-- fftw_malloc required for SIMD alignment — fftw_plan_dft will use SSE/AVX
-  if memory is 16/32-byte aligned. Regular new/malloc may not be.
-- FFTW_MEASURE at plan creation time — takes seconds but produces faster
-  plans than FFTW_ESTIMATE. Run once at Simulation setup.
-- the Lua→C++ boundary: Lua scripts produce a description, C++ consumes it.
-  The description is pure data — no Lua state kept after experiment setup.
-  Or do we want live Lua for time-dependent potentials later?
-- Grid does not own data — it's a descriptor. Multiple buffers (front/back,
-  potential, initial state snapshot) share the same Grid descriptor.
+- FFTW wisdom saved/loaded from ~/.cache/heliq/fftwf_wisdom. FFTW_MEASURE
+  on first run, fast on subsequent.
+- GPU solver uses VkFFT + OpenCL. CPU fallback uses fftwf. Both float32.
+- Lua→C++ boundary: script → prelude.lua validation → loader.cpp → Setup
+  struct. Lua state discarded after ingestion. Time-dependent potentials
+  would require keeping it alive (model TBD-005 in data.md).
+- Grid does not own data — it's a descriptor. Simulation owns psi and
+  potential vectors. ConfigSpace maps particles to grid axes.
