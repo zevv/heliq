@@ -86,25 +86,31 @@ __kernel void extract_slice_2d(__global const float2 *psi, __global float2 *out,
 
 // compute 1D marginal: one work item per output point
 // each work item sums |psi|^2 and psi over all other axes for its i
+// 2D dispatch: (n, REDUCE_WG) work items
+// dim 0 = output pixel, dim 1 = reduction workers
+// each worker handles a stripe of hidden_count, then local reduction
+#define REDUCE_WG 256
 __kernel void marginal_1d(__global const float2 *psi, __global float *out,
                            __global float2 *out_coherent,
                            uint total,
                            uint stride,
                            uint n,
-                           uint hidden_count,  // product of other axis sizes
-                           __constant uint *hidden_strides,  // stride per hidden axis
-                           __constant uint *hidden_sizes,    // size per hidden axis
+                           uint hidden_count,
+                           __constant uint *hidden_strides,
+                           __constant uint *hidden_sizes,
                            uint n_hidden)
 {
     uint i = get_global_id(0);
+    uint rid = get_local_id(1);
+    uint rsize = get_local_size(1);
     if(i >= n) return;
 
     uint base = i * stride;
     float sum = 0;
     float2 coh = (float2)(0, 0);
 
-    // iterate over all combinations of hidden axes
-    for(uint h = 0; h < hidden_count; h++) {
+    // each worker handles a stripe of the hidden space
+    for(uint h = rid; h < hidden_count; h += rsize) {
         uint offset = base;
         uint tmp = h;
         for(uint d = 0; d < n_hidden; d++) {
@@ -117,32 +123,51 @@ __kernel void marginal_1d(__global const float2 *psi, __global float *out,
         coh += v;
     }
 
-    out[i] = sum;
-    out_coherent[i] = coh;
+    // local reduction across workers
+    __local float scratch[REDUCE_WG];
+    __local float2 scratch_coh[REDUCE_WG];
+    scratch[rid] = sum;
+    scratch_coh[rid] = coh;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    for(uint s = rsize / 2; s > 0; s >>= 1) {
+        if(rid < s) {
+            scratch[rid] += scratch[rid + s];
+            scratch_coh[rid] += scratch_coh[rid + s];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    if(rid == 0) {
+        out[i] = scratch[0];
+        out_coherent[i] = scratch_coh[0];
+    }
 }
 
-// compute 2D marginal: one work item per output pixel
-// each work item sums |psi|^2 and psi over all hidden axes for its (ix, iy)
+// 3D dispatch: (nx, ny, REDUCE_WG_2D) work items
+// dim 0,1 = output pixel, dim 2 = reduction workers
+#define REDUCE_WG_2D 64
 __kernel void marginal_2d(__global const float2 *psi, __global float *out,
                            __global float2 *out_coherent,
                            uint total,
                            uint stride_x, uint stride_y,
                            uint nx, uint ny,
-                           uint hidden_count,  // product of hidden axis sizes
-                           __constant uint *hidden_strides,  // stride per hidden axis
-                           __constant uint *hidden_sizes,    // size per hidden axis
+                           uint hidden_count,
+                           __constant uint *hidden_strides,
+                           __constant uint *hidden_sizes,
                            uint n_hidden)
 {
     uint ix = get_global_id(0);
     uint iy = get_global_id(1);
+    uint rid = get_local_id(2);
+    uint rsize = get_local_size(2);
     if(ix >= nx || iy >= ny) return;
 
     uint base = ix * stride_x + iy * stride_y;
     float sum = 0;
     float2 coh = (float2)(0, 0);
 
-    // iterate over all combinations of hidden axes
-    for(uint h = 0; h < hidden_count; h++) {
+    for(uint h = rid; h < hidden_count; h += rsize) {
         uint offset = base;
         uint tmp = h;
         for(uint d = 0; d < n_hidden; d++) {
@@ -155,8 +180,24 @@ __kernel void marginal_2d(__global const float2 *psi, __global float *out,
         coh += v;
     }
 
-    out[ix * ny + iy] = sum;
-    out_coherent[ix * ny + iy] = coh;
+    __local float scratch[REDUCE_WG_2D];
+    __local float2 scratch_coh[REDUCE_WG_2D];
+    scratch[rid] = sum;
+    scratch_coh[rid] = coh;
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+    for(uint s = rsize / 2; s > 0; s >>= 1) {
+        if(rid < s) {
+            scratch[rid] += scratch[rid + s];
+            scratch_coh[rid] += scratch_coh[rid + s];
+        }
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+
+    if(rid == 0) {
+        out[ix * ny + iy] = scratch[0];
+        out_coherent[ix * ny + iy] = scratch_coh[0];
+    }
 }
 
 // parallel reduction for total probability
@@ -761,9 +802,10 @@ void GpuSolver::read_marginal_1d(const Grid &grid, int axis, float *out, psi_t *
 	clSetKernelArg(m->k_marginal_1d, 8, sizeof(cl_mem), &d_hidden_sizes);
 	clSetKernelArg(m->k_marginal_1d, 9, sizeof(cl_uint), &n_hidden);
 
-	size_t global = ((n + 255) / 256) * 256;
-	size_t local = 256;
-	clEnqueueNDRangeKernel(m->queue, m->k_marginal_1d, 1, nullptr, &global, &local, 0, nullptr, nullptr);
+	size_t global2[2] = { n, 256 };
+	size_t local2[2] = { 1, 256 };
+
+	clEnqueueNDRangeKernel(m->queue, m->k_marginal_1d, 2, nullptr, global2, local2, 0, nullptr, nullptr);
 
 	clEnqueueReadBuffer(m->queue, m->d_marginal_out, CL_TRUE, 0, out_bytes, out, 0, nullptr, nullptr);
 	if(coherent)
@@ -832,9 +874,10 @@ void GpuSolver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *ou
 	clSetKernelArg(m->k_marginal_2d, 10, sizeof(cl_mem), &d_hidden_sizes);
 	clSetKernelArg(m->k_marginal_2d, 11, sizeof(cl_uint), &n_hidden);
 
-	size_t global2d[2] = { ((nx + 15) / 16) * 16, ((ny + 15) / 16) * 16 };
-	size_t local2d[2] = { 16, 16 };
-	clEnqueueNDRangeKernel(m->queue, m->k_marginal_2d, 2, nullptr, global2d, local2d, 0, nullptr, nullptr);
+	size_t global3d[3] = { nx, ny, 64 };
+	size_t local3d[3] = { 1, 1, 64 };
+
+	clEnqueueNDRangeKernel(m->queue, m->k_marginal_2d, 3, nullptr, global3d, local3d, 0, nullptr, nullptr);
 
 	clEnqueueReadBuffer(m->queue, m->d_marginal_out, CL_TRUE, 0, out_bytes, out, 0, nullptr, nullptr);
 	if(coherent)

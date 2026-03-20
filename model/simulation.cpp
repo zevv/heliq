@@ -173,11 +173,33 @@ void Simulation::read_slice_2d(int ax_x, int ax_y, const int *cursor, psi_t *out
 void Simulation::read_marginal_1d(int axis, float *out, psi_t *coherent)
 {
 	m_solver->read_marginal_1d(grid, axis, out, coherent);
+
+	// scale by hidden volume element so marginal is in same units as slice
+	double dv_hidden = 1.0;
+	for(int d = 0; d < grid.rank; d++)
+		if(d != axis) dv_hidden *= grid.axes[d].dx();
+	int n = grid.axes[axis].points;
+	float scale = (float)dv_hidden;
+	for(int i = 0; i < n; i++) out[i] *= scale;
+	if(coherent) {
+		for(int i = 0; i < n; i++) coherent[i] *= scale;
+	}
 }
 
 void Simulation::read_marginal_2d(int ax_x, int ax_y, float *out, psi_t *coherent)
 {
 	m_solver->read_marginal_2d(grid, ax_x, ax_y, out, coherent);
+
+	// scale by hidden volume element so marginal is in same units as slice
+	double dv_hidden = 1.0;
+	for(int d = 0; d < grid.rank; d++)
+		if(d != ax_x && d != ax_y) dv_hidden *= grid.axes[d].dx();
+	int n = grid.axes[ax_x].points * grid.axes[ax_y].points;
+	float scale = (float)dv_hidden;
+	for(int i = 0; i < n; i++) out[i] *= scale;
+	if(coherent) {
+		for(int i = 0; i < n; i++) coherent[i] *= scale;
+	}
 }
 
 
