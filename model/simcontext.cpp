@@ -73,7 +73,11 @@ void SimContext::handle(SimCommand &cmd)
 				sim->set_dt(c.dt);
 		}
 		else if constexpr (std::is_same_v<T, CmdSetTimescale>) {
-			exp.timescale = c.ts;
+			double sign = c.ts < 0 ? -1.0 : 1.0;
+			double mag = fabs(c.ts);
+			if(mag < 1e-30) mag = fabs(exp.timescale);
+			if(mag < 1e-30) mag = 1e-15;
+			exp.timescale = sign * mag;
 		}
 		else if constexpr (std::is_same_v<T, CmdSetRunning>) {
 			m_impl->st.running = c.run;

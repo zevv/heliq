@@ -61,7 +61,7 @@ void App::load()
 	if(auto n = cr.find("experiment")) {
 		double ts = m_ctx.state().timescale;
 		n->read("timescale", ts);
-		m_ctx.push(CmdSetTimescale{fabs(ts)});
+		if(fabs(ts) > 0) m_ctx.push(CmdSetTimescale{fabs(ts)});
 		double dt = m_ctx.state().dt;
 		n->read("dt", dt);
 		if(dt > 0) m_ctx.push(CmdSetDt{dt});
@@ -95,7 +95,7 @@ void App::save()
 	Style::save(cw);
 	cw.pop();
 	cw.push("experiment");
-	cw.write("timescale", m_ctx.state().timescale);
+	cw.write("timescale", fabs(m_ctx.state().timescale));
 	if(m_ctx.state().dt > 0)
 		cw.write("dt", m_ctx.state().dt);
 	for(int d = 0; d < MAX_RANK; d++) {
