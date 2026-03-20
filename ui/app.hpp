@@ -38,7 +38,7 @@ private:
     bool m_resize{true};
     int m_w{800};
     int m_h{600};
-    int m_redraw{1};
+    int m_redraw{2};
 
     ImFont *m_font{nullptr};
     std::string m_script;

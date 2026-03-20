@@ -359,20 +359,23 @@ void App::run()
 	bool done = false;
 	while (!done)
 	{
+		// idle: block until event; active: poll. drain all pending.
 		SDL_Event event;
-		while (SDL_PollEvent(&event)) {
+		if(m_redraw <= 0) {
+			SDL_WaitEvent(nullptr);
+			m_redraw = 2;
+		}
+		while(SDL_PollEvent(&event)) {
 			ImGui_ImplSDL3_ProcessEvent(&event);
-			if (event.type == SDL_EVENT_QUIT)
-				done = true;
-			if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && 
+			if(event.type == SDL_EVENT_QUIT) done = true;
+			if(event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+				event.window.windowID == SDL_GetWindowID(m_win)) done = true;
+			if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_Q) done = true;
+			if(event.type == SDL_EVENT_WINDOW_RESIZED &&
 				event.window.windowID == SDL_GetWindowID(m_win))
-				done = true;
-			if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_Q)
-				done = true;
-			if(event.type == SDL_EVENT_WINDOW_RESIZED && 
-			   event.window.windowID == SDL_GetWindowID(m_win))
 				resize_window(event.window.data1, event.window.data2);
 		}
+		if(done) break;
 
 		// pump model: drain commands, advance, extract, publish
 		double wall_dt = 1.0 / ImGui::GetIO().Framerate;
@@ -380,6 +383,12 @@ void App::run()
 		m_ctx.poll(wall_dt);
 
 		auto &st = m_ctx.state();
+
+		// sim running → stay active
+		if(st.running) m_redraw = 2;
+
+		// draw first — NewFrame() must run before IsKeyPressed queries
+		draw();
 
 		// spacebar to toggle play/pause
 		if(ImGui::IsKeyPressed(ImGuiKey_Space))
@@ -421,8 +430,6 @@ void App::run()
 			}
 		}
 
-
-
 		// Ctrl+0/+/- for UI scale
 		bool ctrl = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
 		if(ctrl && ImGui::IsKeyPressed(ImGuiKey_0))
@@ -444,7 +451,7 @@ void App::run()
 		if(ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !st.running)
 			m_ctx.push(CmdSingleStep{});
 
-		draw();
+		m_redraw--;
 	}
 }
 
