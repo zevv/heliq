@@ -1,47 +1,50 @@
 #pragma once
 
+#include <thread>
+#include <atomic>
 #include "simtypes.hpp"
 #include "simqueue.hpp"
 #include "triplebuf.hpp"
 
-// Async API facade for the simulation model.
+// Async simulation context. Owns model state on a dedicated thread.
+// UI communicates via command queue (push) and triple-buffered state (state).
 //
-// All widget/app access to the model goes through this class.
-// The model internals (Experiment, Simulation, Solver) are hidden.
-//
-// PublishedState is triple-buffered. Model writes to write_buf,
-// publishes via atomic swap. UI reads latest via read().
-// Ready for Phase 2 (sim thread) — no API change needed.
+// Lifecycle:
+//   SimContext ctx;       // thread starts
+//   ctx.push(CmdLoad{…});
+//   ...
+//   // destructor pushes CmdStop, joins thread
 
 class SimContext {
 public:
-	// UI → Model: fire-and-forget commands
+	SimContext();
+	~SimContext();
+
+	// UI → Sim: fire-and-forget commands
 	void push(SimCommand cmd) { m_cmds.push(std::move(cmd)); }
 
-	// UI → Model: declare what data widgets need this frame
+	// UI → Sim: declare extraction requests for this frame
 	void request(const ExtractionRequest &r) { m_requests.find_or_insert(r); }
 
-	// Main loop: call once per frame. Drains commands, steps simulation,
-	// fulfills extraction requests, publishes state.
-	void poll(double wall_dt);
+	// UI: call once per frame. Sends pending extraction requests to
+	// sim thread and swaps in latest published state.
+	void poll();
 
-	// UI reads: latest published state (always valid after first poll)
-	const PublishedState &state() { return *m_tbuf.read(); }
+	// UI: latest published state (always valid after first poll)
+	const PublishedState &state() { return m_state; }
 
 private:
-	void handle(SimCommand &cmd);
-	void extract();
-	void publish();
+	void run();  // sim thread entry point
 
 	SimCommandQueue m_cmds;
 	ExtractionSet m_requests{};
+	ExtractionSet m_prev_requests{};  // last sent, for change detection
 	TripleBuffer<PublishedState> m_tbuf;
+	PublishedState m_state{};  // UI-side copy, updated by poll()
 
-	// opaque model state — only accessed by simcontext.cpp
+	std::thread m_thread;
+	std::atomic<bool> m_stop{false};
+
 	struct Impl;
 	std::unique_ptr<Impl> m_impl;
-
-public:
-	SimContext();
-	~SimContext();
 };

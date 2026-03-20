@@ -381,7 +381,11 @@ void App::init(int argc, char **argv)
 		load_setup(m_script.c_str(), s, true);
 		m_ctx.push(CmdLoad{std::move(s)});
 	}
-	m_ctx.poll(0);
+	// wait for first state from sim thread
+	for(int i = 0; i < 100 && m_ctx.state().generation == 0; i++) {
+		SDL_Delay(10);
+		m_ctx.poll();
+	}
 	init_cursor();
 
 	m_root_panel = new Panel(Panel::Type::Root);
@@ -424,10 +428,8 @@ void App::run()
 		}
 		if(done) break;
 
-		// pump model: drain commands, advance, extract, publish
-		double wall_dt = 1.0 / ImGui::GetIO().Framerate;
-		if(wall_dt > 0.1) wall_dt = 1.0 / 60.0;  // clamp on first frame
-		m_ctx.poll(wall_dt);
+		// read latest state from sim thread
+		m_ctx.poll();
 
 		auto &st = m_ctx.state();
 

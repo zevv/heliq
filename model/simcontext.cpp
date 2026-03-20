@@ -1,129 +1,200 @@
 #include "simcontext.hpp"
 #include "experiment.hpp"
+#include <SDL3/SDL_events.h>
 #include <cstdio>
+#include <chrono>
 #include <memory>
+
+// SDL user event to wake main loop when new state is published
+static Uint32 g_wake_event = 0;
+
+static void push_wake_event()
+{
+	if(!g_wake_event) return;
+	SDL_Event ev{};
+	ev.type = g_wake_event;
+	SDL_PushEvent(&ev);
+}
+
 
 struct SimContext::Impl {
 	Experiment exp{};
 	int generation{};
 	int last_published_gen{-1};
-	PublishedState st{};  // canonical state, copied to triple buffer on publish
+	PublishedState st{};
+	ExtractionSet requests{};
+
+	void extract();
+	void publish();
 };
 
-SimContext::SimContext() : m_impl(std::make_unique<Impl>()) {}
-SimContext::~SimContext() = default;
 
-
-void SimContext::poll(double wall_dt)
+SimContext::SimContext() : m_impl(std::make_unique<Impl>())
 {
-	auto &exp = m_impl->exp;
-	auto &st = m_impl->st;
+	if(!g_wake_event)
+		g_wake_event = SDL_RegisterEvents(1);
+	m_thread = std::thread([this]{ run(); });
+}
 
-	// drain all pending commands
-	m_cmds.drain([&](SimCommand cmd) { handle(cmd); });
 
-	// advance if running
-	if(st.running && !exp.simulations.empty()) {
-		exp.running = true;
-		exp.advance(wall_dt);
+SimContext::~SimContext()
+{
+	m_cmds.push(CmdStop{});
+	m_cmds.wake();
+	if(m_thread.joinable())
+		m_thread.join();
+}
+
+
+void SimContext::poll()
+{
+	// send extraction requests only when they changed
+	if(!(m_requests == m_prev_requests)) {
+		m_cmds.push(CmdExtract{m_requests});
+		m_prev_requests = m_requests;
 	}
-
-	// extract and publish
-	if(!exp.simulations.empty()) {
-		extract();
-		publish();
-	}
-
-	// publish to triple buffer
-	m_tbuf.write_buf() = m_impl->st;
-	m_tbuf.publish();
-
-	// clear requests for next frame
 	m_requests = {};
+
+	// swap in latest published state
+	auto *p = m_tbuf.read();
+	if(p) m_state = *p;
 }
 
 
-void SimContext::handle(SimCommand &cmd)
+// --- sim thread ---
+
+void SimContext::run()
 {
-	auto &exp = m_impl->exp;
+	using clock = std::chrono::steady_clock;
+	auto prev = clock::now();
 
-	std::visit([&](auto &c) {
-		using T = std::decay_t<decltype(c)>;
+	while(!m_stop.load(std::memory_order_relaxed)) {
+		auto &exp = m_impl->exp;
+		auto &st = m_impl->st;
 
-		if constexpr (std::is_same_v<T, CmdLoad>) {
-			if(exp.load(std::move(c.setup))) {
-				m_impl->generation++;
-			} else {
-				m_impl->st.error = "load failed";
+		// drain commands
+		bool did_drain = false;
+		m_cmds.drain([&](SimCommand cmd) {
+			did_drain = true;
+			std::visit([&](auto &c) {
+				using T = std::decay_t<decltype(c)>;
+
+				if constexpr (std::is_same_v<T, CmdStop>) {
+					m_stop.store(true, std::memory_order_relaxed);
+				}
+				else if constexpr (std::is_same_v<T, CmdLoad>) {
+					if(exp.load(std::move(c.setup))) {
+						m_impl->generation++;
+					} else {
+						st.error = "load failed";
+					}
+					st.running = false;
+					st.generation = m_impl->generation;
+				}
+				else if constexpr (std::is_same_v<T, CmdAdvance>) {
+					// ignored — sim thread uses its own wall clock
+				}
+				else if constexpr (std::is_same_v<T, CmdSingleStep>) {
+					for(auto &sim : exp.simulations)
+						sim->step();
+					if(!exp.simulations.empty())
+						exp.sim_time = exp.simulations[0]->time();
+				}
+				else if constexpr (std::is_same_v<T, CmdSetDt>) {
+					for(auto &sim : exp.simulations)
+						sim->set_dt(c.dt);
+				}
+				else if constexpr (std::is_same_v<T, CmdSetTimescale>) {
+					double sign = c.ts < 0 ? -1.0 : 1.0;
+					double mag = fabs(c.ts);
+					if(mag < 1e-30) mag = fabs(exp.timescale);
+					if(mag < 1e-30) mag = 1e-15;
+					exp.timescale = sign * mag;
+				}
+				else if constexpr (std::is_same_v<T, CmdSetRunning>) {
+					st.running = c.run;
+					exp.running = c.run;
+				}
+				else if constexpr (std::is_same_v<T, CmdMeasure>) {
+					for(auto &sim : exp.simulations)
+						sim->measure(c.axis);
+				}
+				else if constexpr (std::is_same_v<T, CmdDecohere>) {
+					for(auto &sim : exp.simulations)
+						sim->decohere(c.axis);
+				}
+				else if constexpr (std::is_same_v<T, CmdSetAbsorb>) {
+					for(auto &sim : exp.simulations) {
+						sim->set_absorbing_boundary(c.on);
+						sim->absorb_width = c.width;
+						sim->absorb_strength = c.strength;
+						sim->recompute_boundary();
+					}
+				}
+				else if constexpr (std::is_same_v<T, CmdExtract>) {
+					m_impl->requests = c.requests;
+				}
+			}, cmd);
+		});
+
+		if(m_stop.load(std::memory_order_relaxed)) break;
+
+		// advance using sim thread's own wall clock
+		bool did_work = false;
+		{
+			auto now = clock::now();
+			double wdt = std::chrono::duration<double>(now - prev).count();
+			prev = now;
+			if(wdt > 0.1) wdt = 1.0 / 60.0;  // clamp on resume from sleep
+			if(st.running && !exp.simulations.empty()) {
+				exp.running = true;
+				size_t before = exp.simulations[0]->step_count;
+				exp.advance(wdt);
+				did_work = (exp.simulations[0]->step_count != before);
 			}
-			m_impl->st.running = false;
-			m_impl->st.generation = m_impl->generation;
 		}
-		else if constexpr (std::is_same_v<T, CmdAdvance>) {
-			// handled in poll() via exp.advance()
-		}
-		else if constexpr (std::is_same_v<T, CmdSingleStep>) {
-			for(auto &sim : exp.simulations)
-				sim->step();
-			if(!exp.simulations.empty())
-				exp.sim_time = exp.simulations[0]->time();
-		}
-		else if constexpr (std::is_same_v<T, CmdSetDt>) {
-			for(auto &sim : exp.simulations)
-				sim->set_dt(c.dt);
-		}
-		else if constexpr (std::is_same_v<T, CmdSetTimescale>) {
-			double sign = c.ts < 0 ? -1.0 : 1.0;
-			double mag = fabs(c.ts);
-			if(mag < 1e-30) mag = fabs(exp.timescale);
-			if(mag < 1e-30) mag = 1e-15;
-			exp.timescale = sign * mag;
-		}
-		else if constexpr (std::is_same_v<T, CmdSetRunning>) {
-			m_impl->st.running = c.run;
-			exp.running = c.run;
-		}
-		else if constexpr (std::is_same_v<T, CmdMeasure>) {
-			for(auto &sim : exp.simulations)
-				sim->measure(c.axis);
-		}
-		else if constexpr (std::is_same_v<T, CmdDecohere>) {
-			for(auto &sim : exp.simulations)
-				sim->decohere(c.axis);
-		}
-		else if constexpr (std::is_same_v<T, CmdSetAbsorb>) {
-			for(auto &sim : exp.simulations) {
-				sim->set_absorbing_boundary(c.on);
-				sim->absorb_width = c.width;
-				sim->absorb_strength = c.strength;
-				sim->recompute_boundary();
+
+		// extract + publish only when state changed
+		if(did_work || did_drain) {
+			if(!exp.simulations.empty()) {
+				m_impl->extract();
+				m_impl->publish();
+				m_tbuf.write_buf() = m_impl->st;
+				m_tbuf.publish();
+				push_wake_event();
 			}
 		}
-	}, cmd);
+
+		// pace: running → yield briefly; idle → block until command arrives
+		if(st.running) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		} else {
+			prev = clock::now();  // reset clock so next wake doesn't see huge dt
+			m_cmds.wait();
+		}
+	}
 }
 
 
-void SimContext::extract()
+// --- extraction (runs on sim thread) ---
+
+void SimContext::Impl::extract()
 {
-	auto &exp = m_impl->exp;
 	auto &sim = *exp.simulations[0];
-	m_impl->st.n_results = 0;
+	st.n_results = 0;
 
-	for(int i = 0; i < m_requests.count; i++) {
-		auto &req = m_requests.req[i];
-		auto &res = m_impl->st.results[m_impl->st.n_results];
+	for(int i = 0; i < requests.count; i++) {
+		auto &req = requests.req[i];
+		auto &res = st.results[st.n_results];
 
-		// count free axes
 		int n_axes = 0;
 		for(int a = 0; a < MAX_RANK && req.axes[a] >= 0; a++)
 			n_axes++;
 		if(n_axes == 0) continue;
 
-		// copy request info
 		for(int a = 0; a < MAX_RANK; a++) res.axes[a] = req.axes[a];
 		res.marginal = req.marginal;
 
-		// shape
 		for(int a = 0; a < n_axes; a++)
 			res.shape[a] = sim.grid.axes[req.axes[a]].points;
 		for(int a = n_axes; a < MAX_RANK; a++)
@@ -138,7 +209,6 @@ void SimContext::extract()
 		res.coherent.clear();
 
 		if(req.marginal) {
-			// |ψ|² marginal + coherent marginal ∫ψ
 			res.coherent.resize(total);
 			std::vector<float> marg(total);
 			if(n_axes == 1)
@@ -148,7 +218,6 @@ void SimContext::extract()
 			for(int j = 0; j < total; j++)
 				res.psi[j] = psi_t(marg[j], 0);
 
-			// max-projection of |V| over hidden axes
 			std::fill(res.pot.begin(), res.pot.end(), psi_t(0, 0));
 			{
 				const psi_t *V = sim.potential.data();
@@ -167,14 +236,12 @@ void SimContext::extract()
 				});
 			}
 		} else {
-			// psi slice
 			if(n_axes == 1)
 				sim.read_slice_1d(req.axes[0], req.cursor, res.psi.data());
 			else if(n_axes == 2)
 				sim.read_slice_2d(req.axes[0], req.axes[1], req.cursor,
 					res.psi.data());
 
-			// potential slice (CPU-side, cheap)
 			if(n_axes == 1) {
 				auto pot_view = sim.grid.axis_view(req.axes[0], req.cursor, sim.potential.data());
 				int idx = 0;
@@ -190,43 +257,39 @@ void SimContext::extract()
 			}
 		}
 
-		m_impl->st.n_results++;
+		st.n_results++;
 	}
 }
 
 
-void SimContext::publish()
+void SimContext::Impl::publish()
 {
-	auto &exp = m_impl->exp;
 	auto &sim = *exp.simulations[0];
 
-	m_impl->st.sim_time = exp.sim_time;
-	m_impl->st.step_count = sim.step_count;
-	m_impl->st.total_probability = sim.total_probability();
-	m_impl->st.phase_v = sim.max_potential_phase;
-	m_impl->st.phase_k = sim.max_kinetic_phase;
-	m_impl->st.dt = sim.dt;
-	m_impl->st.timescale = exp.timescale;
-	m_impl->st.generation = m_impl->generation;
-	m_impl->st.error.clear();
+	st.sim_time = exp.sim_time;
+	st.step_count = sim.step_count;
+	st.total_probability = sim.total_probability();
+	st.phase_v = sim.max_potential_phase;
+	st.phase_k = sim.max_kinetic_phase;
+	st.dt = sim.dt;
+	st.timescale = exp.timescale;
+	st.generation = generation;
+	st.error.clear();
 
 	for(int d = 0; d < sim.grid.rank; d++)
-		m_impl->st.k_nyquist_ratio[d] = sim.k_nyquist_ratio[d];
+		st.k_nyquist_ratio[d] = sim.k_nyquist_ratio[d];
 
-	m_impl->st.grid.rank = sim.grid.rank;
+	st.grid.rank = sim.grid.rank;
 	for(int d = 0; d < sim.grid.rank; d++)
-		m_impl->st.grid.axes[d] = sim.grid.axes[d];
-	m_impl->st.grid.cs = sim.cs;
+		st.grid.axes[d] = sim.grid.axes[d];
+	st.grid.cs = sim.cs;
 
-	// setup only changes on load, avoid per-frame copy
-	if(m_impl->st.generation != m_impl->last_published_gen) {
-		m_impl->st.setup = exp.setup;
-		m_impl->last_published_gen = m_impl->st.generation;
+	if(st.generation != last_published_gen) {
+		st.setup = exp.setup;
+		last_published_gen = st.generation;
 	}
 
-	m_impl->st.absorbing_boundary = sim.absorbing_boundary;
-	m_impl->st.absorb_width = sim.absorb_width;
-	m_impl->st.absorb_strength = sim.absorb_strength;
-
-	// TODO: marginal peaks from extraction results
+	st.absorbing_boundary = sim.absorbing_boundary;
+	st.absorb_width = sim.absorb_width;
+	st.absorb_strength = sim.absorb_strength;
 }

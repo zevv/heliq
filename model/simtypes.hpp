@@ -7,25 +7,6 @@
 #include "configspace.hpp"
 #include "setup.hpp"
 
-// --- Commands (UI → Sim) ---
-
-struct CmdAdvance      { double wall_dt; };
-struct CmdSingleStep   {};
-struct CmdSetDt        { double dt; };
-struct CmdSetTimescale { double ts; };
-struct CmdSetRunning   { bool run; };
-struct CmdMeasure      { int axis; };
-struct CmdDecohere     { int axis; };
-struct CmdSetAbsorb    { bool on; float width; float strength; };
-struct CmdLoad         { Setup setup; };
-
-using SimCommand = std::variant<
-	CmdAdvance, CmdSingleStep,
-	CmdSetDt, CmdSetTimescale, CmdSetRunning,
-	CmdMeasure, CmdDecohere, CmdSetAbsorb,
-	CmdLoad
->;
-
 // --- Extraction requests (UI → Sim, declarative) ---
 
 struct ExtractionRequest {
@@ -60,7 +41,35 @@ struct ExtractionSet {
 		req[count] = r;
 		return count++;
 	}
+
+	bool operator==(const ExtractionSet &o) const {
+		if(count != o.count) return false;
+		for(int i = 0; i < count; i++)
+			if(!(req[i] == o.req[i])) return false;
+		return true;
+	}
 };
+
+// --- Commands (UI → Sim) ---
+
+struct CmdAdvance      { double wall_dt; };
+struct CmdSingleStep   {};
+struct CmdSetDt        { double dt; };
+struct CmdSetTimescale { double ts; };
+struct CmdSetRunning   { bool run; };
+struct CmdMeasure      { int axis; };
+struct CmdDecohere     { int axis; };
+struct CmdSetAbsorb    { bool on; float width; float strength; };
+struct CmdLoad         { Setup setup; };
+struct CmdExtract      { ExtractionSet requests; };
+struct CmdStop         {};
+
+using SimCommand = std::variant<
+	CmdAdvance, CmdSingleStep,
+	CmdSetDt, CmdSetTimescale, CmdSetRunning,
+	CmdMeasure, CmdDecohere, CmdSetAbsorb,
+	CmdLoad, CmdExtract, CmdStop
+>;
 
 // --- Extraction results (Sim → UI) ---
 // All fields always populated for every request.

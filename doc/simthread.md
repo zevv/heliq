@@ -100,10 +100,10 @@ solver uses for stepping. This must be untangled.
 
 ## Decisions
 
-- DEC-001: (revised) SimContext::poll(wall_dt) receives wall_dt as a
-  parameter and calls exp.advance(wall_dt) directly. CmdAdvance exists
-  in the command variant but is unused in the synchronous facade.
-  SimThread (Phase 2) will use CmdAdvance or its own wall clock.
+- DEC-001: (revised) SimContext owns a std::thread. Sim thread tracks
+  its own wall clock via steady_clock for advance pacing. CmdAdvance
+  exists in the command variant but is unused — sim thread free-runs
+  when running=true. poll() on UI side swaps triple buffer only.
 - DEC-002: (revised) CmdLoad carries a Setup struct (pure data from
   Lua ingestion), not source string or filename. UI owns Lua loading
   and filesystem I/O. Sim thread never touches files or Lua state.
@@ -189,11 +189,6 @@ publish. System stays working at every step during migration.
 Replace the synchronous `poll()` with a real thread. The API surface
 does not change — widgets don't know the difference.
 
-- ACT-008: SimThread replaces the guts of SimContext. `poll()` becomes
-  "swap in latest published state from triple buffer". Commands go to
-  the queue. Model free-runs on its own thread, lockstepped to wall
-  time via timescale, or max speed.
-
 - ACT-009: Replace all fprintf/printf logging with log macros
   across codebase.
 
@@ -206,6 +201,7 @@ does not change — widgets don't know the difference.
 - ACT-005: App wired to SimContext. Load, advance, transport all through push().
 - ACT-006: All widgets migrated to extraction pipeline (info, grid, helix, trace).
 - ACT-007: Direct Simulation/Experiment access removed from widgets. SimContext is sole interface.
+- ACT-008: Sim thread implemented. std::thread in SimContext, own wall clock, CmdExtract/CmdStop commands. poll() swaps triple buffer + sends extraction requests. SDL user event wakes main loop on new results.
 
 ## Scratch
 

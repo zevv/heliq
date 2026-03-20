@@ -232,10 +232,10 @@ a black box.
   No direct access to Simulation or Experiment internals. Resolves
   TBD-005. See doc/simthread.md for extraction pipeline details.
 
-- DEC-004: (revised) Simulation decoupled from UI via SimContext async
-  facade. Currently synchronous (poll() on main thread). Triple-buffered
-  PublishedState for sim→UI data flow. Phase 2 will move to a real thread.
-  Resolves TBD-001. See doc/simthread.md.
+- DEC-004: (revised) Simulation runs on a dedicated std::thread owned
+  by SimContext. Triple-buffered PublishedState for sim→UI data flow.
+  UI communicates via fire-and-forget command queue. SDL user event
+  wakes main loop on new results. Resolves TBD-001. See doc/simthread.md.
 
 - DEC-006: (revised) FFT abstraction is via Solver base class with
   virtual step()/init(). CPU backend (solver_cpu.cpp) uses fftwf plans.
