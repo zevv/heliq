@@ -323,7 +323,7 @@ void WidgetGrid::draw_cursor(SDL_Renderer *rend, const Grid &grid)
 	if(grid.rank < 2) return;
 
 	// update cursor from mouse
-	if(ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+	if(ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 		ImVec2 mp = ImGui::GetMousePos();
 		int gx, gy;
 		if(screen_to_grid(m_dst, m_grid_w, m_grid_h, mp.x, mp.y, gx, gy)) {
