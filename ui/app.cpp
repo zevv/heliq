@@ -196,7 +196,7 @@ int App::draw_topbar()
 	flags |= ImGuiWindowFlags_NoDecoration;
 
 	float pad = 2.0f * m_ui_scale;
-	float bar_h = ImGui::GetFontSize() + pad * 2;
+	float bar_h = ImGui::GetFrameHeight() + pad * 2;
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, pad));
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(1, 1));
@@ -205,16 +205,89 @@ int App::draw_topbar()
 	ImGui::SetNextWindowBgAlpha(1.0f);
 	ImGui::Begin("topbar", nullptr, flags);
 
-	float fps = ImGui::GetIO().Framerate;
-	ImGui::Text("FPS: %.0f", fps);
-
 	auto &st = m_ctx.state();
+	bool rev = st.timescale < 0;
+
+	// transport buttons
+	if(ImGui::Button(st.running ? "||##play" : "> ##play"))
+		m_ctx.push(CmdSetRunning{!st.running});
+	ImGui::SameLine();
+	if(ImGui::Button(rev ? "<<##dir" : ">>##dir"))
+		m_ctx.push(CmdSetTimescale{-st.timescale});
+	ImGui::SameLine();
+
+	// speed slider
+	float avail = ImGui::GetContentRegionAvail().x;
+	float slider_w = (avail - 200) * 0.5f;
+	if(slider_w < 80) slider_w = 80;
+	if(slider_w > 300) slider_w = 300;
+	ImGui::SetNextItemWidth(slider_w);
+	float log_ts = log10f(fabs(st.timescale));
+	float log_ts_def = log10f(fabs(st.setup.default_timescale));
+	char ts_label[64];
+	snprintf(ts_label, sizeof(ts_label), "speed: ");
+	humanize_unit(fabs(st.timescale), "s/s", ts_label + 7, sizeof(ts_label) - 7);
+	if(ImGui::SliderFloat("##speed", &log_ts, log_ts_def - 4, log_ts_def + 4, ts_label))
+		m_ctx.push(CmdSetTimescale{(rev ? -1.0 : 1.0) * pow(10.0, log_ts)});
+
+	// dt slider
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(slider_w);
+	float log_dt = log10f(fabs(st.dt));
+	float log_dt_def = (st.setup.default_dt > 0) ? log10f(st.setup.default_dt) : log_dt;
+	char dt_label[64];
+	snprintf(dt_label, sizeof(dt_label), "dt: ");
+	humanize_unit(fabs(st.dt), "s", dt_label + 4, sizeof(dt_label) - 4);
+	if(ImGui::SliderFloat("##dt", &log_dt, log_dt_def - 3, log_dt_def + 3, dt_label)) {
+		double new_dt = (st.dt < 0 ? -1.0 : 1.0) * pow(10.0, log_dt);
+		m_ctx.push(CmdSetDt{new_dt});
+	}
+
+	// auto-reset button
+	ImGui::SameLine();
+	if(ImGui::Button("A")) {
+		m_ctx.push(CmdSetTimescale{st.setup.default_timescale});
+		if(st.setup.default_dt > 0)
+			m_ctx.push(CmdSetDt{st.setup.default_dt});
+	}
+
+	// sim time, right-aligned
 	ImGui::SameLine();
 	char time_str[64];
 	humanize_unit(st.sim_time, "s", time_str, sizeof(time_str));
+	float time_w = ImGui::CalcTextSize(time_str).x + ImGui::CalcTextSize("t=").x;
+	float rx = ImGui::GetWindowWidth() - time_w - 8;
+	ImGui::SameLine(rx);
 	ImGui::Text("t=%s", time_str);
 
-	// right-aligned sanity checks
+	ImGui::End();
+	ImGui::PopStyleVar(3);
+	return (int)bar_h;
+}
+
+
+int App::draw_bottombar()
+{
+	ImGuiWindowFlags flags = 0;
+	flags |= ImGuiWindowFlags_NoCollapse;
+	flags |= ImGuiWindowFlags_NoMove;
+	flags |= ImGuiWindowFlags_NoResize;
+	flags |= ImGuiWindowFlags_NoTitleBar;
+	flags |= ImGuiWindowFlags_NoSavedSettings;
+	flags |= ImGuiWindowFlags_NoScrollbar;
+
+	float pad = 2.0f * m_ui_scale;
+	float bar_h = ImGui::GetFontSize() + pad * 2;
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, pad));
+	ImGui::SetNextWindowPos(ImVec2(0, m_h - bar_h));
+	ImGui::SetNextWindowSize(ImVec2(m_w, bar_h));
+	ImGui::SetNextWindowBgAlpha(1.0f);
+	ImGui::Begin("bottombar", nullptr, flags);
+
+	auto &st = m_ctx.state();
+	float fps = ImGui::GetIO().Framerate;
+	ImGui::Text("FPS: %.0f", fps);
+
 	if(st.grid.rank > 0) {
 		ImVec4 col_ok   = ImVec4(0.4, 0.8, 0.4, 1);
 		ImVec4 col_warn = ImVec4(0.9, 0.8, 0.2, 1);
@@ -266,32 +339,6 @@ int App::draw_topbar()
 		ImGui::SameLine(rx);
 		ImGui::TextColored(col_prob, "%s", prob_buf);
 	}
-
-	ImGui::End();
-	ImGui::PopStyleVar(3);
-	return (int)bar_h;
-}
-
-
-int App::draw_bottombar()
-{
-	ImGuiWindowFlags flags = 0;
-	flags |= ImGuiWindowFlags_NoCollapse;
-	flags |= ImGuiWindowFlags_NoMove;
-	flags |= ImGuiWindowFlags_NoResize;
-	flags |= ImGuiWindowFlags_NoTitleBar;
-	flags |= ImGuiWindowFlags_NoSavedSettings;
-	flags |= ImGuiWindowFlags_NoScrollbar;
-
-	float pad = 2.0f * m_ui_scale;
-	float bar_h = ImGui::GetFontSize() + pad * 2;
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, pad));
-	ImGui::SetNextWindowPos(ImVec2(0, m_h - bar_h));
-	ImGui::SetNextWindowSize(ImVec2(m_w, bar_h));
-	ImGui::SetNextWindowBgAlpha(1.0f);
-	ImGui::Begin("bottombar", nullptr, flags);
-
-	ImGui::Text("Quantum Simulator - Press Q to quit");
 
 	ImGui::End();
 	ImGui::PopStyleVar();
