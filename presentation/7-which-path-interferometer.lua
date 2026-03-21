@@ -1,5 +1,5 @@
 description("Mach-Zehnder Which-Path", [[
-Two particles in 2D — 4D configuration space (128x128x16x16).
+Two particles in 2D — 4D configuration space.
 
 Same Mach-Zehnder interferometer as 121, but with a heavy detector
 particle sitting on the left arm between BS1 and the left mirror.
@@ -17,13 +17,13 @@ info and see the correlation with the electron's output port.]])
 
 domain {
     { min = -4.0 * um, max =  4.0 * um, points = 128 },  -- x_A
-    { min = -5.0 * um, max =  6.5 * um, points = 128 },  -- y_A
-    { min = -2.0 * um, max =  2.0 * um, points =  8 },   -- x_B
-    { min = -1.0 * um, max =  1.0 * um, points =  4 },   -- y_B
+    { min = -5.0 * um, max =  6.5 * um, points =  64 },  -- y_A
+    { min = -2.0 * um, max =  2.0 * um, points =  16 },   -- x_B
+    { min = -1.0 * um, max =  1.0 * um, points =   8 },   -- y_B
 }
 
 electron = def_particle {
-    mass   = m_electron,
+    mass   = 1.0 * m_electron,
     charge = -e_charge,
 }
 
@@ -39,7 +39,7 @@ local momentum = math.sqrt(2 * m_electron * energy)
 particle(electron, {
     position = { -1.2 * um, -3.4 * um },
     momentum = { momentum * 0.707, momentum * 0.707 },
-    width    = { 0.4 * um, 0.6 * um },
+    width    = { 0.6 * um, 0.6 * um },
 })
 
 -- particle B: heavy detector, stationary, on the left arm path
@@ -68,14 +68,14 @@ local mirror_w = 0.15 * um
 
 -- left mirror
 barrier {
-    from = { -2.2 * um - mirror_w, -2.5 * um,  -db, -db },
+    from = { -2.2 * um - mirror_w, -2.3 * um,  -db, -db },
     to   = { -2.1 * um + mirror_w,  2.5 * um,   db,  db },
     height = mirror_h,
 }
 
 -- right mirror
 barrier {
-    from = { 2.1 * um - mirror_w, -2.5 * um,  -db, -db },
+    from = { 2.1 * um - mirror_w, -2.3 * um,  -db, -db },
     to   = { 2.2 * um + mirror_w,  2.5 * um,   db,  db },
     height = mirror_h,
 }

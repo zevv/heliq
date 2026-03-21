@@ -89,7 +89,7 @@ private:
 	void draw_absorb_boundary(SDL_Renderer *rend, const PublishedState &st, int tw);
 	void draw_cursor(SDL_Renderer *rend, const Grid &grid);
 	void dump_result(const ExtractionResult &res, int tw, int th);
-	SDL_FRect compute_display_rect(int tw, int th, float avail_x, float avail_y, float avail_w, float avail_h);
+	SDL_FRect compute_display_rect(const Axis &ax, const Axis &ay, float avail_x, float avail_y, float avail_w, float avail_h);
 
 	static constexpr int N_OVERLAYS = 3;
 	Overlay m_overlays[N_OVERLAYS]{};
@@ -383,18 +383,18 @@ void WidgetGrid::dump_result(const ExtractionResult &res, int tw, int th)
 }
 
 
-SDL_FRect WidgetGrid::compute_display_rect(int tw, int th, float avail_x, float avail_y, float avail_w, float avail_h)
+SDL_FRect WidgetGrid::compute_display_rect(const Axis &ax, const Axis &ay, float avail_x, float avail_y, float avail_w, float avail_h)
 {
 	float disp_w, disp_h;
-	if(th == 1) {
+	if(ay.points == 1) {
 		disp_w = avail_w * m_view_state.zoom;
 		disp_h = avail_h;
 	} else {
-		float tex_aspect = (float)tw / (float)th;
-		float base_scale = (avail_w / avail_h > tex_aspect) ? avail_h / th : avail_w / tw;
+		float phys_aspect = (float)((ax.max - ax.min) / (ay.max - ay.min));
+		float base_scale = (avail_w / avail_h > phys_aspect) ? avail_h : avail_w / phys_aspect;
 		float scale = base_scale * m_view_state.zoom;
-		disp_w = tw * scale;
-		disp_h = th * scale;
+		disp_w = phys_aspect * scale;
+		disp_h = scale;
 	}
 	float cx = avail_x + avail_w * 0.5f + m_view_state.pan_x;
 	float cy = avail_y + avail_h * 0.5f + m_view_state.pan_y;
@@ -451,7 +451,7 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 
 	m_grid_w = tw;
 	m_grid_h = th;
-	m_dst = compute_display_rect(tw, th, r.x, r.y + ctrl_h, r.w, r.h - ctrl_h);
+	m_dst = compute_display_rect(gm.axes[m_axis_x], gm.axes[m_axis_y], r.x, r.y + ctrl_h, r.w, r.h - ctrl_h);
 
 	// declare extraction request for next frame
 	bool want_marginal = m_marginal && gm.rank > 2;
