@@ -321,7 +321,7 @@ void WidgetTrace::draw_cursor(SDL_Renderer *rend, bool horiz)
 {
 	if(m_axis_points < 1) return;
 
-	if(ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+	if(ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
 		ImVec2 mp = ImGui::GetMousePos();
 		if(mp.x >= m_dst.x && mp.x < m_dst.x + m_dst.w &&
 		   mp.y >= m_dst.y && mp.y < m_dst.y + m_dst.h) {

@@ -6,10 +6,11 @@
 #include "log.hpp"
 
 
-bool Experiment::load(Setup new_setup)
+bool Experiment::load(Setup new_setup, bool reset)
 {
-	// preserve user-adjusted timescale and dt across reloads
-	bool is_reload = !simulations.empty();
+	// preserve user-adjusted timescale and dt across reloads (R key),
+	// but not when switching to a different experiment (reset=true)
+	bool is_reload = !reset && !simulations.empty();
 	double prev_timescale = timescale;
 	double prev_dt = is_reload ? simulations[0]->dt : 0;
 

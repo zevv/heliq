@@ -82,15 +82,16 @@ void SimContext::run()
 				if constexpr (std::is_same_v<T, CmdStop>) {
 					m_stop.store(true, std::memory_order_relaxed);
 				}
-				else if constexpr (std::is_same_v<T, CmdLoad>) {
-					if(exp.load(std::move(c.setup))) {
-						m_impl->generation++;
-					} else {
-						st.error = "load failed";
-					}
-					st.running = false;
-					st.generation = m_impl->generation;
+			else if constexpr (std::is_same_v<T, CmdLoad>) {
+				if(c.reset) m_impl->requests = {};
+				if(exp.load(std::move(c.setup), c.reset)) {
+					m_impl->generation++;
+				} else {
+					st.error = "load failed";
 				}
+				st.running = false;
+				st.generation = m_impl->generation;
+			}
 				else if constexpr (std::is_same_v<T, CmdAdvance>) {
 					// ignored — sim thread uses its own wall clock
 				}
@@ -191,6 +192,17 @@ void SimContext::Impl::extract()
 		for(int a = 0; a < MAX_RANK && req.axes[a] >= 0; a++)
 			n_axes++;
 		if(n_axes == 0) continue;
+
+		// validate request against current grid
+		bool valid = true;
+		for(int a = 0; a < n_axes; a++)
+			if(req.axes[a] >= sim.grid.rank) valid = false;
+		if(!req.marginal) {
+			for(int d = 0; d < sim.grid.rank; d++)
+				if(req.cursor[d] < 0 || req.cursor[d] >= sim.grid.axes[d].points)
+					valid = false;
+		}
+		if(!valid) continue;
 
 		for(int a = 0; a < MAX_RANK; a++) res.axes[a] = req.axes[a];
 		res.marginal = req.marginal;

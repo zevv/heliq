@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
+#include <algorithm>
 #include <SDL3/SDL.h>
 
 #include <imgui.h>
@@ -38,7 +39,7 @@ void App::config_fname(char *buf, size_t buflen)
 	mkdir(dir, 0755);
 
 	// derive session name from script basename (without extension)
-	const char *base = m_script.c_str();
+	const char *base = m_scripts[m_script_idx].c_str();
 	const char *slash = strrchr(base, '/');
 	if(slash) base = slash + 1;
 	char name[64];
@@ -132,6 +133,47 @@ void App::init_cursor()
 			m_view.cursor[ax] = idx;
 		}
 	}
+
+	// clamp all cursors to current grid
+	for(int d = 0; d < MAX_RANK; d++) {
+		int max = (d < gm.rank) ? gm.axes[d].points - 1 : 0;
+		if(m_view.cursor[d] > max) m_view.cursor[d] = max;
+		if(m_view.cursor[d] < 0) m_view.cursor[d] = 0;
+	}
+}
+
+
+void App::switch_experiment(int idx)
+{
+	if(idx < 0 || idx >= (int)m_scripts.size() || idx == m_script_idx)
+		return;
+	if(m_root_panel) save();
+	m_script_idx = idx;
+
+	int gen = m_ctx.state().generation;
+	Setup s{};
+	load_setup(m_scripts[m_script_idx].c_str(), s, true);
+	m_ctx.push(CmdLoad{std::move(s), true});
+	for(int i = 0; i < 100 && m_ctx.state().generation == gen; i++) {
+		SDL_Delay(10);
+		m_ctx.poll();
+	}
+
+	delete m_root_panel;
+	m_root_panel = new Panel(Panel::Type::Root);
+	load();
+	init_cursor();
+	if(m_root_panel->nkids() == 0) {
+		Panel *split = new Panel(Panel::Type::SplitH);
+		Panel *left = new Panel(Panel::Type::SplitV);
+		Panel *right = new Panel(Panel::Type::SplitV);
+		left->add(Widgets::create_widget("helix"));
+		right->add(Widgets::create_widget("info"));
+		split->add(left);
+		split->add(right);
+		m_root_panel->add(split);
+	}
+	req_redraw();
 }
 
 
@@ -215,6 +257,29 @@ int App::draw_topbar()
 	ImGui::SameLine();
 	if(ImGui::Button(rev ? "<<##dir" : ">>##dir"))
 		m_ctx.push(CmdSetTimescale{-st.timescale});
+
+	// experiment selector
+	if(m_scripts.size() > 1) {
+		ImGui::SameLine();
+		// build display name: basename without extension
+		auto dispname = [](const std::string &path) -> std::string {
+			auto p = path.rfind('/');
+			auto base = (p != std::string::npos) ? path.substr(p + 1) : path;
+			auto d = base.rfind('.');
+			return (d != std::string::npos) ? base.substr(0, d) : base;
+		};
+		std::string cur = dispname(m_scripts[m_script_idx]);
+		ImGui::SetNextItemWidth(ImGui::CalcTextSize(cur.c_str()).x + 40);
+		if(ImGui::BeginCombo("##exp", cur.c_str())) {
+			for(int i = 0; i < (int)m_scripts.size(); i++) {
+				std::string name = dispname(m_scripts[i]);
+				if(ImGui::Selectable(name.c_str(), i == m_script_idx))
+					switch_experiment(i);
+			}
+			ImGui::EndCombo();
+		}
+	}
+
 	ImGui::SameLine();
 
 	// speed slider
@@ -377,34 +442,13 @@ void App::init(int argc, char **argv)
 {
 	init_video();
 
-	// load experiment from script
-	m_script = (argc > 1) ? argv[1] : "experiments/010-1D-1P-momentum.lua";
-	{
-		Setup s{};
-		load_setup(m_script.c_str(), s, true);
-		m_ctx.push(CmdLoad{std::move(s)});
-	}
-	// wait for first state from sim thread
-	for(int i = 0; i < 100 && m_ctx.state().generation == 0; i++) {
-		SDL_Delay(10);
-		m_ctx.poll();
-	}
-	init_cursor();
-
-	m_root_panel = new Panel(Panel::Type::Root);
-	load();
-
-	// Create default panel layout if empty
-	if(m_root_panel->nkids() == 0) {
-		Panel *split = new Panel(Panel::Type::SplitH);
-		Panel *left = new Panel(Panel::Type::SplitV);
-		Panel *right = new Panel(Panel::Type::SplitV);
-		left->add(Widgets::create_widget("helix"));
-		right->add(Widgets::create_widget("info"));
-		split->add(left);
-		split->add(right);
-		m_root_panel->add(split);
-	}
+	// collect script files from arguments
+	for(int i = 1; i < argc; i++)
+		m_scripts.push_back(argv[i]);
+	if(m_scripts.empty()) m_scripts.push_back("experiments/010-1D-1P-momentum.lua");
+	std::sort(m_scripts.begin(), m_scripts.end());
+	m_script_idx = -1;
+	switch_experiment(0);
 }
 
 
@@ -455,9 +499,15 @@ void App::run()
 		// R to reload experiment
 		if(ImGui::IsKeyPressed(ImGuiKey_R)) {
 			Setup s{};
-			load_setup(m_script.c_str(), s, true);
+			load_setup(m_scripts[m_script_idx].c_str(), s, true);
 			m_ctx.push(CmdLoad{std::move(s)});
 		}
+
+		// F11/F12 to switch experiments
+		if(ImGui::IsKeyPressed(ImGuiKey_F11))
+			switch_experiment(m_script_idx - 1);
+		if(ImGui::IsKeyPressed(ImGuiKey_F12))
+			switch_experiment(m_script_idx + 1);
 
 		// B to toggle absorbing boundary
 		if(ImGui::IsKeyPressed(ImGuiKey_B))

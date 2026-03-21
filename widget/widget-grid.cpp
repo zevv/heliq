@@ -141,18 +141,18 @@ static void handle_mouse(SDL_Rect &r, float ctrl_h, float &zoom, float &pan_x, f
 	bool in_rect = mp.x >= r.x && mp.x < r.x + r.w &&
 	               mp.y >= r.y + ctrl_h && mp.y < r.y + r.h;
 	// RMB drag to pan
-	if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+	if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
 		dragging = true;
 		drag_x = mp.x;
 		drag_y = mp.y;
 	}
-	if(dragging && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+	if(dragging && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 		pan_x += mp.x - drag_x;
 		pan_y += mp.y - drag_y;
 		drag_x = mp.x;
 		drag_y = mp.y;
 	}
-	if(ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+	if(ImGui::IsMouseReleased(ImGuiMouseButton_Left))
 		dragging = false;
 
 	// scroll wheel to zoom
@@ -325,7 +325,7 @@ void WidgetGrid::draw_cursor(SDL_Renderer *rend, const Grid &grid)
 	if(grid.rank < 2) return;
 
 	// update cursor from mouse
-	if(ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+	if(ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
 		ImVec2 mp = ImGui::GetMousePos();
 		int gx, gy;
 		if(screen_to_grid(m_dst, m_grid_w, m_grid_h, mp.x, mp.y, gx, gy)) {

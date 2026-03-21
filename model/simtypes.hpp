@@ -60,7 +60,7 @@ struct CmdSetRunning   { bool run; };
 struct CmdMeasure      { int axis; };
 struct CmdDecohere     { int axis; };
 struct CmdSetAbsorb    { bool on; float width; float strength; };
-struct CmdLoad         { Setup setup; };
+struct CmdLoad         { Setup setup; bool reset{}; };
 struct CmdExtract      { ExtractionSet requests; };
 struct CmdStop         {};
 

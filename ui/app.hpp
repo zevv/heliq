@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "panel.hpp"
 #include "misc.hpp"
@@ -29,6 +30,7 @@ private:
     void load();
     void save();
     void init_cursor();
+    void switch_experiment(int idx);
 
     Panel *m_root_panel{};
     SDL_Window *m_win{};
@@ -41,7 +43,9 @@ private:
     int m_redraw{2};
 
     ImFont *m_font{nullptr};
-    std::string m_script;
+    std::vector<std::string> m_scripts;  // expanded from glob or single path
+    int m_script_idx{};                  // index into m_scripts
     float m_ui_scale{1.0f};
+
 };
 

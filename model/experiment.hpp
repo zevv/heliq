@@ -17,7 +17,7 @@ public:
 	bool running{false};
 
 	// load from pre-parsed Setup (no Lua dependency)
-	bool load(Setup new_setup);
+	bool load(Setup new_setup, bool reset = false);
 
 	// advance simulations within budget
 	void advance(double wall_dt, double budget_ms = 12.0);

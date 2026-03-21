@@ -316,7 +316,7 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	m_view.spatial_sr = sr;
 
 	// hover cursor: mouse screen X → grid index on current axis
-	if(ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+	if(ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
 		float sl_px = sl * r.w + r.x;
 		float sr_px = sr * r.w + r.x;
 		float mx = ImGui::GetMousePos().x;

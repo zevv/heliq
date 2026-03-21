@@ -13,7 +13,7 @@ struct Camera3D {
 	double pan_x{0}, pan_y{0};
 	bool ortho{true};
 
-	bool orbiting{false}, panning{false};
+	bool dragging{false};
 	float drag_x{}, drag_y{};
 
 	mat4 build(int w, int h) const {
@@ -42,26 +42,26 @@ struct Camera3D {
 		               mp.y >= r.y && mp.y < r.y + r.h;
 		bool shift = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 
-		// Shift+RMB = orbit, RMB = pan
-		if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-			if(shift) orbiting = true;
-			else      panning = true;
+		// LMB drag: shift = orbit, no shift = pan
+		if(in_rect && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+			dragging = true;
 			drag_x = mp.x; drag_y = mp.y;
 		}
-		if(orbiting && ImGui::IsMouseDown(ImGuiMouseButton_Right) && shift) {
-			yaw   -= (mp.x - drag_x) * 0.005;
-			pitch += (mp.y - drag_y) * 0.005;
-			if(pitch >  CAM_PITCH_LIMIT) pitch =  CAM_PITCH_LIMIT;
-			if(pitch < -CAM_PITCH_LIMIT) pitch = -CAM_PITCH_LIMIT;
+		if(dragging && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+			float dx = mp.x - drag_x, dy = mp.y - drag_y;
 			drag_x = mp.x; drag_y = mp.y;
+			if(shift) {
+				yaw   -= dx * 0.005;
+				pitch += dy * 0.005;
+				if(pitch >  CAM_PITCH_LIMIT) pitch =  CAM_PITCH_LIMIT;
+				if(pitch < -CAM_PITCH_LIMIT) pitch = -CAM_PITCH_LIMIT;
+			} else {
+				pan_x += dx;
+				pan_y += dy;
+			}
 		}
-		if(panning && ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-			pan_x += (mp.x - drag_x);
-			pan_y += (mp.y - drag_y);
-			drag_x = mp.x; drag_y = mp.y;
-		}
-		if(ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
-			orbiting = false; panning = false;
+		if(ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+			dragging = false;
 		}
 
 		if(in_rect) {
