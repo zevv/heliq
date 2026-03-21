@@ -252,14 +252,16 @@ int App::draw_topbar()
 			m_ctx.push(CmdSetDt{st.setup.default_dt});
 	}
 
-	// sim time, right-aligned
+	// sim time + step count, right-aligned
 	ImGui::SameLine();
 	char time_str[64];
 	humanize_unit(st.sim_time, "s", time_str, sizeof(time_str));
-	float time_w = ImGui::CalcTextSize(time_str).x + ImGui::CalcTextSize("t=").x;
-	float rx = ImGui::GetWindowWidth() - time_w - 8;
+	char info_str[128];
+	snprintf(info_str, sizeof(info_str), "t=%s  #%zu", time_str, st.step_count);
+	float info_w = ImGui::CalcTextSize(info_str).x;
+	float rx = ImGui::GetWindowWidth() - info_w - 8;
 	ImGui::SameLine(rx);
-	ImGui::Text("t=%s", time_str);
+	ImGui::Text("%s", info_str);
 
 	ImGui::End();
 	ImGui::PopStyleVar(3);

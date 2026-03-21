@@ -147,6 +147,7 @@ function env.interaction(spec)
         softening  = spec.softening or 0,
         strength   = spec.strength or 0,
         width      = spec.width or 0,
+        power      = spec.power or 1,
     }
 end
 

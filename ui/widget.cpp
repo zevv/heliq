@@ -4,6 +4,7 @@
 #include "misc.hpp"
 #include "widget.hpp"
 #include "widgetregistry.hpp"
+#include "simcontext.hpp"
 #include "style.hpp"
 
 
@@ -58,7 +59,24 @@ void Widget::draw(View &view, SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	do_draw(ctx, rend, r);
 	double t2 = hirestime();
 
-	// draw render time
+	// draw cursor positions (bottom-left)
+	auto &st = ctx.state();
+	if(st.grid.rank > 0) {
+		char buf[256];
+		int pos = 0;
+		for(int d = 0; d < st.grid.rank; d++) {
+			auto &ax = st.grid.axes[d];
+			double val = ax.min + m_view.cursor[d] * ax.dx();
+			char vbuf[32];
+			humanize_unit(val, "m", vbuf, sizeof(vbuf));
+			if(d > 0) buf[pos++] = ' ';
+			pos += snprintf(buf + pos, sizeof(buf) - pos, "%s=%s", ax.label, vbuf);
+		}
+		ImGui::SetCursorPos(ImVec2(4, ImGui::GetWindowHeight() - 25));
+		ImGui::TextShadow("%s", buf);
+	}
+
+	// draw render time (bottom-right)
 	ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - 60, ImGui::GetWindowHeight() - 25));
 	ImGui::Text("%.2f ms", (t2 - t1) * 1000.0f);
 

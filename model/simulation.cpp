@@ -499,10 +499,20 @@ void Simulation::sample_potential(const Setup &setup)
 
 			switch(inter.type) {
 			case Interaction::Type::Coulomb: {
-				double q_a = setup.particles[pa].charge;
-				double q_b = setup.particles[pb].charge;
-				double r = sqrt(dist2 + inter.softening * inter.softening);
-				v += inter.strength * k_coulomb * q_a * q_b / r;
+				double r2s = dist2 + inter.softening * inter.softening;
+				double denom = pow(r2s, inter.power * 0.5);
+				if(inter.power == 1.0) {
+					// standard Coulomb: strength scales k * q_a * q_b / r
+					double q_a = setup.particles[pa].charge;
+					double q_b = setup.particles[pb].charge;
+					v += inter.strength * k_coulomb * q_a * q_b / denom;
+				} else {
+					// power-law: strength is direct energy scale, normalized to peak at softening
+					// V = strength * (softening^power) / (r² + softening²)^(power/2)
+					// so V(r=0) = strength, V falls off as 1/r^power for r >> softening
+					double s_p = pow(inter.softening * inter.softening, inter.power * 0.5);
+					v += inter.strength * s_p / denom;
+				}
 				break;
 			}
 				case Interaction::Type::Contact: {

@@ -220,6 +220,7 @@ static bool load_interactions(lua_State *L, Setup &setup)
 			inter.softening = getfield_number(L, -1, "softening");
 			inter.strength  = getfield_number(L, -1, "strength", 1.0);
 			inter.width     = getfield_number(L, -1, "width");
+			inter.power     = getfield_number(L, -1, "power", 1.0);
 
 			setup.interactions.push_back(inter);
 		}

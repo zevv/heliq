@@ -36,6 +36,7 @@ struct Interaction {
 	double softening{};              // meters, regularization for 1/r (Coulomb)
 	double strength{1.0};            // Contact: Joules; Coulomb: multiplier (1.0 = real)
 	double width{};                  // meters, barrier width (Contact)
+	double power{1.0};               // Coulomb exponent: V ~ 1/r^power (1=Coulomb, 2=dipole, ...)
 };
 
 enum class SimMode { Joint, Factored };
