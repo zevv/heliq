@@ -45,34 +45,33 @@ private:
 	Camera3D m_camera;
 
 	float m_amplitude{0.1f};
-
-	// visual layers
+	
 	struct {
 		bool on{true};
-		int mode{0};
-		float alpha{0.7f};
+		float alpha{0.5f};
 		int color{(int)HelixColor::Default};
-	} m_envelope;
-
+	} m_surface;
+	
 	struct {
 		bool on{true};
 		int color{0};
 		float alpha{1.0f};
 	} m_helix;
 
-	bool m_thick_lines{false};
-	double m_global_max{1e-30};
-
 	struct {
 		bool on{true};
-		float alpha{0.3f};
-		int color{(int)HelixColor::Rainbow};
-	} m_surface;
-
+		int mode{0};
+		float alpha{0.7f};
+		int color{(int)HelixColor::Default};
+	} m_envelope;
+	
 	struct {
 		bool on{true};
 		float alpha{0.3f};
 	} m_potential;
+
+
+	double m_global_max{1e-30};
 
 	// slice state
 	struct {
@@ -276,7 +275,7 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 		glClearColor(c.r, c.g, c.b, c.a);
 	}
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glLineWidth((m_thick_lines ? 3.0f : 1.5f) * Style::line_width());
+	glLineWidth(1.5f * Style::line_width());
 
 	mat4 vp = m_camera.build(gl_w, gl_h);
 	float mvp[16];
@@ -339,8 +338,6 @@ void WidgetHelix::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 			m_envelope = {};
 			m_potential = {};
 		}
-		if(ImGui::IsKeyPressed(ImGuiKey_W))
-			m_thick_lines = !m_thick_lines;
 	}
 	draw_controls(ctx);
 
@@ -486,8 +483,15 @@ void WidgetHelix::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 {
 	auto sc = Style::color(Style::SurfaceDefault);
 	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, sc.r, sc.g, sc.b); };
-	// triangle strip with per-vertex color: base[i], helix[i], ...
 
+	// slider 0..1 maps to two ranges:
+	//   0.0..0.5 → spokes only:  spoke_alpha = slider*2, surf_alpha = 0
+	//   0.5..1.0 → spokes full:  spoke_alpha = 1, surf_alpha = (slider-0.5)*1.0 (max 0.5)
+	float s = m_surface.alpha;
+	float spoke_alpha = (s <= 0.5f) ? s * 2.0f : 1.0f;
+	float surf_alpha  = (s <= 0.5f) ? 0.0f : (s - 0.5f);
+
+	// triangle strip with per-vertex color: base[i], helix[i], ...
 	// 7 floats per vert: pos(3) + col(4)
 	m_vbuf.resize(n * 2 * 7);
 	for(int i = 0; i < n; i++) {
@@ -497,29 +501,31 @@ void WidgetHelix::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 		float z = (float)(psi[i].imag() / max_amp * m_amplitude);
 		float amp = (float)(std::abs(psi[i]) / max_amp);
 		auto [cr, cg, cb] = col(i, amp);
-		float alpha = m_surface.alpha;
 
 		// base vertex (on x-axis, dimmer)
 		m_vbuf[i*14+0] = x; m_vbuf[i*14+1] = 0; m_vbuf[i*14+2] = 0;
-		m_vbuf[i*14+3] = cr*0.5f; m_vbuf[i*14+4] = cg*0.5f; m_vbuf[i*14+5] = cb*0.5f; m_vbuf[i*14+6] = alpha;
+		m_vbuf[i*14+3] = cr*0.5f; m_vbuf[i*14+4] = cg*0.5f; m_vbuf[i*14+5] = cb*0.5f; m_vbuf[i*14+6] = surf_alpha;
 		// helix vertex
 		m_vbuf[i*14+7] = x; m_vbuf[i*14+8] = y; m_vbuf[i*14+9] = z;
-		m_vbuf[i*14+10] = cr; m_vbuf[i*14+11] = cg; m_vbuf[i*14+12] = cb; m_vbuf[i*14+13] = alpha;
+		m_vbuf[i*14+10] = cr; m_vbuf[i*14+11] = cg; m_vbuf[i*14+12] = cb; m_vbuf[i*14+13] = surf_alpha;
 	}
 
 	int stride = 7 * sizeof(float);
 	glUseProgram(m_gl.vcol_shader());
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, m_vbuf.data());
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, m_vbuf.data() + 3);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
 
-	// stem lines — draw brighter than the surface fill
-	// temporarily boost alpha in the vertex data
+	// surface fill
+	if(surf_alpha > 0.0f) {
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, m_vbuf.data());
+		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, m_vbuf.data() + 3);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
+	}
+
+	// spoke lines
 	for(int i = 0; i < n; i++) {
-		m_vbuf[i*14+6]  = m_surface.alpha * 3.0f;  // base
-		m_vbuf[i*14+13] = m_surface.alpha * 3.0f;  // tip
+		m_vbuf[i*14+6]  = spoke_alpha;
+		m_vbuf[i*14+13] = spoke_alpha;
 	}
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, m_vbuf.data());
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, m_vbuf.data() + 3);
@@ -888,9 +894,11 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(80);
 		ImGui::Combo("##mode", &m_slice.mode, slice_mode_names, MODE_COUNT);
-		if(m_slice.mode == Slice) {
-			ImGui::SameLine();
-			ImGui::Checkbox("Norm", &m_slice.normalize);
+	}
+	if(m_slice.mode == Slice) {
+		ImGui::SameLine();
+		ImGui::Checkbox("Norm", &m_slice.normalize);
+		if(state.grid.rank > 1) {
 			ImGui::SameLine();
 			ImGui::Checkbox("Auto", &m_slice.auto_track);
 		}
@@ -912,7 +920,7 @@ void WidgetHelix::draw_controls(SimContext &ctx)
 		ImGui::TableNextColumn(); ImGui::Text("Surf");
 		ImGui::TableNextColumn(); ImGui::Checkbox("##sf_on", &m_surface.on);
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
-		ImGui::SliderFloat("##sf_a", &m_surface.alpha, 0.0f, 0.5f, "%.2f");
+		ImGui::SliderFloat("##sf_a", &m_surface.alpha, 0.0f, 1.0f, "%.1f");
 		ImGui::TableNextColumn();
 		ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
 		ImGui::Combo("##sf_c", &m_surface.color, helix_color_names, (int)HelixColor::COUNT);

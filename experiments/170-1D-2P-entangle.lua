@@ -45,6 +45,6 @@ particle(electron, {
 interaction {
     type      = "contact",
     particles = { 1, 2 },
-    strength  = energy * 1.8,
-    width     = 5 * nm,
+    strength  = energy * 2.5,
+    width     = 1 * nm,
 }

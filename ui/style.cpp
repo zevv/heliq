@@ -65,6 +65,10 @@ static ColorDef colordef_presentation[Style::COUNT] = {
 
 void Style::load(ConfigReader::Node *node)
 {
+	int mode = 0;
+	node->read("mode", mode);
+	s_mode = mode ? Presentation : Normal;
+
 	for(auto &cd : colordef_normal) {
 		const char *hexcolor = node->read_str(cd.name);
 		if(hexcolor) {
@@ -79,6 +83,8 @@ void Style::load(ConfigReader::Node *node)
 
 void Style::save(ConfigWriter &cfg)
 {
+	cfg.write("mode", s_mode == Presentation ? 1 : 0);
+
 	for(auto &cd : colordef_normal) {
 		const Color &c = cd.color;
 		unsigned int r = static_cast<unsigned int>(c.r * 255);
@@ -134,7 +140,7 @@ void Style::toggle_mode()
 
 float Style::line_width()
 {
-	return (s_mode == Presentation) ? 2.0f : 1.0f;
+	return (s_mode == Presentation) ? 4.0f : 1.0f;
 }
 
 
