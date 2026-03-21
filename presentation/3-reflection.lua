@@ -1,9 +1,8 @@
 description("Barrier Reflection", [[
-An electron hitting a tall potential barrier — 10x the kinetic energy.
-Mostly reflects, but watch for the evanescent tail leaking into the barrier.
-As the reflected wave returns, it interferes with the incoming wave,
-creating a standing wave pattern. This is the quantum version of a ball
-bouncing off a wall — except the ball partially leaks through.]])
+Same electron as (1), now hitting a wall. The reflected wave interferes
+with the incoming wave — the envelope shows nodes where the particle
+cannot be found. Zoom into the barrier edge: the wave leaks in but
+decays. It can't make it through — but compare with (4).]])
 
 domain {
     { min = -100 * nm, max = 100 * nm, points = 512 },
@@ -26,5 +25,5 @@ particle(electron, {
 barrier {
     from = { -1 * nm },
     to   = {  1 * nm },
-    height = 10 * energy,
+    height = 3 * energy,
 }

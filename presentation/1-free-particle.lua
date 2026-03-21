@@ -1,10 +1,8 @@
 description("Moving Electron", [[
-A real electron at 0.1 eV — the de Broglie wave.
-The helix shows Re(ψ) and Im(ψ) spiraling as the packet moves.
-Watch it disperse: faster momentum components outrun slower ones.
-The domain is 200 nm — a nanostructure scale.
-Toggle momentum view to see the momentum distribution stays fixed.
-Reverse time with / — the packet refocuses perfectly.]])
+A free electron at 0.1 eV. The wave function is 512 complex numbers
+on a line. The helix shows the complex spiral — its wavelength is the
+momentum. The envelope is the probability of finding the particle.
+Watch it spread as it moves — that's the uncertainty principle at work.]])
 
 domain {
     { min = -100 * nm, max = 100 * nm, points = 512 },

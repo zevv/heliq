@@ -1,20 +1,9 @@
 description("Which-Path Entanglement", [[
-Particle A moves right through a 50% beam splitter — it partially
-reflects, partially transmits. Particle B sits past the barrier,
-coupled to A via contact interaction.
-
-Only A's transmitted component reaches B and kicks it. After the
-interaction, B is in a superposition: kicked (A transmitted) and
-not kicked (A reflected). The two particles are now entangled —
-B's state encodes which path A took.
-
-Watch B's marginal: it splits into two peaks, one stationary (A
-reflected, no kick) and one moving (A transmitted, B recoils).
-This is the "which-path marker" in quantum eraser experiments.
-
-Measure A (M key): B collapses to kicked or not kicked.
-Measure B (N key): A collapses to transmitted or reflected.
-The outcomes are always correlated.]])
+Two electrons. A hits a beam splitter from (4), B sits on the far
+side. A's transmitted half kicks B; the reflected half doesn't reach
+it. Now B is in superposition: kicked and not kicked. They are
+entangled — B's state encodes which path A took. Slice through one
+particle's axis to see how the other's state depends on it.]])
 
 domain {
     { min = -150 * nm, max = 150 * nm, points = 512 },

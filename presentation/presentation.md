@@ -1,123 +1,256 @@
 
-## 1-free-particle.lua
+# The Wave Function Is Real
 
-- show in 'squiggly line' mode, only helix, no color. this is the wave function
-  from the books
-
-- explain graph: horizontal is x axis, vertical is the value, we'll learn later
-  what that means
-
-- start time, show it move in space. let it run at a slow pace during the rest
-  of this part.
-
-- Explain it's actually just a long row of numbers on a line; enable surf mode
-  to show the spokes
-
-- rotate into 3d view, show the spokes are actually complex numbers
-
-- back to 2D view to let it sink in
-
-- wavelength = momentum, short wave length = fast, long wavelength = slow
-
-- enable envelope, disable helix. Show the gaussian, explain about probability
-  of 'finding' particle
+Presenter notes. Live simulator, projector, ~15 people.
+Audience: scientifically curious, read popsci, know the terminology,
+never went deep on the math.
 
 
+## Opening
 
-## 2-standing-still.lua
+Show the Schrodinger equation on screen. Pause.
 
-- show what happens when a particle stands still. When it knows where it is, it
-  can't stay still.
+"I've been reading about quantum mechanics for twenty years. And for twenty
+years I stared at this equation and didn't know what to do with it. It's a
+differential equation — it doesn't *do* anything. It just sits there and
+describes a relationship.
 
-
-3-reflection.lua
-
-- show helix + envelope
-
-- this is what happens when the particle hits a wall; it reflects back
-  and interferes with itself. The envelop shows you there are places where you
-  simply can not find the particle.
-
-- while boucning, do a deep zoom into the particle penetrating the wall,
-  exponentially falling off, it can't make it through
-
+But if you squint at it the right way, it says something very simple: given
+the state of the system right now, here's how it changes in the next instant.
+And *that* is something I can put in a loop. Take the state at time zero,
+apply the rule, get time one. Apply it again, get time two. A million times
+per second on a GPU. What you're about to see is nothing more than that —
+one formula, applied over and over. Everything that happens, happens because
+of that one rule."
 
 
-## 4-tunneling.lua
+## 1-free-particle.lua — The Wave Function
 
-- helix + envelope
+Start paused. Helix only, no surface, no color.
 
-- Show full transition at normal speed
+"This is a wave function. Not an artist's impression — this is the actual
+data. 512 complex numbers on a line, representing one electron."
 
-- this is a half mirror
+Point out the axes: horizontal is position in space (nanometers), vertical
+is the value. Don't explain what the value means yet — just let them see it.
 
-- again, zoom in at the boundary, show how the waves leak through
+Start time. Let it drift across the screen at a slow pace.
 
-- show that the amplitude is now spread over two bumps; the particle is not in
-  two places, it's one wave function with amplitude in two regions. the
-  particle can either be found here or found there, but never both or in
-  between.
+"It moves. It spreads. This is a free electron at about 0.1 electron volts —
+the energy scale of nanoelectronics."
 
+Enable surface/spokes to show the discrete samples.
 
-## 5-mach-zehnder.lua
+"What looks like a smooth curve is actually just a row of numbers. Each spoke
+is one complex number — a point on the grid."
 
-- 2D grid overview + x marginals
+Rotate into 3D. The helix becomes visible as a spiral.
 
-- this experiment combines what we have seen before, but now in 2D. One particle
-  going through the beam splitter. both halves go their own ways and bounce of
-  the mirrors, then they meet again at the beam splitter
+"This is why it's called a wave function. Each value has a real and imaginary
+part. Plotted in 3D, it's a corkscrew. The wavelength of that corkscrew
+*is* the momentum of the particle. Short wavelength means fast. Long means
+slow."
 
-- here something remarkable happens: both halves don't *remember* each other,
-  they were never apart. thet recombined, constructively in one direction and
-  destructively in the other, resulting in only one version of itself
+Back to 2D. Enable envelope, disable helix.
 
-
-## 6-which-path-1d.lua
-
-- two marginals vertically stacked
-
-- tell the story: particle A goes through a beam splitter. there are now two
-  bumps. One bump travels left never to be seen, the right one bumps into
-  particle B.
-
-- something remarkable happens here: B gets kicked away by one halve of A, but
-  it also gets *not* kicked away by the other half. B is in superposition of
-  both being kicked and not kicked. This shows the probabilities of where you
-  will find B.
-
-- switch to slice mode, show the "this is what A looks like from B" and reverse.
+"This bump is the probability amplitude. Square it and you get the probability
+of finding the particle at each position. The electron isn't *at* a point —
+it's spread out, and this shape tells you where you're likely to find it."
 
 
-## 7-which-path-interferometer.lua
+## 2-standing-still.lua — Uncertainty
 
-- horizontal split, 2d grid P1 large, 2D grid P2 small
+"What happens when a particle sits perfectly still? Zero momentum."
 
-- first run with P2 in the middle, on top of the half mirror. Same outcome
-  as 5. we have seen this
+Load and run. The packet spreads immediately.
 
-- move B to the left on the mirror surface, run again. show the outcome: A
-  now is all over the place
+"It can't stay still. The more precisely you pin down where it is, the more
+uncertain its momentum becomes — and all those momentum components fly apart.
+This isn't a limitation of the simulator. This is the uncertainty principle,
+emerging from nothing but the equation."
 
-- Pièce de résistance:: with this outcome on screen, move around B to show
-  all the possible outcomes for all possbile postions of B: this is what
-  the pattern would have looked like if B were here. Then: move around A
-  to show that in one case B would have been undisturbed, vs B had been
-  kicked around. These were not two different runs, this was the exact
-  same thing happening, we were just looking from a different perspective.
 
+## 3-reflection.lua — Hitting a Wall
+
+Helix + envelope.
+
+"Now there's a wall in the way. Watch what happens."
+
+Let it hit the barrier and reflect. Point out the interference pattern forming
+as the reflected wave overlaps the incoming wave.
+
+"The envelope shows something beautiful: during the collision there are places
+where the probability drops to zero. The particle literally cannot be found
+there. That's interference — the reflected wave canceling the incoming wave
+at specific points."
+
+Zoom into the barrier edge to show the evanescent tail leaking into the wall.
+
+"Even though it bounces back, look: it leaks into the wall. The amplitude
+decays inside the barrier. It can't make it through — the wall is too thick
+and too tall — but it tries."
+
+
+## 4-tunneling.lua — The Half Mirror
+
+Helix + envelope.
+
+"Same setup, but now the barrier is thinner and lower. Tuned so that exactly
+half the wave gets through."
+
+Run at normal speed. Watch the packet split into two bumps — one reflected,
+one transmitted.
+
+"This is quantum tunneling. The particle hit a wall and half of it leaked
+through. But here's the thing: there is still only one electron. We haven't
+split anything. The wave function now has amplitude in two regions — and if
+you go looking for the particle, you'll find it on one side or the other.
+Never both. Never in between."
+
+Zoom into the barrier during the split to show the wave leaking through.
+
+"This is a half mirror for electrons. It's how tunnel diodes work, how
+scanning tunneling microscopes image individual atoms. Not a metaphor — this
+is the actual mechanism."
+
+
+## 5-mach-zehnder.lua — The Interferometer
+
+2D grid view on top, helix in marginal mode below.
+
+"Now we go to two dimensions. Same electron, but it can move in a plane.
+There's a beam splitter — a thin barrier, same tunneling principle — plus
+two mirrors."
+
+Run. The packet hits the beam splitter, splits into two paths, each bounces
+off a mirror, and they reconverge at the splitter.
+
+"Watch what happens when the two halves meet again."
+
+They recombine. One output port gets everything, the other gets nothing.
+
+"The two halves were never apart. They were always one wave function,
+accumulating phase along two different paths. When they meet, the phases
+line up constructively in one direction and destructively in the other.
+The particle *must* exit to the right. Not 50/50 — 100/0. The wave
+function guarantees it."
+
+
+## 6-which-path-1d.lua — Two Particles
+
+Two helix widgets, marginal mode, stacked vertically — one for each particle.
+
+"Now there are two electrons. Two particles means two axes — the horizontal
+axis of the top plot is particle A's position, the bottom plot is particle
+B's position. This is no longer physical space — it's configuration space."
+
+Run. A hits the beam splitter and splits. The transmitted half reaches B
+and kicks it via a short-range interaction.
+
+"A split in two. The right half bumped into B and kicked it. But the left
+half didn't reach B — so from B's perspective, nothing happened. B is now
+in a superposition: kicked and not kicked, at the same time."
+
+Point at B's marginal — it shows two peaks.
+
+"B's state now depends on what A did. If A went right, B got kicked. If A
+went left, B is still sitting there. They are entangled — you cannot
+describe one without the other."
+
+Switch to slice mode. Move A's cursor.
+
+"When I pick a position for A on the right side of the barrier — B is over
+here, kicked. When I pick a position for A on the left — B hasn't moved.
+Same wave function, same single run. I'm just looking at different slices
+of the same object."
+
+
+## 7-which-path-interferometer.lua — The Payoff
+
+2D grid, showing A's x-y plane.
+
+"Back to the interferometer. Same mirrors, same beam splitter. But now
+there's a second particle — a heavy detector — sitting off to the side,
+away from both arms."
+
+First run: B's cursor centered, away from the action.
+
+"B is out of the way. A does its thing — splits, bounces, recombines.
+Same result as before: everything exits one port."
+
+Pause. Reload with R. Move B's cursor onto the left arm, between the
+beam splitter and the mirror.
+
+"Now B is on the left arm. Run it again."
+
+Second run: the output is different — A's probability is split between
+both ports.
+
+"The interference is gone. B interacted with one arm of the interferometer.
+That interaction entangled them — B now carries information about which
+path A took. And that information, just by *existing*, is enough to destroy
+the interference pattern."
+
+Now the punchline. Pause the simulation.
+
+"But here's what really gets me. This was one simulation. One wave function
+evolving under one equation. Watch what happens when I move B around."
+
+Drag B's cursor slowly from the arm position back to the center and beyond.
+The pattern on A's grid morphs continuously — from split output through
+to clean recombination and back.
+
+"Every position of B gives a different answer for A. This isn't multiple
+runs — it's one mathematical object, and I'm slicing through it. Where
+you look determines what you see."
+
+Move A's cursor to show the reverse: for each output of A, B is in a
+different state.
+
+"And it works both ways. Pick where A ended up — now B's state changes.
+They are one thing. They were always one thing. The equation made them
+one thing."
 
 
 ## Closing
 
-This is why we do not see quantum mechanical effects in real life; every photon
-is a detector, every air molecule is a detector. Every interaction carries away
-a tiny bit of the information, kills the interference with a thousand cuts. In
-real life at room temperature there are billions of these interactions every
-second; the quantum interference is still there, all in one big wave function,
-but it now includes the room, the air, and you.
+"One thing I keep learning, over and over. In school they tell you: you
+can't divide by zero. Then calculus shows up and it turns out you can —
+you take a limit, and suddenly everything about rates of change becomes
+simple. They tell you: you can't take the square root of minus one. Then
+complex numbers show up, and polynomials and rotations and signal
+processing all become *cleaner* than they were before.
 
-The more a quantum system touches the world around it, the faster it loses its
-quantum signature. Isolation preserves it. Interaction destroys it. That's why
-quantum computers need to be colder than deep space.
+The pop-science version of quantum mechanics does the same thing. It
+tells you: two particles each have their own wave function, and then
+something magical called entanglement happens and they share one. When
+does that happen? Is it instant? Gradual? Can they half-share a wave
+function, like being a bit pregnant?
 
+The answer is: you were lied to. There were never two wave functions.
+There was always one — over the combined configuration space of both
+particles. When they don't interact, that one wave function happens to
+be factorable, so it *looks* like two separate things. The moment they
+interact, the factorization breaks. That's all entanglement is. Not
+something new that appeared. A simplification that stopped working.
+
+You just saw this on screen. The grid didn't change. The axes didn't
+change. The wave function was always one object. It just stopped being
+separable.
+
+Every time I hit one of these walls — every time the real explanation
+replaces the simplified lie — things got simpler, not harder. The truth
+is more elegant than the shortcut."
+
+Pause.
+
+"Everything you just saw came from one equation, applied a million times.
+No special cases, no if-statements for tunneling or interference or
+entanglement. All of it emerges from the same update rule.
+
+I've spent hundreds of hours on this and I still don't understand what
+it means. I don't think anyone does. But seeing it move, seeing the wave
+split and recombine and entangle — it stopped being abstract for me. The
+squiggly line in the books is real. It does things. And the things it
+does are stranger than any pop-science article can convey."
 

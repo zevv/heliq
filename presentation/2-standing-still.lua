@@ -1,9 +1,7 @@
 description("Stationary Wavepacket", [[
-A Gaussian wavepacket at rest — zero momentum.
-It just sits there and spreads. This is pure dispersion: the uncertainty
-principle guarantees a spread in momentum, and each component travels
-at a different speed. The narrower the packet, the faster it disperses.
-Compare with 010 — same physics, just no drift.]])
+Zero momentum — the particle knows where it is but can't stay still.
+The uncertainty principle forces a spread in momentum, and each component
+flies apart. Same physics as (1), just without the drift.]])
 
 domain {
     { min = -100 * nm, max = 100 * nm, points = 512 },

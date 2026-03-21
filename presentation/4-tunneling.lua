@@ -1,9 +1,8 @@
 description("Quantum Tunneling", [[
-An electron hitting a thin barrier slightly above its kinetic energy.
-Classically, it would bounce. Quantum mechanically, part of the
-wavefunction leaks through — tunneling. Watch the packet split into
-reflected and transmitted components. The thinner the barrier, the
-more gets through. This is how tunnel diodes and STM microscopes work.]])
+Same wall as (3), but thinner and lower — tuned for 50% transmission.
+The wave function splits into two bumps: reflected and transmitted.
+Still one electron, one wave function, amplitude in two regions.
+This is a half mirror for electrons.]])
 
 domain {
     { min = -100 * nm, max = 100 * nm, points = 512 },

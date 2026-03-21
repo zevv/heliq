@@ -1,19 +1,10 @@
 description("Mach-Zehnder Which-Path", [[
-Two particles in 2D — 4D configuration space.
-
-Same Mach-Zehnder interferometer as 121, but with a heavy detector
-particle sitting on the left arm between BS1 and the left mirror.
-
-Without interaction: electron splits, reflects, recombines — output
-goes preferentially to one port (right side), same as 1P version.
-
-With interaction: the left arm kicks the detector via contact
-interaction, entangling them. The which-path information encoded in
-the detector's momentum destroys the interference at recombination.
-The output should become more symmetric between ports.
-
-Measure the detector (M on its axis) to collapse the which-path
-info and see the correlation with the electron's output port.]])
+The interferometer from (5), but now a heavy detector particle sits
+near one arm. 4D configuration space. When the detector is out of
+the way, A recombines cleanly — same as (5). Move the detector onto
+the arm: the interaction entangles them, and the interference is
+destroyed. Drag the detector's cursor to see how every position
+gives a different outcome for A — one wave function, many slices.]])
 
 domain {
     { min = -4.0 * um, max =  4.0 * um, points = 128 },  -- x_A

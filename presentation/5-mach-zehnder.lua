@@ -1,9 +1,9 @@
 description("Mach-Zehnder Interferometer", [[
-A beam splitter divides the electron into two paths. Mirrors redirect
-both paths to a second meeting point where they recombine and interfere.
-The output depends on the relative phase accumulated on each path.
-This is the optical bench of quantum mechanics — the building block
-of quantum eraser experiments.]])
+Now in 2D. The beam splitter from (4) divides the electron into two
+paths. Mirrors redirect both halves back to the splitter where they
+recombine. The phases line up: everything exits one port, nothing
+exits the other. The two halves were never apart. Compare with (7)
+to see what happens when something watches.]])
 
 domain {
     { min = -100 * nm, max = 100 * nm, points = 512 },
