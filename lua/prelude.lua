@@ -41,6 +41,8 @@ env.nm = 1e-9
 env.um = 1e-6
 env.mm = 1e-3
 env.m  = 1.0
+env.fm = 1e-15
+env.pm = 1e-12
 env.fs = 1e-15
 env.ps = 1e-12
 env.ns = 1e-9
@@ -57,6 +59,8 @@ local k_coulomb  = 8.9875517873681764e9   -- N·m²/C²
 env.hbar       = hbar
 env.e_charge   = e_charge
 env.eV         = eV
+env.keV        = 1e3 * eV
+env.MeV        = 1e6 * eV
 env.m_electron = m_electron
 env.m_proton   = m_proton
 env.k_coulomb  = k_coulomb
@@ -153,6 +157,10 @@ function env.simulate(spec)
         resolution = spec.resolution,
         dt         = spec.dt or error("simulate: dt required"),
     }
+end
+
+function env.potential(fn)
+    world.custom_potential = fn
 end
 
 function env.absorbing_boundary(spec)
@@ -317,6 +325,33 @@ local function compute_defaults()
         local s = inter.strength or 0
         if s > v_max then v_max = s end
     end
+
+    -- scan custom potential on a coarse grid to estimate v_max for dt
+    if world.custom_potential then
+        local axes = world.domain
+        local ndims = #axes
+        local sample = 64  -- coarse grid per axis, enough for dt estimate
+        local coords = {}
+        local pos = {}
+        for d = 1, ndims do coords[d] = 0 end
+
+        local total = 1
+        for d = 1, ndims do total = total * sample end
+
+        for _ = 1, total do
+            for d = 1, ndims do
+                pos[d] = axes[d].min + coords[d] * (axes[d].max - axes[d].min) / sample
+            end
+            local vv = math.abs(world.custom_potential(table.unpack(pos, 1, ndims)))
+            if vv > v_max then v_max = vv end
+            for d = ndims, 1, -1 do
+                coords[d] = coords[d] + 1
+                if coords[d] < sample then break end
+                coords[d] = 0
+            end
+        end
+    end
+
     local dt_potential = (v_max > 0) and (math.pi * 2 * hbar / v_max) or math.huge
 
     -- check wavefunction resolvability (per-particle axes only)
@@ -358,7 +393,14 @@ local function compute_defaults()
             v = v + math.abs(mom) / p.mass
         end
     end
-    if v < 1 then v = 1 end
+    -- zero-momentum fallback: use confinement velocity hbar/(m*width)
+    if v == 0 then
+        for _, p in ipairs(world.particles) do
+            local w = p.width[1] or (L / 10)
+            v = v + hbar / (p.mass * w)
+        end
+    end
+    if v < 1e-30 then v = 1e-30 end  -- absolute safety net
     local crossing_time = 0.2 * L / v  -- sim time to cross 20% of domain
     local timescale = crossing_time / 5.0  -- do it in 5 wall seconds
 

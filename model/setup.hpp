@@ -54,6 +54,7 @@ struct Setup {
 	Axis domain[MAX_RANK]{};
 	std::vector<Particle> particles{};
 	std::vector<Potential> potentials{};
+	std::vector<double> custom_potential;  // pre-sampled V(pos), one per grid point, row-major
 	std::vector<Interaction> interactions{};
 	std::vector<SimConfig> simulations{};
 	double timescale{1e-15};         // current timescale

@@ -514,6 +514,9 @@ void Simulation::sample_potential(const Setup &setup)
 			}
 		}
 
+		if(!setup.custom_potential.empty())
+			v += setup.custom_potential[idx];
+
 		potential[idx] = v;
 	});
 }

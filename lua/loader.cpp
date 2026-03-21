@@ -145,6 +145,45 @@ static bool load_potentials(lua_State *L, Setup &setup)
 }
 
 
+static bool load_custom_potential(lua_State *L, Setup &setup)
+{
+	lua_getfield(L, -1, "custom_potential");
+	if(!lua_isfunction(L, -1)) {
+		lua_pop(L, 1);
+		return true;
+	}
+
+	int func_idx = lua_gettop(L);
+
+	// build temporary grid from domain
+	int rank = 0;
+	for(int i = 0; i < MAX_RANK; i++) {
+		if(setup.domain[i].points <= 0) break;
+		rank++;
+	}
+
+	Grid grid;
+	grid.rank = rank;
+	for(int i = 0; i < rank; i++)
+		grid.axes[i] = setup.domain[i];
+	grid.compute_strides();
+
+	setup.custom_potential.resize(grid.total_points());
+
+	grid.each([&](size_t idx, const int *coords, const double *pos) {
+		lua_pushvalue(L, func_idx);
+		for(int d = 0; d < rank; d++)
+			lua_pushnumber(L, pos[d]);
+		lua_call(L, rank, 1);
+		setup.custom_potential[idx] = lua_tonumber(L, -1);
+		lua_pop(L, 1);
+	});
+
+	lua_pop(L, 1);
+	return true;
+}
+
+
 static bool load_interactions(lua_State *L, Setup &setup)
 {
 	lua_getfield(L, -1, "interactions");
@@ -275,6 +314,7 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 	bool ok = load_domain(L, setup)
 	       && load_particles(L, setup)
 	       && load_potentials(L, setup)
+	       && load_custom_potential(L, setup)
 	       && load_interactions(L, setup)
 	       && load_simulations(L, setup);
 
