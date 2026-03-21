@@ -18,7 +18,7 @@ info and see the correlation with the electron's output port.]])
 domain {
     { min = -4.0 * um, max =  4.0 * um, points = 128 },  -- x_A
     { min = -5.0 * um, max =  6.5 * um, points = 128 },  -- y_A
-    { min = -3.0 * um, max = -1.0 * um, points =  16 },   -- x_B
+    { min = -2.0 * um, max =  2.0 * um, points =  16 },   -- x_B
     { min = -1.0 * um, max =  1.0 * um, points =  16 },   -- y_B
 }
 
@@ -44,7 +44,7 @@ particle(electron, {
 
 -- particle B: heavy detector, stationary, on the left arm path
 particle(detector, {
-    position = { -2.0 * um, 0 },
+    position = { 0 * um, 0 },
     momentum = { 0, 0 },
     width    = 0.4 * um,
 })
@@ -63,7 +63,7 @@ barrier {
     height = split_h,
 }
 
-local mirror_h = energy * 50
+local mirror_h = energy * 1
 local mirror_w = 0.15 * um
 
 -- left mirror
@@ -86,7 +86,7 @@ barrier {
 interaction {
     type      = "coulomb",
     particles = { 1, 2 },
-    softening = 1.3 * um,
-    strength  = energy * 0.1,
+    softening = 0.5 * um,
+    strength  = energy * 0.3,
     power     = 4,
 }
