@@ -120,19 +120,9 @@ void App::init_cursor()
 	auto &gm = st.grid;
 	if(gm.rank == 0) return;
 
-	// set cursor to initial particle positions
-	for(int p = 0; p < gm.cs.n_particles; p++) {
-		for(int d = 0; d < gm.cs.spatial_dims; d++) {
-			int ax = gm.cs.axis(p, d);
-			if(ax >= gm.rank) continue;
-			auto &axis = gm.axes[ax];
-			double pos = (p < (int)st.setup.particles.size()) ? st.setup.particles[p].position[d] : 0;
-			int idx = (int)((pos - axis.min) / (axis.max - axis.min) * axis.points);
-			if(idx < 0) idx = 0;
-			if(idx >= axis.points) idx = axis.points - 1;
-			m_view.cursor[ax] = idx;
-		}
-	}
+	// default cursor to grid center
+	for(int d = 0; d < gm.rank; d++)
+		m_view.cursor[d] = gm.axes[d].points / 2;
 
 	// clamp all cursors to current grid
 	for(int d = 0; d < MAX_RANK; d++) {
@@ -362,20 +352,6 @@ int App::draw_bottombar()
 		ImVec4 col_bad  = ImVec4(1.0, 0.3, 0.3, 1);
 
 		float rx = ImGui::GetWindowWidth() - 8;
-
-		for(int d = st.grid.rank - 1; d >= 0; d--) {
-			double kr = st.k_nyquist_ratio[d];
-			ImVec4 col = (kr < 0.3) ? col_ok : (kr < 0.5) ? col_warn : col_bad;
-			char buf[32];
-			snprintf(buf, sizeof(buf), "%d:%.0f%%", d, kr * 100);
-			rx -= ImGui::CalcTextSize(buf).x + 4;
-			ImGui::SameLine(rx);
-			ImGui::TextColored(col, "%s", buf);
-		}
-
-		rx -= ImGui::CalcTextSize("Grid").x + 8;
-		ImGui::SameLine(rx);
-		ImGui::Text("Grid");
 
 		double pp = st.phase_v;
 		double kp = st.phase_k;

@@ -25,30 +25,6 @@ static const char *getfield_string(lua_State *L, int idx, const char *key)
 }
 
 
-static int read_number_array(lua_State *L, int idx, double *out, int max)
-{
-	int n = 0;
-	int len = (int)lua_rawlen(L, idx);
-	if(len > max) len = max;
-	for(int i = 1; i <= len; i++) {
-		lua_rawgeti(L, idx, i);
-		if(lua_isnumber(L, -1))
-			out[n++] = lua_tonumber(L, -1);
-		lua_pop(L, 1);
-	}
-	return n;
-}
-
-
-static void read_array_field(lua_State *L, int idx, const char *key, double *out, int max)
-{
-	lua_getfield(L, idx, key);
-	if(lua_istable(L, -1))
-		read_number_array(L, -1, out, max);
-	lua_pop(L, 1);
-}
-
-
 static bool load_domain(lua_State *L, Setup &setup)
 {
 	lua_getfield(L, -1, "domain");
@@ -77,26 +53,19 @@ static bool load_domain(lua_State *L, Setup &setup)
 }
 
 
-static bool load_particles(lua_State *L, Setup &setup)
+static bool load_mass(lua_State *L, Setup &setup)
 {
-	lua_getfield(L, -1, "particles");
+	lua_getfield(L, -1, "mass");
 	if(!lua_istable(L, -1)) {
 		lua_pop(L, 1);
 		return true;
 	}
 
 	int n = (int)lua_rawlen(L, -1);
+	if(n > MAX_RANK) n = MAX_RANK;
 	for(int i = 0; i < n; i++) {
 		lua_rawgeti(L, -1, i + 1);
-		if(lua_istable(L, -1)) {
-			Particle p{};
-			p.mass   = getfield_number(L, -1, "mass");
-			p.charge = getfield_number(L, -1, "charge");
-			read_array_field(L, -1, "position", p.position, MAX_RANK);
-			read_array_field(L, -1, "momentum", p.momentum, MAX_RANK);
-			read_array_field(L, -1, "width", p.width, MAX_RANK);
-			setup.particles.push_back(p);
-		}
+		setup.mass[i] = lua_tonumber(L, -1);
 		lua_pop(L, 1);
 	}
 
@@ -105,49 +74,12 @@ static bool load_particles(lua_State *L, Setup &setup)
 }
 
 
-static bool load_potentials(lua_State *L, Setup &setup)
+// sample a Lua function on the grid, storing results as complex values.
+// fn(x,y,...) → re [, im]
+static bool sample_function(lua_State *L, const char *field, Setup &setup,
+                            std::vector<psi_t> &out)
 {
-	lua_getfield(L, -1, "potentials");
-	if(!lua_istable(L, -1)) {
-		lua_pop(L, 1);
-		return true;
-	}
-
-	int n = (int)lua_rawlen(L, -1);
-	for(int i = 0; i < n; i++) {
-		lua_rawgeti(L, -1, i + 1);
-		if(lua_istable(L, -1)) {
-			Potential pot{};
-
-			const char *type = getfield_string(L, -1, "type");
-			if(type) {
-				if(strcmp(type, "barrier") == 0)   pot.type = Potential::Type::Barrier;
-				else if(strcmp(type, "well") == 0) pot.type = Potential::Type::Well;
-				else if(strcmp(type, "harmonic") == 0) pot.type = Potential::Type::Harmonic;
-				else if(strcmp(type, "absorbing") == 0) pot.type = Potential::Type::Absorbing;
-				else lerr("unknown potential type '%s'", type);
-			}
-
-			pot.height = getfield_number(L, -1, "height");
-			pot.depth  = getfield_number(L, -1, "depth");
-			pot.k      = getfield_number(L, -1, "k");
-			read_array_field(L, -1, "from", pot.from, MAX_RANK);
-			read_array_field(L, -1, "to", pot.to, MAX_RANK);
-			read_array_field(L, -1, "center", pot.center, MAX_RANK);
-
-			setup.potentials.push_back(pot);
-		}
-		lua_pop(L, 1);
-	}
-
-	lua_pop(L, 1);
-	return true;
-}
-
-
-static bool load_custom_potential(lua_State *L, Setup &setup)
-{
-	lua_getfield(L, -1, "custom_potential");
+	lua_getfield(L, -1, field);
 	if(!lua_isfunction(L, -1)) {
 		lua_pop(L, 1);
 		return true;
@@ -155,7 +87,6 @@ static bool load_custom_potential(lua_State *L, Setup &setup)
 
 	int func_idx = lua_gettop(L);
 
-	// build temporary grid from domain
 	int rank = 0;
 	for(int i = 0; i < MAX_RANK; i++) {
 		if(setup.domain[i].points <= 0) break;
@@ -168,64 +99,18 @@ static bool load_custom_potential(lua_State *L, Setup &setup)
 		grid.axes[i] = setup.domain[i];
 	grid.compute_strides();
 
-	setup.custom_potential.resize(grid.total_points());
+	out.resize(grid.total_points());
 
-	grid.each([&](size_t idx, const int *coords, const double *pos) {
+	grid.each([&](size_t idx, const int *, const double *pos) {
 		lua_pushvalue(L, func_idx);
 		for(int d = 0; d < rank; d++)
 			lua_pushnumber(L, pos[d]);
-		lua_call(L, rank, 1);
-		setup.custom_potential[idx] = lua_tonumber(L, -1);
-		lua_pop(L, 1);
+		lua_call(L, rank, 2);
+		double re = lua_tonumber(L, -2);
+		double im = lua_tonumber(L, -1);  // nil → 0
+		out[idx] = psi_t((float)re, (float)im);
+		lua_pop(L, 2);
 	});
-
-	lua_pop(L, 1);
-	return true;
-}
-
-
-static bool load_interactions(lua_State *L, Setup &setup)
-{
-	lua_getfield(L, -1, "interactions");
-	if(!lua_istable(L, -1)) {
-		lua_pop(L, 1);
-		return true;
-	}
-
-	int n = (int)lua_rawlen(L, -1);
-	for(int i = 0; i < n; i++) {
-		lua_rawgeti(L, -1, i + 1);
-		if(lua_istable(L, -1)) {
-			Interaction inter{};
-
-			const char *type = getfield_string(L, -1, "type");
-			if(type) {
-				if(strcmp(type, "coulomb") == 0) inter.type = Interaction::Type::Coulomb;
-				else if(strcmp(type, "contact") == 0) inter.type = Interaction::Type::Contact;
-				else lerr("unknown interaction type '%s'", type);
-			}
-
-			// particle indices (1-based in Lua, 0-based in C++)
-			lua_getfield(L, -1, "particles");
-			if(lua_istable(L, -1)) {
-				lua_rawgeti(L, -1, 1);
-				inter.particle_a = (int)lua_tointeger(L, -1) - 1;
-				lua_pop(L, 1);
-				lua_rawgeti(L, -1, 2);
-				inter.particle_b = (int)lua_tointeger(L, -1) - 1;
-				lua_pop(L, 1);
-			}
-			lua_pop(L, 1);
-
-			inter.softening = getfield_number(L, -1, "softening");
-			inter.strength  = getfield_number(L, -1, "strength", 1.0);
-			inter.width     = getfield_number(L, -1, "width");
-			inter.power     = getfield_number(L, -1, "power", 1.0);
-
-			setup.interactions.push_back(inter);
-		}
-		lua_pop(L, 1);
-	}
 
 	lua_pop(L, 1);
 	return true;
@@ -266,19 +151,45 @@ static bool load_simulations(lua_State *L, Setup &setup)
 }
 
 
+static int lua_log(lua_State *L, Log::Level level)
+{
+	int n = lua_gettop(L);
+	luaL_Buffer b;
+	luaL_buffinit(L, &b);
+	for(int i = 1; i <= n; i++) {
+		if(i > 1) luaL_addchar(&b, ' ');
+		luaL_addstring(&b, luaL_tolstring(L, i, nullptr));
+		lua_pop(L, 1);
+	}
+	luaL_pushresult(&b);
+	log_write(level, "lua", "%s", lua_tostring(L, -1));
+	return 0;
+}
+
+static int lua_linf(lua_State *L) { return lua_log(L, Log::Inf); }
+static int lua_lwrn(lua_State *L) { return lua_log(L, Log::Wrn); }
+static int lua_lerr(lua_State *L) { return lua_log(L, Log::Err); }
+
+
 bool load_setup(const char *script, Setup &setup, bool verbose)
 {
 	lua_State *L = luaL_newstate();
 	luaL_openlibs(L);
 
-	// set the user script path for the prelude
+	// register log functions
+	lua_pushcfunction(L, lua_linf);
+	lua_setglobal(L, "linf");
+	lua_pushcfunction(L, lua_lwrn);
+	lua_setglobal(L, "lwrn");
+	lua_pushcfunction(L, lua_lerr);
+	lua_setglobal(L, "lerr");
+
 	lua_pushstring(L, script);
 	lua_setglobal(L, "script");
 
 	lua_pushboolean(L, verbose);
 	lua_setglobal(L, "verbose");
 
-	// run prelude (which runs the user script internally)
 	if(luaL_dofile(L, "lua/prelude.lua") != LUA_OK) {
 		lerr("%s", lua_tostring(L, -1));
 		lua_close(L);
@@ -291,7 +202,7 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 		return false;
 	}
 
-	// title and description
+	// metadata
 	lua_getfield(L, -1, "title");
 	if(lua_isstring(L, -1)) setup.title = lua_tostring(L, -1);
 	lua_pop(L, 1);
@@ -300,6 +211,7 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 	lua_pop(L, 1);
 
 	setup.spatial_dims = (int)getfield_number(L, -1, "spatial_dims");
+	setup.n_particles = (int)getfield_number(L, -1, "n_particles");
 	setup.timescale = getfield_number(L, -1, "timescale", 1e-15);
 	setup.default_timescale = setup.timescale;
 
@@ -313,13 +225,11 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 	}
 
 	bool ok = load_domain(L, setup)
-	       && load_particles(L, setup)
-	       && load_potentials(L, setup)
-	       && load_custom_potential(L, setup)
-	       && load_interactions(L, setup)
+	       && load_mass(L, setup)
+	       && sample_function(L, "potential", setup, setup.potential)
+	       && sample_function(L, "psi_init", setup, setup.psi_init)
 	       && load_simulations(L, setup);
 
-	// store auto-computed defaults for UI reset
 	if(!setup.simulations.empty())
 		setup.default_dt = fabs(setup.simulations[0].dt);
 

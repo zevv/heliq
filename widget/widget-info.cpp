@@ -70,26 +70,11 @@ void WidgetInfo::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 			i, ax.min, ax.max, ax.points, ax.dx());
 	}
 
-	if(!s.particles.empty()) {
+	if(s.n_particles > 0) {
 		ImGui::Spacing();
-		ImGui::Text("Particles: %zu", s.particles.size());
-		for(size_t i = 0; i < s.particles.size(); i++) {
-			auto &p = s.particles[i];
-			ImGui::Text("  %zu: mass=%.3e kg", i, p.mass);
-			ImGui::Text("     pos=[%.2e]  mom=[%.2e]  w=%.2e",
-				p.position[0], p.momentum[0], p.width[0]);
-		}
-	}
-
-	if(!s.potentials.empty()) {
-		ImGui::Spacing();
-		ImGui::Text("Potentials: %zu", s.potentials.size());
-		for(size_t i = 0; i < s.potentials.size(); i++) {
-			auto &pot = s.potentials[i];
-			const char *types[] = {"barrier", "well", "harmonic", "absorbing"};
-			ImGui::Text("  %zu: %s  height=%.2g eV",
-				i, types[(int)pot.type], pot.height / 1.602e-19);
-		}
+		ImGui::Text("Particles: %d", s.n_particles);
+		for(int i = 0; i < s.spatial_dims; i++)
+			ImGui::Text("  axis %d: mass=%.3e kg", i, s.mass[i]);
 	}
 
 	if(!s.simulations.empty()) {

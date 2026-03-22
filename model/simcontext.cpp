@@ -288,9 +288,6 @@ void SimContext::Impl::publish()
 	st.generation = generation;
 	st.error.clear();
 
-	for(int d = 0; d < sim.grid.rank; d++)
-		st.k_nyquist_ratio[d] = sim.k_nyquist_ratio[d];
-
 	st.grid.rank = sim.grid.rank;
 	for(int d = 0; d < sim.grid.rank; d++)
 		st.grid.axes[d] = sim.grid.axes[d];

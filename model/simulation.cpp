@@ -1,5 +1,4 @@
 
-#include <fftw3.h>
 #include <algorithm>
 #include <math.h>
 #include <random>
@@ -14,8 +13,8 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	dt = config.dt;
 
 	// build config space mapping
-	int np = (int)setup.particles.size();
-	int ndomain = (int)setup.spatial_dims;  // number of domain axes from lua
+	int np = setup.n_particles;
+	int ndomain = setup.spatial_dims;
 	cs.n_particles = np;
 	cs.spatial_dims = (np > 1) ? ndomain / np : ndomain;
 
@@ -28,17 +27,10 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	}
 	grid.compute_strides();
 
-	// assign per-axis mass using config space mapping
-	for(int i = 0; i < MAX_RANK; i++) mass[i] = 1.0;
-	for(int p = 0; p < np; p++) {
-		for(int d = 0; d < cs.spatial_dims; d++) {
-			int ax = cs.axis(p, d);
-			if(ax < grid.rank)
-				mass[ax] = setup.particles[p].mass;
-		}
-	}
+	// mass per axis from Lua
+	for(int i = 0; i < MAX_RANK; i++)
+		mass[i] = (i < grid.rank) ? setup.mass[i] : 1.0;
 
-	// generate axis labels from config space mapping
 	cs.label_axes(grid);
 
 	size_t n = grid.total_points();
@@ -51,19 +43,33 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	m_potential_phase.resize(n);
 	m_kinetic_phase.resize(n);
 
-	// sample potentials and wavefunction into CPU arrays
-	sample_potential(setup);
-	sample_wavefunction(setup);
+	// potential from Lua (or zero)
+	if(!setup.potential.empty())
+		std::copy_n(setup.potential.data(), n, potential.data());
 
-	// compute spatial aliasing diagnostic: k / k_nyquist per axis
-	for(int d = 0; d < grid.rank; d++) {
-		int pi = cs.particle_of(d);
-		int di = cs.dim_of(d);
-		double p_val = (pi < (int)setup.particles.size())
-			? fabs(setup.particles[pi].momentum[di]) : 0;
-		double k = p_val / hbar;
-		double k_nyq = M_PI / grid.axes[d].dx();
-		k_nyquist_ratio[d] = k / k_nyq;
+	// psi from Lua, normalize
+	if(!setup.psi_init.empty()) {
+		std::copy_n(setup.psi_init.data(), n, psi[0].data());
+
+		double norm = 0;
+		for(size_t i = 0; i < n; i++)
+			norm += std::norm(psi[0][i]);
+
+		double dv = 1.0;
+		for(int d = 0; d < grid.rank; d++)
+			dv *= grid.axes[d].dx();
+		norm *= dv;
+		double scale = 1.0 / sqrt(norm);
+
+		float fscale = (float)scale;
+		for(size_t i = 0; i < n; i++) {
+			psi[0][i] *= fscale;
+			if(std::norm(psi[0][i]) < 1e-20f)
+				psi[0][i] = psi_t(0, 0);
+		}
+
+		std::copy_n(psi[0].data(), n, psi_initial.data());
+		std::copy_n(psi[0].data(), n, psi[1].data());
 	}
 
 	// precompute phase factors
@@ -447,138 +453,7 @@ void Simulation::sync()
 }
 
 
-static bool inside_bounds(const double *pos, const double *from, const double *to, int rank)
-{
-	for(int d = 0; d < rank; d++) {
-		if(pos[d] < from[d] || pos[d] > to[d])
-			return false;
-	}
-	return true;
-}
 
-
-static const double k_coulomb = 8.9875517873681764e9;  // N·m²/C²
-
-void Simulation::sample_potential(const Setup &setup)
-{
-	grid.each([&](size_t idx, const int *coords, const double *pos) {
-		psi_t v(0, 0);
-		for(auto &pot : setup.potentials) {
-			switch(pot.type) {
-				case Potential::Type::Barrier:
-					if(inside_bounds(pos, pot.from, pot.to, grid.rank))
-						v += pot.height;
-					break;
-				case Potential::Type::Well:
-					if(inside_bounds(pos, pot.from, pot.to, grid.rank))
-						v -= pot.depth;
-					break;
-				case Potential::Type::Harmonic: {
-					double r2 = 0;
-					for(int d = 0; d < grid.rank; d++) {
-						double dx = pos[d] - pot.center[d];
-						r2 += dx * dx;
-					}
-					v += 0.5 * pot.k * r2;
-					break;
-				}
-				case Potential::Type::Absorbing:
-					if(inside_bounds(pos, pot.from, pot.to, grid.rank))
-						v += psi_t(0, pot.height);
-					break;
-			}
-		}
-
-		// two-body interactions in configuration space
-		for(auto &inter : setup.interactions) {
-			int pa = inter.particle_a;
-			int pb = inter.particle_b;
-			if(pa >= cs.n_particles || pb >= cs.n_particles) continue;
-
-			double dist2 = cs.distance_sq(pa, pb, pos);
-
-			switch(inter.type) {
-			case Interaction::Type::Coulomb: {
-				double r2s = dist2 + inter.softening * inter.softening;
-				double denom = pow(r2s, inter.power * 0.5);
-				if(inter.power == 1.0) {
-					// standard Coulomb: strength scales k * q_a * q_b / r
-					double q_a = setup.particles[pa].charge;
-					double q_b = setup.particles[pb].charge;
-					v += inter.strength * k_coulomb * q_a * q_b / denom;
-				} else {
-					// power-law: strength is direct energy scale, normalized to peak at softening
-					// V = strength * (softening^power) / (r² + softening²)^(power/2)
-					// so V(r=0) = strength, V falls off as 1/r^power for r >> softening
-					double s_p = pow(inter.softening * inter.softening, inter.power * 0.5);
-					v += inter.strength * s_p / denom;
-				}
-				break;
-			}
-				case Interaction::Type::Contact: {
-					// Gaussian-shaped contact: smooth falloff, no hard wall
-					double w2 = inter.width * inter.width;
-					v += inter.strength * exp(-dist2 / w2);
-					break;
-				}
-			}
-		}
-
-		if(!setup.custom_potential.empty())
-			v += setup.custom_potential[idx];
-
-		potential[idx] = v;
-	});
-}
-
-
-void Simulation::sample_wavefunction(const Setup &setup)
-{
-	if(setup.particles.empty()) return;
-
-	double norm = 0;
-
-	grid.each([&](size_t idx, const int *coords, const double *pos) {
-		// product state: ψ(x₁,x₂,...) = ψ₁(x₁) · ψ₂(x₂) · ...
-		// each particle contributes a Gaussian × plane wave across its axes
-		psi_t val(1.0f, 0.0f);
-
-		for(int p = 0; p < cs.n_particles; p++) {
-			auto &part = setup.particles[p];
-			double envelope = 0;
-			double phase = 0;
-			for(int d = 0; d < cs.spatial_dims; d++) {
-				int ax = cs.axis(p, d);
-				double dx = pos[ax] - part.position[d];
-				envelope += dx * dx / (4.0 * part.width[d] * part.width[d]);
-				phase += part.momentum[d] * pos[ax] / hbar;
-			}
-			double amp = exp(-envelope);
-			val *= psi_t(amp * cos(phase), amp * sin(phase));
-		}
-
-		psi[0][idx] = val;
-		norm += std::norm(val);
-	});
-
-	double dv = 1.0;
-	for(int d = 0; d < grid.rank; d++)
-		dv *= grid.axes[d].dx();
-	norm *= dv;
-	double scale = 1.0 / sqrt(norm);
-
-	size_t n = grid.total_points();
-	float fscale = (float)scale;
-	for(size_t i = 0; i < n; i++) {
-		psi[0][i] *= fscale;
-		// clamp float32 denormal noise to zero
-		if(std::norm(psi[0][i]) < 1e-20f)
-			psi[0][i] = psi_t(0, 0);
-	}
-
-	std::copy_n(psi[0].data(), n, psi_initial.data());
-	std::copy_n(psi[0].data(), n, psi[1].data());
-}
 
 
 Simulation::~Simulation()

@@ -14,7 +14,6 @@
 #include "config.hpp"
 #include "math3d.hpp"
 #include "grid.hpp"
-#include "constants.hpp"
 #include "misc.hpp"
 #include "glview.hpp"
 #include "style.hpp"

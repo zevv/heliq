@@ -17,9 +17,9 @@ bool Experiment::load(Setup new_setup, bool reset)
 	simulations.clear();
 	setup = std::move(new_setup);
 
-	linf("loaded: %dD, %zu particles, %zu potentials, %zu sims",
-		setup.spatial_dims, setup.particles.size(),
-		setup.potentials.size(), setup.simulations.size());
+	linf("loaded: %dD, %d particles, %zu sims",
+		setup.spatial_dims, setup.n_particles,
+		setup.simulations.size());
 
 	if(is_reload) {
 		timescale = prev_timescale;

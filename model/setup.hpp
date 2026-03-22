@@ -1,43 +1,12 @@
 #pragma once
 
-#include <complex>
 #include <vector>
 #include <string>
 
 #include "grid.hpp"
 
 // Output of Lua ingestion. Immutable after creation.
-// Pure data — no simulation logic, no UI coupling.
-
-struct Particle {
-	double mass{};                   // kg
-	double charge{};                 // C
-	double position[MAX_RANK]{};     // meters, per spatial dim
-	double momentum[MAX_RANK]{};     // kg·m/s
-	double width[MAX_RANK]{};        // meters, Gaussian spread per spatial dim
-};
-
-struct Potential {
-	enum class Type { Barrier, Well, Harmonic, Absorbing };
-	Type type{};
-	double from[MAX_RANK]{};         // meters
-	double to[MAX_RANK]{};           // meters
-	double center[MAX_RANK]{};       // meters (harmonic)
-	double height{};                 // J (barrier/absorbing)
-	double depth{};                  // J (well, stored as positive)
-	double k{};                      // N/m (harmonic spring constant)
-};
-
-struct Interaction {
-	enum class Type { Coulomb, Contact };
-	Type type{};
-	int particle_a{};                // 0-indexed particle indices
-	int particle_b{};
-	double softening{};              // meters, regularization for 1/r (Coulomb)
-	double strength{1.0};            // Contact: Joules; Coulomb: multiplier (1.0 = real)
-	double width{};                  // meters, barrier width (Contact)
-	double power{1.0};               // Coulomb exponent: V ~ 1/r^power (1=Coulomb, 2=dipole, ...)
-};
+// Three arrays (psi, potential, mass) plus metadata.
 
 enum class SimMode { Joint, Factored };
 
@@ -52,16 +21,16 @@ struct Setup {
 	std::string title{};
 	std::string description{};
 	int spatial_dims{};
+	int n_particles{};
 	Axis domain[MAX_RANK]{};
-	std::vector<Particle> particles{};
-	std::vector<Potential> potentials{};
-	std::vector<double> custom_potential;  // pre-sampled V(pos), one per grid point, row-major
-	std::vector<Interaction> interactions{};
+	double mass[MAX_RANK]{};         // kg, per config-space axis
+	std::vector<psi_t> psi_init;     // pre-sampled psi(pos), one per grid point
+	std::vector<psi_t> potential;    // pre-sampled V(pos), one per grid point
 	std::vector<SimConfig> simulations{};
-	double timescale{1e-15};         // current timescale
-	double default_timescale{1e-15}; // auto-computed, for 'A' reset
-	double default_dt{};             // auto-computed, for 'A' reset
+	double timescale{1e-15};
+	double default_timescale{1e-15};
+	double default_dt{};
 	bool absorbing_boundary{false};
-	double absorb_width{0.02};     // fraction of domain width per side
-	double absorb_strength{};      // 0 = auto-compute from potential/grid
+	double absorb_width{0.02};
+	double absorb_strength{};
 };

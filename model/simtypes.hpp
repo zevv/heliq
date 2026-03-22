@@ -110,7 +110,6 @@ struct PublishedState {
 	double phase_k{};          // max kinetic phase per step
 	double dt{};               // current timestep
 	double timescale{};        // sim-time per wall-second
-	double k_nyquist_ratio[MAX_RANK]{};
 	int marginal_peaks[MAX_RANK]{}; // argmax of |ψ|² marginal per axis
 
 	// grid + configspace metadata

@@ -69,7 +69,6 @@ public:
 	// diagnostics
 	double max_potential_phase{};  // max |V*dt/(2*hbar)| in radians
 	double max_kinetic_phase{};    // max |hbar*k^2/(2m)*dt| in radians
-	double k_nyquist_ratio[MAX_RANK]{};  // per-axis: initial k / k_nyquist (>0.5 = trouble)
 	double total_probability();    // should be ~1.0
 
 	// GPU-side data extraction (avoids full readback)
@@ -79,8 +78,6 @@ public:
 	void read_marginal_2d(int ax_x, int ax_y, float *out, psi_t *coherent = nullptr);
 
 private:
-	void sample_potential(const Setup &setup);
-	void sample_wavefunction(const Setup &setup);
 	void precompute_phases();
 	void compute_potential_phase();
 	void compute_kinetic_phase();

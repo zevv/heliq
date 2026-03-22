@@ -6,6 +6,7 @@ TEST_CASE("load 1d-barrier experiment") {
 	REQUIRE(load_setup("test/test-1d-barrier.lua", setup));
 
 	CHECK(setup.spatial_dims == 1);
+	CHECK(setup.n_particles == 1);
 
 	SUBCASE("domain") {
 		CHECK(setup.domain[0].points == 512);
@@ -14,21 +15,26 @@ TEST_CASE("load 1d-barrier experiment") {
 		CHECK(setup.domain[0].spatial == true);
 	}
 
-	SUBCASE("particles") {
-		REQUIRE(setup.particles.size() == 1);
-		auto &p = setup.particles[0];
-		CHECK(p.mass == doctest::Approx(9.109e-31).epsilon(0.001));
-		CHECK(p.charge == doctest::Approx(-1.602e-19).epsilon(0.001));
-		CHECK(p.position[0] == doctest::Approx(-2e-6));
-		CHECK(p.momentum[0] > 0);
-		CHECK(p.width[0] == doctest::Approx(0.2e-6));
+	SUBCASE("mass") {
+		CHECK(setup.mass[0] == doctest::Approx(9.109e-31).epsilon(0.001));
 	}
 
-	SUBCASE("potentials") {
-		REQUIRE(setup.potentials.size() == 1);
-		auto &pot = setup.potentials[0];
-		CHECK(pot.type == Potential::Barrier);
-		CHECK(pot.height > 0);
+	SUBCASE("potential sampled") {
+		CHECK(setup.potential.size() == 512);
+		// potential should be nonzero somewhere (barrier region)
+		bool has_nonzero = false;
+		for(auto &v : setup.potential)
+			if(v.real() > 0) has_nonzero = true;
+		CHECK(has_nonzero);
+	}
+
+	SUBCASE("psi_init sampled") {
+		CHECK(setup.psi_init.size() == 512);
+		// psi should be nonzero somewhere
+		bool has_nonzero = false;
+		for(auto &v : setup.psi_init)
+			if(std::norm(v) > 0) has_nonzero = true;
+		CHECK(has_nonzero);
 	}
 
 	SUBCASE("simulations") {
