@@ -66,8 +66,11 @@ Load and run. The packet spreads immediately.
 
 "It can't stay still. The more precisely you pin down where it is, the more
 uncertain its momentum becomes — and all those momentum components fly apart.
-This isn't a limitation of the simulator. This is the uncertainty principle,
-emerging from nothing but the equation."
+This is Heisenberg's uncertainty principle — not a problem with our instruments,
+not about clumsy measurements disturbing the particle. It's structural. The
+wave function *cannot* be both narrow in position and narrow in momentum. It's
+not that we don't know — it's that there's nothing to know. This is the
+equation, doing its thing."
 
 
 ## 3-reflection.lua — Hitting a Wall
