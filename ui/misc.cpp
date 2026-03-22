@@ -45,6 +45,7 @@ void humanize(double val, char *buf, size_t buf_len)
 			return;
 		}
 	}
+	snprintf(buf, buf_len, "0");
 }
 
 
