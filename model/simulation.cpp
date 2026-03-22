@@ -13,13 +13,11 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	dt = config.dt;
 
 	// build config space mapping
-	int np = setup.n_particles;
-	int ndomain = setup.spatial_dims;
-	cs.n_particles = np;
-	cs.spatial_dims = (np > 1) ? ndomain / np : ndomain;
+	cs.n_particles = setup.n_particles;
+	cs.spatial_dims = setup.dims_per_particle;
 
 	// build grid from setup domain
-	grid.rank = ndomain;
+	grid.rank = setup.spatial_dims;
 	for(int i = 0; i < grid.rank; i++) {
 		grid.axes[i] = setup.domain[i];
 		if(config.resolution > 0)
@@ -36,8 +34,7 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	size_t n = grid.total_points();
 
 	// CPU-side arrays
-	psi[0].resize(n);
-	psi[1].resize(n);
+	psi.resize(n);
 	potential.resize(n);
 	psi_initial.resize(n);
 	m_potential_phase.resize(n);
@@ -49,11 +46,11 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 
 	// psi from Lua, normalize
 	if(!setup.psi_init.empty()) {
-		std::copy_n(setup.psi_init.data(), n, psi[0].data());
+		std::copy_n(setup.psi_init.data(), n, psi.data());
 
 		double norm = 0;
 		for(size_t i = 0; i < n; i++)
-			norm += std::norm(psi[0][i]);
+			norm += std::norm(psi[i]);
 
 		double dv = 1.0;
 		for(int d = 0; d < grid.rank; d++)
@@ -63,13 +60,12 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 
 		float fscale = (float)scale;
 		for(size_t i = 0; i < n; i++) {
-			psi[0][i] *= fscale;
-			if(std::norm(psi[0][i]) < 1e-20f)
-				psi[0][i] = psi_t(0, 0);
+			psi[i] *= fscale;
+			if(std::norm(psi[i]) < 1e-20f)
+				psi[i] = psi_t(0, 0);
 		}
 
-		std::copy_n(psi[0].data(), n, psi_initial.data());
-		std::copy_n(psi[0].data(), n, psi[1].data());
+		std::copy_n(psi.data(), n, psi_initial.data());
 	}
 
 	// precompute phase factors
@@ -79,10 +75,6 @@ Simulation::Simulation(const SimConfig &config, const Setup &setup)
 	m_solver = Solver::create(grid);
 	upload_phases();
 	m_solver->write_psi(psi_initial.data());
-
-	// copy initial state into display buffers
-	std::copy_n(psi_initial.data(), n, psi[0].data());
-	std::copy_n(psi_initial.data(), n, psi[1].data());
 
 	// apply absorbing boundary from setup
 	if(setup.absorbing_boundary) {
@@ -256,9 +248,8 @@ void Simulation::reset()
 {
 	size_t n = grid.total_points();
 	m_solver->write_psi(psi_initial.data());
-	std::copy_n(psi_initial.data(), n, psi[0].data());
-	std::copy_n(psi_initial.data(), n, psi[1].data());
-	front.store(0);
+	std::copy_n(psi_initial.data(), n, psi.data());
+	m_psi_dirty = false;
 	step_count = 0;
 	sim_time = 0;
 }
@@ -274,7 +265,7 @@ static std::mt19937 &rng()
 int Simulation::measure(int axis, double collapse_width)
 {
 	size_t n = grid.total_points();
-	auto *p = psi_front();
+	auto *p = psi_cpu();
 
 	// default collapse width: 5% of domain along the measured axis
 	if(collapse_width <= 0) {
@@ -370,7 +361,7 @@ int Simulation::measure(int axis, double collapse_width)
 
 void Simulation::decohere(int axis, double strength)
 {
-	auto *p = psi_front();
+	auto *p = psi_cpu();
 	size_t n = grid.total_points();
 
 	// linear phase ramp: adds a small momentum kick
@@ -394,7 +385,7 @@ void Simulation::decohere(int axis, double strength)
 // Renormalize the front psi buffer to total probability = 1
 void Simulation::normalize_psi()
 {
-	auto *p = psi_front();
+	auto *p = psi_cpu();
 	size_t n = grid.total_points();
 	double norm = 0;
 	for(size_t i = 0; i < n; i++)
@@ -414,12 +405,8 @@ void Simulation::normalize_psi()
 // Push modified CPU psi buffer to solver and swap display buffers
 void Simulation::commit_psi()
 {
-	auto *p = psi_front();
-	size_t n = grid.total_points();
-	m_solver->write_psi(p);
-	int back = 1 - front.load();
-	std::copy_n(p, n, psi[back].data());
-	front.store(back);
+	m_solver->write_psi(psi.data());
+	m_psi_dirty = false;
 }
 
 
@@ -447,9 +434,7 @@ void Simulation::flush()
 
 void Simulation::sync()
 {
-	int back = 1 - front.load();
-	m_solver->read_psi(psi[back].data());
-	front.store(back);
+	m_solver->read_psi(psi.data());
 }
 
 

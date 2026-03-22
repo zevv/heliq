@@ -72,6 +72,11 @@ if not defaults.validate(world) then
     error("domain() not called", 0)
 end
 
+-- derive config-space layout
+local np = #world.particles
+world.n_particles = np
+world.dims_per_particle = (np > 1) and (world.spatial_dims / np) or world.spatial_dims
+
 -- compose primitives into final functions
 api.build_potential()
 api.build_psi_init()
@@ -89,10 +94,6 @@ if #world.simulations == 0 then
 end
 
 world.timescale = timescale
-
--- config space info for C++
-local np = #world.particles
-world.n_particles = np
 
 defaults.dump(world)
 

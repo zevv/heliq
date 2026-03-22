@@ -1,7 +1,6 @@
 #pragma once
 
 #include <complex>
-#include <atomic>
 #include <string>
 #include <memory>
 #include <vector>
@@ -40,9 +39,8 @@ public:
 
 	double time() const { return sim_time; }
 
-	// CPU-side wavefunction double buffer (for widget reads)
-	std::vector<psi_t> psi[2];
-	std::atomic<int> front{0};
+	// CPU-side wavefunction (synced from GPU on demand)
+	std::vector<psi_t> psi;
 
 	// potential (CPU-side, for widget display)
 	std::vector<psi_t> potential;
@@ -50,14 +48,14 @@ public:
 	// initial state snapshot for reset
 	std::vector<psi_t> psi_initial;
 
-	// read access for widgets (triggers GPU readback if stale)
-	psi_t *psi_front() {
+	// read access (triggers GPU readback if stale)
+	psi_t *psi_cpu() {
 		if(m_psi_dirty) { sync(); m_psi_dirty = false; }
-		return psi[front.load()].data();
+		return psi.data();
 	}
 	void mark_dirty() { m_psi_dirty = true; }
-	void normalize_psi();  // renormalize front psi to probability 1
-	void commit_psi();     // push modified CPU psi to solver, swap display buffers
+	void normalize_psi();  // renormalize to probability 1
+	void commit_psi();     // push modified CPU psi back to solver
 
 	// absorbing boundary
 	bool absorbing_boundary{false};

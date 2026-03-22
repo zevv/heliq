@@ -22,6 +22,7 @@ struct Setup {
 	std::string description{};
 	int spatial_dims{};
 	int n_particles{};
+	int dims_per_particle{};
 	Axis domain[MAX_RANK]{};
 	double mass[MAX_RANK]{};         // kg, per config-space axis
 	std::vector<psi_t> psi_init;     // pre-sampled psi(pos), one per grid point

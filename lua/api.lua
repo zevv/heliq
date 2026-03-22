@@ -116,7 +116,7 @@ local function build(world, C)
     function api.build_potential()
         local ndims = world.spatial_dims
         local np = #world.particles
-        local sd = (np > 1) and (ndims / np) or ndims
+        local sd = world.dims_per_particle
 
         -- build individual potential closures
         local fns = {}
@@ -219,7 +219,7 @@ local function build(world, C)
 
         local ndims = world.spatial_dims
         local np = #world.particles
-        local sd = ndims / np
+        local sd = world.dims_per_particle
 
         local parts = {}
         for i, p in ipairs(world.particles) do
@@ -259,7 +259,7 @@ local function build(world, C)
     function api.build_mass()
         local ndims = world.spatial_dims
         local np = #world.particles
-        local sd = (np > 1) and (ndims / np) or ndims
+        local sd = world.dims_per_particle
 
         world.mass = {}
         for i = 1, ndims do

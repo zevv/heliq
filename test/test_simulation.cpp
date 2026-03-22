@@ -22,10 +22,9 @@ TEST_CASE("simulation allocation from setup") {
 	}
 
 	SUBCASE("arrays allocated") {
-		REQUIRE(sim.psi[0] != nullptr);
-		REQUIRE(sim.psi[1] != nullptr);
-		REQUIRE(sim.potential != nullptr);
-		REQUIRE(sim.psi_initial != nullptr);
+		REQUIRE(!sim.psi.empty());
+		REQUIRE(!sim.potential.empty());
+		REQUIRE(!sim.psi_initial.empty());
 	}
 
 	SUBCASE("potential sampled") {
@@ -38,15 +37,11 @@ TEST_CASE("simulation allocation from setup") {
 		double prob = 0;
 		double dv = sim.grid.axes[0].dx();
 		for(size_t i = 0; i < sim.grid.total_points(); i++)
-			prob += std::norm(sim.psi[0][i]) * dv;
+			prob += std::norm(sim.psi[i]) * dv;
 		CHECK(prob == doctest::Approx(1.0).epsilon(0.01));
 
 		for(size_t i = 0; i < sim.grid.total_points(); i++)
-			CHECK(sim.psi[0][i] == sim.psi_initial[i]);
-	}
-
-	SUBCASE("front buffer") {
-		CHECK(sim.psi_front() == sim.psi[0]);
+			CHECK(sim.psi[i] == sim.psi_initial[i]);
 	}
 }
 

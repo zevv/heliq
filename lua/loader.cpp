@@ -208,6 +208,7 @@ bool load_setup(const char *script, Setup &setup, bool verbose)
 
 	setup.spatial_dims = (int)getfield_number(L, -1, "spatial_dims");
 	setup.n_particles = (int)getfield_number(L, -1, "n_particles");
+	setup.dims_per_particle = (int)getfield_number(L, -1, "dims_per_particle");
 	setup.timescale = getfield_number(L, -1, "timescale", 1e-15);
 	setup.default_timescale = setup.timescale;
 

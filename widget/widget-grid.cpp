@@ -11,19 +11,7 @@
 #include "style.hpp"
 #include "log.hpp"
 
-// color palettes: value [0..1] -> RGBA
-// alpha carries intensity, color is always full brightness
-#include "datasource.hpp"
-
-struct Overlay {
-	DataSource source{DataSource::PsiSq};
-	Palette palette{Palette::Flame};
-	float opacity{1.0f};
-	float gamma{2.0f};  // alpha exponent: 1.0=linear, 0.5=sqrt, 0.3=aggressive
-	SDL_Texture *tex{};
-	int tex_w{};
-	int tex_h{};
-};
+#include "overlay.hpp"
 
 class WidgetGrid : public Widget {
 public:
@@ -173,17 +161,6 @@ static void handle_mouse(SDL_Rect &r, float ctrl_h, float &zoom, float &pan_x, f
 	}
 }
 
-static void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h)
-{
-	if(ov.tex && ov.tex_w == w && ov.tex_h == h) return;
-	if(ov.tex) SDL_DestroyTexture(ov.tex);
-	ov.tex = SDL_CreateTexture(rend, SDL_PIXELFORMAT_RGBA32,
-		SDL_TEXTUREACCESS_STREAMING, w, h);
-	ov.tex_w = w;
-	ov.tex_h = h;
-}
-
-
 // render a 2D psi/pot buffer into an SDL texture overlay
 static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_buf,
                             int tw, int th)
@@ -241,31 +218,7 @@ static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_b
 	SDL_UnlockTexture(ov.tex);
 }
 
-static void draw_controls(Overlay overlays[], int n_overlays)
-{
-	for(int i = 0; i < n_overlays; i++) {
-		auto &ov = overlays[i];
-		ImGui::PushID(i);
-		ImGui::Text("Overlay %d:", i);
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(100);
-		int src = (int)ov.source;
-		if(ImGui::Combo("##src", &src, datasource_names, (int)DataSource::COUNT))
-			ov.source = (DataSource)src;
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(80);
-		int pal = (int)ov.palette;
-		if(ImGui::Combo("##pal", &pal, palette_names, (int)Palette::COUNT))
-			ov.palette = (Palette)pal;
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(60);
-		ImGui::SliderFloat("##alpha", &ov.opacity, 0.0f, 1.0f, "a%.1f");
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(60);
-		ImGui::SliderFloat("##gamma", &ov.gamma, 0.5f, 10.0f, "g%.1f");
-		ImGui::PopID();
-	}
-}
+
 
 
 void WidgetGrid::update_overlays_from_result(const ExtractionResult &res,
@@ -277,7 +230,6 @@ void WidgetGrid::update_overlays_from_result(const ExtractionResult &res,
 		ensure_texture(rend, ov, tw, th);
 		render_texture(ov, res.psi.data(), res.pot.data(), tw, th);
 		SDL_SetTextureAlphaMod(ov.tex, (uint8_t)(ov.opacity * 255));
-		SDL_SetTextureBlendMode(ov.tex, SDL_BLENDMODE_BLEND);
 		SDL_RenderTexture(rend, ov.tex, nullptr, &m_dst);
 	}
 }
@@ -440,7 +392,7 @@ void WidgetGrid::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	float ctrl_h = ImGui::GetCursorPosY();
 
 	if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
-		draw_controls(m_overlays, N_OVERLAYS);
+		draw_overlay_controls(m_overlays, N_OVERLAYS);
 
 	int tw = gm.axes[m_axis_x].points;
 	int th = (gm.rank >= 2) ? gm.axes[m_axis_y].points : 1;
