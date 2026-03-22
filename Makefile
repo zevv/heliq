@@ -19,6 +19,7 @@ SRC += model/simulation.cpp
 SRC += model/solver.cpp
 SRC += model/solver_cpu.cpp
 SRC += model/solver_gpu.cpp
+SRC += model/solver_pocket.cpp
 SRC += model/simcontext.cpp
 SRC += widget/widget-dummy.cpp
 SRC += widget/widget-info.cpp
@@ -49,7 +50,7 @@ CXXFLAGS += -Wno-unused-but-set-variable -Wno-unused-variable -Wno-format-trunca
 CXXFLAGS += -O3 -ffast-math
 CXXFLAGS += -march=native
 CXXFLAGS += -MMD
-CXXFLAGS += -Iui -Imodel -Iwidget -Ilua
+CXXFLAGS += -Iui -Imodel -Iwidget -Ilua -Iexternal
 CXXFLAGS += -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
 CXXFLAGS += -DVKFFT_BACKEND=3
 CXXFLAGS += $(PKG_CFLAGS)

@@ -7,6 +7,7 @@
 #include "solver.hpp"
 #include "solver_cpu.hpp"
 #include "solver_gpu.hpp"
+#include "solver_pocket.hpp"
 #include "log.hpp"
 
 
@@ -98,25 +99,35 @@ void Solver::read_marginal_2d(const Grid &grid, int ax_x, int ax_y, float *out, 
 
 std::unique_ptr<Solver> Solver::create(const Grid &grid)
 {
-	const char *env = getenv("QUANTUM_SOLVER");
+	const char *env = getenv("HELIQ_SOLVER");
 
-	if(env && strcmp(env, "cpu") == 0) {
-		linf("using CPU (FFTW) [QUANTUM_SOLVER=cpu]");
+	if(env && strcmp(env, "fftw") == 0) {
+		linf("using FFTW [HELIQ_SOLVER=fftw]");
 		return std::make_unique<CpuSolver>(grid);
 	}
 
-	if(env && strcmp(env, "gpu") == 0) {
+	if(env && strcmp(env, "pocket") == 0) {
+		linf("using PocketFFT [HELIQ_SOLVER=pocket]");
+		return std::make_unique<PocketSolver>(grid);
+	}
+
+	if(env && strcmp(env, "opencl") == 0) {
 		if(!GpuSolver::available()) {
-			lwrn("GPU requested but not available, falling back to CPU");
+			lwrn("OpenCL requested but not available, falling back to FFTW");
 			return std::make_unique<CpuSolver>(grid);
 		}
 		return std::make_unique<GpuSolver>(grid);
+	}
+
+	if(env) {
+		lerr("unknown HELIQ_SOLVER '%s' (valid: fftw, pocket, opencl)", env);
+		exit(1);
 	}
 
 	// default: prefer GPU (rank > 3 uses transpose decomposition)
 	if(GpuSolver::available())
 		return std::make_unique<GpuSolver>(grid);
 
-	linf("using CPU (FFTW)");
+	linf("using FFTW");
 	return std::make_unique<CpuSolver>(grid);
 }
