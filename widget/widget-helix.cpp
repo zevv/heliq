@@ -89,6 +89,14 @@ private:
 	double compute_max_amp(const psi_t *psi, int n);
 	double envelope_value(psi_t psi, double max_amp);
 
+	// spline helper
+	static float catmull_rom(float p0, float p1, float p2, float p3, float t) {
+		return p1 + 0.5f * t * (
+			(p2 - p0) + t * (
+				(2*p0 - 5*p1 + 4*p2 - p3) + t * (
+					-p0 + 3*p1 - 3*p2 + p3)));
+	}
+
 	// camera
 	void mvp_to_float(const mat4 &m, float *out);
 
@@ -478,57 +486,100 @@ std::tuple<float,float,float> WidgetHelix::color_for_vert(
 }
 
 
+// fixed number of interpolated points between each pair of samples
+static const int HELIX_SUBDIVISIONS = 8;
+
+
 void WidgetHelix::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 {
 	auto sc = Style::color(Style::SurfaceDefault);
-	auto col = [&](int i, float amp) { return color_for_vert(m_surface.color, i, amp, psi, sc.r, sc.g, sc.b); };
+	float inv_max = (float)(1.0 / max_amp);
+	float a = m_amplitude;
 
-	// slider 0..1 maps to two ranges:
-	//   0.0..0.5 → spokes only:  spoke_alpha = slider*2, surf_alpha = 0
-	//   0.5..1.0 → spokes full:  spoke_alpha = 1, surf_alpha = (slider-0.5)*1.0 (max 0.5)
+	auto pos = [&](int i) -> std::array<float,3> {
+		float t = (float)i / n;
+		return { -1.0f + 2.0f * t,
+		         psi[i].real() * inv_max * a,
+		         psi[i].imag() * inv_max * a };
+	};
+
+	auto col = [&](int i) -> std::array<float,3> {
+		float amp = std::abs(psi[i]) * inv_max;
+		auto [cr, cg, cb] = color_for_vert(m_surface.color, i, amp, psi, sc.r, sc.g, sc.b);
+		return { cr, cg, cb };
+	};
+
 	float s = m_surface.alpha;
 	float spoke_alpha = (s <= 0.5f) ? s * 2.0f : 1.0f;
 	float surf_alpha  = (s <= 0.5f) ? 0.0f : (s - 0.5f);
 
-	// triangle strip with per-vertex color: base[i], helix[i], ...
-	// 7 floats per vert: pos(3) + col(4)
-	m_vbuf.resize(n * 2 * 7);
-	for(int i = 0; i < n; i++) {
-		float t = (float)i / n;
-		float x = -1.0f + 2.0f * t;
-		float y = (float)(psi[i].real() / max_amp * m_amplitude);
-		float z = (float)(psi[i].imag() / max_amp * m_amplitude);
-		float amp = (float)(std::abs(psi[i]) / max_amp);
-		auto [cr, cg, cb] = col(i, amp);
+	// build interpolated triangle strip for surface fill
+	int vcount = 0;
+	m_vbuf.resize(n * 2 * 7 * (HELIX_SUBDIVISIONS + 2));
+	auto emit_pair = [&](float x, float y, float z, float cr, float cg, float cb, float alpha) {
+		int base = vcount * 7;
+		if(base + 14 > (int)m_vbuf.size()) m_vbuf.resize(m_vbuf.size() * 2);
+		m_vbuf[base+0] = x; m_vbuf[base+1] = 0; m_vbuf[base+2] = 0;
+		m_vbuf[base+3] = cr*0.5f; m_vbuf[base+4] = cg*0.5f; m_vbuf[base+5] = cb*0.5f;
+		m_vbuf[base+6] = alpha;
+		m_vbuf[base+7] = x; m_vbuf[base+8] = y; m_vbuf[base+9] = z;
+		m_vbuf[base+10] = cr; m_vbuf[base+11] = cg; m_vbuf[base+12] = cb;
+		m_vbuf[base+13] = alpha;
+		vcount += 2;
+	};
 
-		// base vertex (on x-axis, dimmer)
-		m_vbuf[i*14+0] = x; m_vbuf[i*14+1] = 0; m_vbuf[i*14+2] = 0;
-		m_vbuf[i*14+3] = cr*0.5f; m_vbuf[i*14+4] = cg*0.5f; m_vbuf[i*14+5] = cb*0.5f; m_vbuf[i*14+6] = surf_alpha;
-		// helix vertex
-		m_vbuf[i*14+7] = x; m_vbuf[i*14+8] = y; m_vbuf[i*14+9] = z;
-		m_vbuf[i*14+10] = cr; m_vbuf[i*14+11] = cg; m_vbuf[i*14+12] = cb; m_vbuf[i*14+13] = surf_alpha;
-	}
+	auto fill_strip = [&](float alpha) {
+		vcount = 0;
+		for(int i = 0; i < n; i++) {
+			auto [px, py, pz] = pos(i);
+			auto [cr, cg, cb] = col(i);
+			emit_pair(px, py, pz, cr, cg, cb, alpha);
+
+			if(i < n - 1) {
+				int i0 = (i > 0) ? i - 1 : 0;
+				int i3 = (i + 2 < n) ? i + 2 : n - 1;
+				auto p0 = pos(i0), p1 = pos(i), p2 = pos(i+1), p3 = pos(i3);
+				auto c0 = col(i0), c1 = col(i), c2 = col(i+1), c3 = col(i3);
+				for(int s = 1; s <= HELIX_SUBDIVISIONS; s++) {
+					float t = (float)s / (HELIX_SUBDIVISIONS + 1);
+					emit_pair(
+						p1[0] + t * (p2[0] - p1[0]),
+						catmull_rom(p0[1], p1[1], p2[1], p3[1], t),
+						catmull_rom(p0[2], p1[2], p2[2], p3[2], t),
+						catmull_rom(c0[0], c1[0], c2[0], c3[0], t),
+						catmull_rom(c0[1], c1[1], c2[1], c3[1], t),
+						catmull_rom(c0[2], c1[2], c2[2], c3[2], t),
+						alpha);
+				}
+			}
+		}
+	};
 
 	int stride = 7 * sizeof(float);
 	glUseProgram(m_gl.vcol_shader());
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
 
-	// surface fill
+	// surface fill (interpolated, smooth)
 	if(surf_alpha > 0.0f) {
+		fill_strip(surf_alpha);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, m_vbuf.data());
 		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, m_vbuf.data() + 3);
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, n * 2);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, vcount);
 	}
 
-	// spoke lines
-	for(int i = 0; i < n; i++) {
-		m_vbuf[i*14+6]  = spoke_alpha;
-		m_vbuf[i*14+13] = spoke_alpha;
+	// spoke lines (original sample points, no interpolation)
+	{
+		vcount = 0;
+		for(int i = 0; i < n; i++) {
+			auto [px, py, pz] = pos(i);
+			auto [cr, cg, cb] = col(i);
+			emit_pair(px, py, pz, cr, cg, cb, spoke_alpha);
+		}
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, m_vbuf.data());
+		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, m_vbuf.data() + 3);
+		glDrawArrays(GL_LINES, 0, vcount);
 	}
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, m_vbuf.data());
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, m_vbuf.data() + 3);
-	glDrawArrays(GL_LINES, 0, n * 2);
 
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
@@ -538,23 +589,54 @@ void WidgetHelix::gl_draw_surface(const psi_t *psi, double max_amp, int n)
 void WidgetHelix::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 {
 	auto hc = Style::color(Style::HelixDefault);
-	// per-vertex colored line strip: 3 pos + 4 color per vertex
-	m_vbuf.resize(n * 7);
-	for(int i = 0; i < n; i++) {
-		float t = (float)i / n;
-		float x = -1.0f + 2.0f * t;
-		float y = (float)(psi[i].real() / max_amp * m_amplitude);
-		float z = (float)(psi[i].imag() / max_amp * m_amplitude);
-		m_vbuf[i*7+0] = x;
-		m_vbuf[i*7+1] = y;
-		m_vbuf[i*7+2] = z;
+	float inv_max = (float)(1.0 / max_amp);
+	float a = m_amplitude;
 
-		float amp = (float)(std::abs(psi[i]) / max_amp);
+	auto pos = [&](int i) -> std::array<float,3> {
+		float t = (float)i / n;
+		return { -1.0f + 2.0f * t,
+		         psi[i].real() * inv_max * a,
+		         psi[i].imag() * inv_max * a };
+	};
+
+	auto col = [&](int i) -> std::array<float,4> {
+		float amp = std::abs(psi[i]) * inv_max;
 		auto [cr, cg, cb] = color_for_vert(m_helix.color, i, amp, psi, hc.r, hc.g, hc.b);
-		m_vbuf[i*7+3] = cr;
-		m_vbuf[i*7+4] = cg;
-		m_vbuf[i*7+5] = cb;
-		m_vbuf[i*7+6] = m_helix.alpha;
+		return { cr, cg, cb, m_helix.alpha };
+	};
+
+	int vcount = 0;
+	m_vbuf.resize(n * 7 * (HELIX_SUBDIVISIONS + 2));
+	auto emit = [&](float px, float py, float pz, float cr, float cg, float cb, float ca) {
+		int base = vcount * 7;
+		if(base + 7 > (int)m_vbuf.size()) m_vbuf.resize(m_vbuf.size() * 2);
+		m_vbuf[base+0] = px; m_vbuf[base+1] = py; m_vbuf[base+2] = pz;
+		m_vbuf[base+3] = cr; m_vbuf[base+4] = cg; m_vbuf[base+5] = cb; m_vbuf[base+6] = ca;
+		vcount++;
+	};
+
+	for(int i = 0; i < n; i++) {
+		auto [px, py, pz] = pos(i);
+		auto [cr, cg, cb, ca] = col(i);
+		emit(px, py, pz, cr, cg, cb, ca);
+
+		if(i < n - 1) {
+			int i0 = (i > 0) ? i - 1 : 0;
+			int i3 = (i + 2 < n) ? i + 2 : n - 1;
+			auto p0 = pos(i0), p1 = pos(i), p2 = pos(i+1), p3 = pos(i3);
+			auto c0 = col(i0), c1 = col(i), c2 = col(i+1), c3 = col(i3);
+			for(int s = 1; s <= HELIX_SUBDIVISIONS; s++) {
+				float t = (float)s / (HELIX_SUBDIVISIONS + 1);
+				emit(
+					p1[0] + t * (p2[0] - p1[0]),
+					catmull_rom(p0[1], p1[1], p2[1], p3[1], t),
+					catmull_rom(p0[2], p1[2], p2[2], p3[2], t),
+					catmull_rom(c0[0], c1[0], c2[0], c3[0], t),
+					catmull_rom(c0[1], c1[1], c2[1], c3[1], t),
+					catmull_rom(c0[2], c1[2], c2[2], c3[2], t),
+					catmull_rom(c0[3], c1[3], c2[3], c3[3], t));
+			}
+		}
 	}
 
 	glUseProgram(m_gl.vcol_shader());
@@ -562,7 +644,7 @@ void WidgetHelix::gl_draw_helix(const psi_t *psi, double max_amp, int n)
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data());
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 7*sizeof(float), m_vbuf.data() + 3);
-	glDrawArrays(GL_LINE_STRIP, 0, n);
+	glDrawArrays(GL_LINE_STRIP, 0, vcount);
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(0);
 }
