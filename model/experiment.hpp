@@ -9,7 +9,7 @@
 
 class Experiment {
 public:
-	Setup setup{};
+	std::shared_ptr<const Setup> setup;
 
 	// global clock
 	double sim_time{};               // current simulation time (seconds)
@@ -17,7 +17,7 @@ public:
 	bool running{false};
 
 	// load from pre-parsed Setup (no Lua dependency)
-	bool load(Setup new_setup, bool reset = false);
+	bool load(std::shared_ptr<const Setup> new_setup, bool reset = false);
 
 	// advance simulations within budget
 	void advance(double wall_dt, double budget_ms = 12.0);

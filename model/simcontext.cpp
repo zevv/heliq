@@ -1,3 +1,6 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+
 #include "simcontext.hpp"
 #include "experiment.hpp"
 #include <SDL3/SDL_events.h>
@@ -92,9 +95,6 @@ void SimContext::run()
 				st.running = false;
 				st.generation = m_impl->generation;
 			}
-				else if constexpr (std::is_same_v<T, CmdAdvance>) {
-					// ignored — sim thread uses its own wall clock
-				}
 				else if constexpr (std::is_same_v<T, CmdSingleStep>) {
 					for(auto &sim : exp.simulations)
 						sim->step();

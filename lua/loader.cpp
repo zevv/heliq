@@ -134,10 +134,6 @@ static bool load_simulations(lua_State *L, Setup &setup)
 			const char *name = getfield_string(L, -1, "name");
 			if(name) sim.name = name;
 
-			const char *mode = getfield_string(L, -1, "mode");
-			if(mode && strcmp(mode, "factored") == 0)
-				sim.mode = SimMode::Factored;
-
 			sim.resolution = (int)getfield_number(L, -1, "resolution");
 			sim.dt = getfield_number(L, -1, "dt");
 

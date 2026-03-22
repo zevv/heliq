@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 #include <variant>
 #include "grid.hpp"
 #include "configspace.hpp"
@@ -52,7 +53,6 @@ struct ExtractionSet {
 
 // --- Commands (UI → Sim) ---
 
-struct CmdAdvance      { double wall_dt; };
 struct CmdSingleStep   {};
 struct CmdSetDt        { double dt; };
 struct CmdSetTimescale { double ts; };
@@ -60,12 +60,12 @@ struct CmdSetRunning   { bool run; };
 struct CmdMeasure      { int axis; };
 struct CmdDecohere     { int axis; };
 struct CmdSetAbsorb    { bool on; float width; float strength; };
-struct CmdLoad         { Setup setup; bool reset{}; };
+struct CmdLoad         { std::shared_ptr<const Setup> setup; bool reset{}; };
 struct CmdExtract      { ExtractionSet requests; };
 struct CmdStop         {};
 
 using SimCommand = std::variant<
-	CmdAdvance, CmdSingleStep,
+	CmdSingleStep,
 	CmdSetDt, CmdSetTimescale, CmdSetRunning,
 	CmdMeasure, CmdDecohere, CmdSetAbsorb,
 	CmdLoad, CmdExtract, CmdStop
@@ -115,8 +115,8 @@ struct PublishedState {
 	// grid + configspace metadata
 	GridMeta grid{};
 
-	// setup (full copy, updated on load)
-	Setup setup{};
+	// setup (shared, updated on load — never modified after creation)
+	std::shared_ptr<const Setup> setup;
 
 	// absorbing boundary state
 	bool absorbing_boundary{};

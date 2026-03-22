@@ -6,7 +6,7 @@
 #include "log.hpp"
 
 
-bool Experiment::load(Setup new_setup, bool reset)
+bool Experiment::load(std::shared_ptr<const Setup> new_setup, bool reset)
 {
 	// preserve user-adjusted timescale and dt across reloads (R key),
 	// but not when switching to a different experiment (reset=true)
@@ -18,17 +18,17 @@ bool Experiment::load(Setup new_setup, bool reset)
 	setup = std::move(new_setup);
 
 	linf("loaded: %dD, %d particles, %zu sims",
-		setup.spatial_dims, setup.n_particles,
-		setup.simulations.size());
+		setup->spatial_dims, setup->n_particles,
+		setup->simulations.size());
 
 	if(is_reload) {
 		timescale = prev_timescale;
 	} else {
-		timescale = setup.timescale;
+		timescale = setup->timescale;
 	}
 
-	for(auto &sc : setup.simulations)
-		simulations.push_back(std::make_unique<Simulation>(sc, setup));
+	for(auto &sc : setup->simulations)
+		simulations.push_back(std::make_unique<Simulation>(sc, *setup));
 
 	if(is_reload && prev_dt != 0)
 		for(auto &sim : simulations)

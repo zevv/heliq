@@ -48,20 +48,21 @@ void WidgetInfo::do_draw(SimContext &ctx, SDL_Renderer *rend, SDL_Rect &r)
 	}
 
 	// experiment title and description
-	if(!st.setup.title.empty()) {
+	static const Setup empty_setup{};
+	auto &s = st.setup ? *st.setup : empty_setup;
+
+	if(!s.title.empty()) {
 		ImGui::Spacing();
 		ImGui::Separator();
-		ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", st.setup.title.c_str());
-		if(!st.setup.description.empty())
-			ImGui::TextWrapped("%s", st.setup.description.c_str());
+		ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", s.title.c_str());
+		if(!s.description.empty())
+			ImGui::TextWrapped("%s", s.description.c_str());
 	}
 
 	// experiment info below
 	ImGui::Spacing();
 	ImGui::Separator();
 	ImGui::Spacing();
-
-	auto &s = st.setup;
 	ImGui::Text("Experiment  (%dD)", s.spatial_dims);
 
 	for(int i = 0; i < s.spatial_dims; i++) {

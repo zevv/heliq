@@ -184,8 +184,6 @@ static void ensure_texture(SDL_Renderer *rend, Overlay &ov, int w, int h)
 }
 
 
-static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_buf, int tw, int th);
-
 // render a 2D psi/pot buffer into an SDL texture overlay
 static void render_texture(Overlay &ov, const psi_t *psi_buf, const psi_t *pot_buf,
                             int tw, int th)

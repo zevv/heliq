@@ -140,8 +140,6 @@ void ConfigReader::close()
 }
 
 
-static ConfigReader::Node nullnode;
-
 ConfigReader::Node::Node()
 	: kids()
 	, m_attrs()
@@ -182,9 +180,10 @@ ConfigReader::Node *ConfigReader::find(const char *key)
 }
 
 
+static ConfigReader::Node nullnode;
+
 ConfigReader::Node *ConfigReader::find(Node *node, const char *key)
 {
-	static Node	nullnode;
 	if(node->kids.find(key) != node->kids.end()) {
 		return node->kids[key];
 	} else {

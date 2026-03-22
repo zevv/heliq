@@ -3,10 +3,6 @@
 
 #include <SDL3/SDL.h>
 
-#define CONCAT(lhs, rhs) lhs # rhs
-#define CONCAT_WRAPPER(lhs, rhs) CONCAT(lhs, rhs)
-#define UNIQUE_ID CONCAT_WRAPPER(__FILE__, __LINE__)
-
 double hirestime();
 
 void humanize(double val, char *buf, size_t buf_len);

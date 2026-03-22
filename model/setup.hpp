@@ -8,7 +8,7 @@
 // Output of Lua ingestion. Immutable after creation.
 // Three arrays (psi, potential, mass) plus metadata.
 
-enum class SimMode { Joint, Factored };
+enum class SimMode { Joint };
 
 struct SimConfig {
 	std::string name{};

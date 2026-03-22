@@ -47,7 +47,6 @@ struct ConfigReader {
 		Node *find(const char *key);
 		void read(const char *key, bool &val);
 		void read(const char *key, int &val);
-		void read(const char *key, size_t &val);
 		void read(const char *key, float &val);
 		void read(const char *key, double &val);
 		void read(const char *key, char *val, size_t maxlen);

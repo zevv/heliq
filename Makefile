@@ -5,7 +5,6 @@ IMGUI_DIR = /home/ico/external/imgui
 
 SRC += main.cpp
 SRC += ui/app.cpp
-SRC += ui/view.cpp
 SRC += ui/panel.cpp
 SRC += ui/widget.cpp
 SRC += ui/widgetregistry.cpp
